@@ -36,7 +36,7 @@ class PainelScreen extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(gradient: gradientePrincipal, borderRadius: BorderRadius.circular(14)),
-                child: const Icon(Icons.dashboard_rounded, color: Colors.white, size: 22),
+                child: const Icon(Icons.home_rounded, color: Colors.white, size: 22),
               ),
             ],
           ),

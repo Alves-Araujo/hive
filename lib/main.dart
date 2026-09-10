@@ -256,7 +256,7 @@ class _TelaPrincipalState extends State<TelaPrincipal>
       const _ItemNav(icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard_rounded, label: 'Resumo'),
       const _ItemNav(icon: Icons.chat_bubble_outline_rounded, activeIcon: Icons.chat_bubble_rounded, label: 'Chat'),
       if (_temPainel)
-        const _ItemNav(icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'Painel'),
+        const _ItemNav(icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'Imóveis'),
     ];
     _navAnimController = AnimationController(
       vsync: this,
