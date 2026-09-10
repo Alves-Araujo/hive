@@ -246,16 +246,16 @@ class _TelaPrincipalState extends State<TelaPrincipal>
     super.initState();
     _telas = [
       CentroDoMapa(perfil: widget.perfil),
-      TelaResumo(perfil: widget.perfil),
-      const TelaListaChats(),
       if (_temPainel) PainelScreen(perfil: widget.perfil),
+      const TelaListaChats(),
+      TelaResumo(perfil: widget.perfil),
     ];
     _itensNav = [
       const _ItemNav(icon: Icons.map_outlined, activeIcon: Icons.map_rounded, label: 'Mapa'),
-      const _ItemNav(icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'Resumo'),
-      const _ItemNav(icon: Icons.chat_bubble_outline_rounded, activeIcon: Icons.chat_bubble_rounded, label: 'Chat'),
       if (_temPainel)
         const _ItemNav(icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard_rounded, label: 'Painel'),
+      const _ItemNav(icon: Icons.chat_bubble_outline_rounded, activeIcon: Icons.chat_bubble_rounded, label: 'Chat'),
+      const _ItemNav(icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'Resumo'),
     ];
     _navAnimController = AnimationController(
       vsync: this,
