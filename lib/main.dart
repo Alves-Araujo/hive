@@ -31,7 +31,7 @@ const LatLng posicaoInatel = LatLng(-22.2573047, -45.6958702);
 const String googleMapsApiKey = 'AIzaSyDL0aaR1gdW-x3oiH4gxZVNMozISryp5CI';
 
 // credenciais do ZegoCloud (chamadas de voz/video no chat)
-const int zegoAppId = 969417110;git add .
+const int zegoAppId = 969417110;
 const String zegoAppSign = '158812f25b867a6135e44b4fe1c3ea5eda22dcbd7bd1b7cd4a073a66d980d167';
 
 // cores principais
