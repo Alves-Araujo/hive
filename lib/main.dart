@@ -245,16 +245,18 @@ class _TelaPrincipalState extends State<TelaPrincipal>
     super.initState();
     _telas = [
       CentroDoMapa(perfil: widget.perfil),
-      if (_temPainel) PainelScreen(perfil: widget.perfil),
-      const TelaListaChats(),
       TelaResumo(perfil: widget.perfil),
+      const TelaListaChats(),
+      if (_temPainel) PainelScreen(perfil: widget.perfil),
     ];
+    // ordem das abas mantida (Mapa, Resumo, Chat, Painel); apenas o icone da
+    // aba Resumo e o da aba Painel foram trocados entre si
     _itensNav = [
       const _ItemNav(icon: Icons.map_outlined, activeIcon: Icons.map_rounded, label: 'Mapa'),
-      if (_temPainel)
-        const _ItemNav(icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard_rounded, label: 'Painel'),
+      const _ItemNav(icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard_rounded, label: 'Resumo'),
       const _ItemNav(icon: Icons.chat_bubble_outline_rounded, activeIcon: Icons.chat_bubble_rounded, label: 'Chat'),
-      const _ItemNav(icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'Resumo'),
+      if (_temPainel)
+        const _ItemNav(icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'Painel'),
     ];
     _navAnimController = AnimationController(
       vsync: this,
