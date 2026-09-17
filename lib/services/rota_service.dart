@@ -22,15 +22,20 @@ class RotaPendente {
 
 final ValueNotifier<RotaPendente?> rotaPendenteGlobal = ValueNotifier(null);
 
-class RotaResultado {
+// uma das alternativas de trajeto que o Google devolveu -- guarda tambem a
+// duracao em segundos (nao so o texto) pra dar pra comparar as opcoes entre
+// si e montar o "+7 min" do seletor de alternativas
+class RotaOpcao {
   final List<LatLng> pontos;
   final String distanciaTexto;
   final String duracaoTexto;
+  final int duracaoSegundos;
 
-  RotaResultado({
+  RotaOpcao({
     required this.pontos,
     required this.distanciaTexto,
     required this.duracaoTexto,
+    required this.duracaoSegundos,
   });
 }
 
@@ -40,19 +45,37 @@ class RotaResultado {
 // no seletor de transporte e poder recalcular no mesmo par origem/destino
 // quando o usuario troca de carro pra a pe, por exemplo)
 class RotaAtiva {
-  final RotaResultado resultado;
+  // todas as alternativas devolvidas pra esse par origem/destino, na ordem
+  // que o Google mandou (a primeira e a que ele considera principal)
+  final List<RotaOpcao> opcoes;
+  final int indiceSelecionado;
   final LatLng origem;
   final LatLng destino;
   final String nomeDestino;
   final TravelMode modo;
 
   RotaAtiva({
-    required this.resultado,
+    required this.opcoes,
     required this.origem,
     required this.destino,
     required this.nomeDestino,
     required this.modo,
+    this.indiceSelecionado = 0,
   });
+
+  RotaOpcao get selecionada => opcoes[indiceSelecionado];
+
+  // troca so qual alternativa esta ativa, reaproveitando a MESMA lista de
+  // opcoes -- o mapa usa essa identidade (identical) pra saber que nao e uma
+  // rota nova e por isso nao deve reenquadrar a camera
+  RotaAtiva selecionar(int indice) => RotaAtiva(
+        opcoes: opcoes,
+        origem: origem,
+        destino: destino,
+        nomeDestino: nomeDestino,
+        modo: modo,
+        indiceSelecionado: indice,
+      );
 }
 
 // resultado da rota mais recente e se uma busca ta em andamento -- ficam
@@ -74,13 +97,13 @@ final ValueNotifier<String?> rotaErroGlobal = ValueNotifier(null);
 Future<void> processarPedidoDeRota(RotaPendente pendente, String apiKey) async {
   rotaCarregandoGlobal.value = true;
   try {
-    final resultado = await RotaService(apiKey).buscarRota(
+    final opcoes = await RotaService(apiKey).buscarRotas(
       origem: pendente.origem,
       destino: pendente.destino,
       modo: pendente.modo,
     );
     rotaAtivaGlobal.value = RotaAtiva(
-      resultado: resultado,
+      opcoes: opcoes,
       origem: pendente.origem,
       destino: pendente.destino,
       nomeDestino: pendente.nomeDestino,
@@ -99,39 +122,69 @@ class RotaService {
   RotaService(this._apiKey);
   final String _apiKey;
 
-  Future<RotaResultado> buscarRota({
+  // os textos vem por "leg" -- sem waypoints existe so uma, mas um ".first"
+  // seco estouraria se a API devolvesse a lista vazia
+  static String _primeiroTexto(List<String>? textos) =>
+      (textos == null || textos.isEmpty) ? '' : textos.first;
+
+  // devolve TODAS as alternativas de trajeto pro par origem/destino (a
+  // primeira e a principal na visao do Google). Usa o NetworkUtil em vez do
+  // PolylinePoints.getRouteBetweenCoordinates porque esse ultimo colapsa a
+  // resposta num unico resultado e joga as alternativas fora -- o NetworkUtil
+  // monta um PolylineResult por item de "routes", que e exatamente o que
+  // precisamos pro seletor de alternativas
+  Future<List<RotaOpcao>> buscarRotas({
     required LatLng origem,
     required LatLng destino,
     TravelMode modo = TravelMode.driving,
   }) async {
-    final polylinePoints = PolylinePoints(apiKey: _apiKey);
-
     // PolylineRequest usa a Directions API "classica" de proposito -- foi ela
     // que habilitamos no google cloud, nao a Routes API nova (que o pacote
     // tambem suporta, mas exigiria habilitar outra api). Por isso "moto"
     // (TravelMode.twoWheeler) nao existe na API classica do Google -- usamos
     // o modo de carro como aproximacao nesse caso (ver mapeamento no mapa)
-    final resultado = await polylinePoints.getRouteBetweenCoordinates(
-      // ignore: deprecated_member_use
-      request: PolylineRequest(
-        origin: PointLatLng(origem.latitude, origem.longitude),
-        destination: PointLatLng(destino.latitude, destino.longitude),
-        mode: modo,
-      ),
+    //
+    // alternatives:true e o que faz o Google mandar mais de um trajeto. Vale
+    // lembrar que ele so funciona sem waypoints intermediarios -- se um dia
+    // adicionarmos paradas, as alternativas somem (limitacao da propria API)
+    // ignore: deprecated_member_use
+    final request = PolylineRequest(
+      origin: PointLatLng(origem.latitude, origem.longitude),
+      destination: PointLatLng(destino.latitude, destino.longitude),
+      mode: modo,
+      alternatives: true,
     );
 
-    // antes isso so virava um "null" silencioso -- agora propaga o motivo
-    // de verdade (status + mensagem que o Google devolveu), essencial pra
-    // descobrir problema de chave de API/restricao/limite
-    if (resultado.points.isEmpty) {
-      throw Exception('${resultado.status ?? 'Sem rota'}: ${resultado.errorMessage ?? 'nenhum trajeto encontrado'}');
+    // ignore: deprecated_member_use
+    final resultados = await NetworkUtil().getRouteBetweenCoordinates(
+      request: request,
+      googleApiKey: _apiKey,
+    );
+
+    final opcoes = resultados
+        .where((r) => r.points.isNotEmpty)
+        .map((r) => RotaOpcao(
+              pontos: r.points.map((p) => LatLng(p.latitude, p.longitude)).toList(),
+              distanciaTexto: _primeiroTexto(r.distanceTexts),
+              duracaoTexto: _primeiroTexto(r.durationTexts),
+              duracaoSegundos: r.totalDurationValue ?? 0,
+            ))
+        .toList();
+
+    // o NetworkUtil engole o motivo da falha (devolve lista vazia em qualquer
+    // erro), e perder esse diagnostico atrapalha demais pra achar problema de
+    // chave/restricao/limite -- entao refaz a chamada pela via que ainda
+    // expoe status + errorMessage so pra montar a mensagem de erro
+    if (opcoes.isEmpty) {
+      final diagnostico = await PolylinePoints(apiKey: _apiKey).getRouteBetweenCoordinates(
+        request: request,
+      );
+      throw Exception(
+        '${diagnostico.status ?? 'Sem rota'}: ${diagnostico.errorMessage ?? 'nenhum trajeto encontrado'}',
+      );
     }
 
-    return RotaResultado(
-      pontos: resultado.points.map((p) => LatLng(p.latitude, p.longitude)).toList(),
-      distanciaTexto: resultado.distanceTexts?.first ?? '',
-      duracaoTexto: resultado.durationTexts?.first ?? '',
-    );
+    return opcoes;
   }
 
   // menor retangulo que engloba todos os pontos da rota, pra enquadrar a

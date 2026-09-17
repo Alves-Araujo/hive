@@ -18,6 +18,7 @@ import '../services/busca_service.dart';
 import '../services/imobiliaria_service.dart';
 import '../services/rota_service.dart';
 import '../services/usuario_service.dart';
+import '../utils/localizacao.dart';
 import '../utils/moderacao.dart';
 import '../widgets/avatar_widget.dart';
 import '../widgets/animated_gradient_button.dart';
@@ -60,6 +61,12 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   Set<Polyline> _destaqueRuaBusca = {};
   Set<Polyline> _destaqueAreaBusca = {};
   Marker? _destaquePoiBusca;
+
+  // ultimo resultado de busca escolhido -- fica guardado pra oferecer o
+  // "Traçar rota" ate ele (igual o Google Maps, que mostra o botao de rotas
+  // no card do local depois que voce seleciona um ponto da busca)
+  SugestaoBusca? _localSelecionado;
+  bool _buscandoOrigemRota = false;
 
   List<Imovel> _imoveisDoBanco = [];
 
@@ -124,7 +131,10 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     _temaListener = () {
       if (mounted) {
         _atualizarEstiloMapa();
-        setState(() {});
+        // as polylines das alternativas tem cor dependente do tema (ver
+        // _sincronizarComRotaGlobal) e ficam guardadas em campo, entao
+        // precisam ser remontadas aqui -- um setState vazio nao as atualiza
+        setState(_sincronizarComRotaGlobal);
       }
     };
     temaGlobal.addListener(_temaListener);
@@ -305,6 +315,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     _destaqueRuaBusca = {};
     _destaqueAreaBusca = {};
     _destaquePoiBusca = null;
+    _localSelecionado = null;
   }
 
   // ao escolher um resultado, desenha o destaque certo pro tipo de local
@@ -316,6 +327,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     setState(() {
       _sugestoes = [];
       _limparDestaqueBusca();
+      _localSelecionado = sugestao;
 
       switch (sugestao.tipoGeometria) {
         case TipoGeometria.linha:
@@ -452,12 +464,28 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       _marcadoresRota = {};
       return;
     }
+    // desenha todas as alternativas: as nao escolhidas em cinza e por baixo
+    // (zIndex menor), clicaveis pra virar a ativa; a escolhida em destaque por
+    // cima. consumeTapEvents evita que o toque atravesse a linha e caia no
+    // mapa (que fecha paineis/limpa selecao)
     _rotas = {
+      for (var i = 0; i < ativa.opcoes.length; i++)
+        if (i != ativa.indiceSelecionado)
+          Polyline(
+            polylineId: PolylineId('rota_alt_$i'),
+            points: ativa.opcoes[i].pontos,
+            color: _deveUsarEstiloEscuro ? Colors.white54 : Colors.grey.shade500,
+            width: 5,
+            zIndex: 1,
+            consumeTapEvents: true,
+            onTap: () => _selecionarAlternativa(i),
+          ),
       Polyline(
         polylineId: const PolylineId('rota_ativa'),
-        points: ativa.resultado.pontos,
+        points: ativa.selecionada.pontos,
         color: corPrimaria,
-        width: 5,
+        width: 6,
+        zIndex: 2,
       ),
     };
     _marcadoresRota = {
@@ -477,14 +505,74 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   // reconstroi markers/polyline a partir do rotaAtivaGlobal atual e enquadra
   // a camera -- chamado toda vez que o valor global muda (depois do primeiro build)
   void _atualizarEstadoDaRota() {
+    final ativa = rotaAtivaGlobal.value;
+    // trocar de alternativa reusa a mesma lista de opcoes (ver
+    // RotaAtiva.selecionar), entao da pra diferenciar "rota nova" de "so
+    // mudou a escolhida" por identidade -- sem isso a camera reenquadraria a
+    // cada toque numa alternativa, jogando a visao do usuario fora do lugar
+    final rotaNova = ativa != null && !identical(_rotaAtual?.opcoes, ativa.opcoes);
+
     setState(_sincronizarComRotaGlobal);
 
-    final ativa = rotaAtivaGlobal.value;
-    if (ativa != null) {
+    if (rotaNova) {
+      // enquadra TODAS as alternativas, nao so a escolhida, pra elas ja
+      // aparecerem na tela e o usuario ver que existe opcao
       _mapController?.animateCamera(
-        CameraUpdate.newLatLngBounds(RotaService.calcularBounds(ativa.resultado.pontos), 60),
+        CameraUpdate.newLatLngBounds(
+          RotaService.calcularBounds(ativa.opcoes.expand((o) => o.pontos).toList()),
+          60,
+        ),
       );
     }
+  }
+
+  // traca a rota da posicao atual do usuario ate o local escolhido na busca
+  // (Inatel, uma faculdade, um endereco...) -- reusa o mesmo pipeline global
+  // que a tela de detalhes usa, entao as alternativas e o seletor de modal
+  // vem de graca, sem nenhum caminho novo de calculo
+  Future<void> _tracarRotaAteLocalBuscado() async {
+    final local = _localSelecionado;
+    if (local == null || _buscandoOrigemRota) return;
+
+    setState(() => _buscandoOrigemRota = true);
+    LatLng? origem;
+    try {
+      origem = await obterLocalizacaoAtual();
+    } catch (e) {
+      origem = null;
+    }
+    if (!mounted) return;
+    setState(() => _buscandoOrigemRota = false);
+
+    if (origem == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Não conseguimos acessar sua localização atual.'),
+          backgroundColor: corErro,
+        ),
+      );
+      return;
+    }
+
+    // mantem o modal que o usuario ja tinha escolhido no seletor, com o mesmo
+    // desvio de "moto" que _trocarModoTransporte faz (nao existe na API classica)
+    final modoParaApi =
+        _modoTransporteUi == TravelMode.twoWheeler ? TravelMode.driving : _modoTransporteUi;
+
+    rotaPendenteGlobal.value = RotaPendente(
+      origem: origem,
+      destino: local.destino,
+      nomeDestino: local.texto,
+      modo: modoParaApi,
+    );
+  }
+
+  // troca a alternativa ativa sem bater na API de novo -- todos os trajetos
+  // ja vieram juntos na mesma resposta, entao isso e instantaneo
+  void _selecionarAlternativa(int indice) {
+    final ativa = rotaAtivaGlobal.value;
+    if (ativa == null || indice == ativa.indiceSelecionado) return;
+    rotaAtivaGlobal.value = ativa.selecionar(indice);
   }
 
   void _limparRota() {
@@ -508,6 +596,162 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       destino: _rotaAtual!.destino,
       nomeDestino: _rotaAtual!.nomeDestino,
       modo: modoParaApi,
+    );
+  }
+
+  // o card do local sai de cena enquanto existe rota na tela (o card de rota
+  // no topo ja mostra destino/distancia, e os dois juntos poluiriam) -- se o
+  // usuario fechar a rota ele volta, dando pra tracar de novo sem rebuscar
+  bool get _mostrandoCardLocal =>
+      _localSelecionado != null && _rotaAtual == null && !_carregandoRota;
+
+  // card do local escolhido na busca, com o botao de tracar rota ate ele --
+  // mesmo papel do painel que o Google Maps abre ao selecionar um ponto
+  Widget _cardLocalBuscado(bool isDark) {
+    final local = _localSelecionado!;
+    final icone = switch (local.tipo) {
+      TipoSugestao.cidade => Icons.location_city_rounded,
+      TipoSugestao.faculdade => Icons.school_rounded,
+      TipoSugestao.moradia => Icons.home_rounded,
+      TipoSugestao.endereco => Icons.signpost_outlined,
+    };
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 8, 14),
+      decoration: BoxDecoration(
+        color: isDark ? corCardEscuro : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withAlpha(isDark ? 60 : 15), blurRadius: 16, offset: const Offset(0, 6)),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(gradient: gradientePrincipal, borderRadius: BorderRadius.circular(10)),
+                child: Icon(icone, color: Colors.white, size: 18),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  local.texto,
+                  style: TextStyle(fontWeight: FontWeight.w700, color: isDark ? Colors.white : Colors.black87),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              IconButton(
+                onPressed: () {
+                  _buscaController.clear();
+                  setState(_limparDestaqueBusca);
+                },
+                icon: Icon(Icons.close_rounded, color: isDark ? Colors.white38 : Colors.grey),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: GestureDetector(
+              onTap: _tracarRotaAteLocalBuscado,
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                decoration: BoxDecoration(gradient: gradientePrincipal, borderRadius: BorderRadius.circular(14)),
+                child: Center(
+                  child: _buscandoOrigemRota
+                      ? const SizedBox(
+                          width: 18, height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white),
+                        )
+                      : const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.directions_rounded, color: Colors.white, size: 20),
+                            SizedBox(width: 8),
+                            Text(
+                              'Traçar rota',
+                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15),
+                            ),
+                          ],
+                        ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // chips pra escolher entre os trajetos que vieram na mesma resposta da
+  // Directions API -- rola na horizontal porque o Google pode devolver 3
+  // alternativas e os rotulos nao cabem numa linha fixa em tela pequena
+  Widget _seletorAlternativas(bool isDark) {
+    final ativa = _rotaAtual!;
+    final maisRapidaSegundos =
+        ativa.opcoes.map((o) => o.duracaoSegundos).reduce((a, b) => a < b ? a : b);
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (var i = 0; i < ativa.opcoes.length; i++) ...[
+            if (i > 0) const SizedBox(width: 8),
+            _chipAlternativa(i, ativa.opcoes[i], maisRapidaSegundos, isDark),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _chipAlternativa(int indice, RotaOpcao opcao, int maisRapidaSegundos, bool isDark) {
+    final selecionado = indice == _rotaAtual!.indiceSelecionado;
+
+    // compara com a mais rapida pra dar contexto ("+7 min" diz muito mais que
+    // o tempo absoluto sozinho). Empate exato no segundo conta como mais
+    // rapida; diferenca que arredonda pra zero mostra "+1 min" em vez de
+    // fingir que sao iguais
+    final ehMaisRapida = opcao.duracaoSegundos == maisRapidaSegundos;
+    final atrasoMin = ((opcao.duracaoSegundos - maisRapidaSegundos) / 60).round();
+    final rotulo = ehMaisRapida ? 'Mais rápida' : '+${atrasoMin < 1 ? 1 : atrasoMin} min';
+
+    return GestureDetector(
+      onTap: _carregandoRota ? null : () => _selecionarAlternativa(indice),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          gradient: selecionado ? gradientePrincipal : null,
+          color: selecionado ? null : (isDark ? Colors.white.withAlpha(10) : Colors.grey.withAlpha(15)),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              opcao.duracaoTexto,
+              style: AppTextStyles.captionBold.copyWith(
+                color: selecionado ? Colors.white : (isDark ? Colors.white : Colors.black87),
+              ),
+            ),
+            const SizedBox(height: 1),
+            Text(
+              rotulo,
+              style: AppTextStyles.label.copyWith(
+                color: selecionado
+                    ? Colors.white.withAlpha(200)
+                    : (ehMaisRapida ? corSucesso : (isDark ? Colors.white38 : Colors.grey)),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1188,6 +1432,10 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     final bool podeAnunciar = _perfilAtual.perfilCompleto &&
         _perfilAtual.tipoUsuario.toLowerCase() == 'proprietario';
 
+    // altura aproximada que o card do local buscado ocupa na base da tela --
+    // usada pra levantar o FAB de localizacao e o botao de anunciar
+    final double alturaCardLocal = _mostrandoCardLocal ? 152 : 0;
+
     return Stack(
       children: [
         GoogleMap(
@@ -1356,6 +1604,12 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                     const SizedBox(height: 12),
                     Divider(height: 1, color: isDark ? Colors.white.withAlpha(10) : Colors.grey.withAlpha(20)),
                     const SizedBox(height: 12),
+                    // so faz sentido oferecer escolha quando o Google mandou
+                    // mais de um trajeto -- as vezes ele devolve um so
+                    if (_rotaAtual!.opcoes.length > 1) ...[
+                      _seletorAlternativas(isDark),
+                      const SizedBox(height: 12),
+                    ],
                   ],
                   _carregandoRota
                       ? Row(
@@ -1388,7 +1642,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    '${_rotaAtual!.resultado.distanciaTexto} · ${_rotaAtual!.resultado.duracaoTexto}',
+                                    '${_rotaAtual!.selecionada.distanciaTexto} · ${_rotaAtual!.selecionada.duracaoTexto}',
                                     style: AppTextStyles.caption.copyWith(color: isDark ? Colors.white38 : Colors.grey),
                                   ),
                                 ],
@@ -1405,9 +1659,20 @@ class _CentroDoMapaState extends State<CentroDoMapa>
             ),
           ),
 
+        // card do local buscado + botao de tracar rota ate ele
+        if (_mostrandoCardLocal)
+          Positioned(
+            bottom: 20,
+            left: 16,
+            right: 16,
+            child: _cardLocalBuscado(isDark),
+          ),
+
         // botao pra focar na localizacao do usuario
         Positioned(
-          bottom: podeAnunciar ? 84 : 20, // Sobe se o botao de anunciar estiver visivel
+          // sobe se o botao de anunciar estiver visivel, e mais ainda se o
+          // card do local buscado estiver ocupando a base da tela
+          bottom: alturaCardLocal + (podeAnunciar ? 84 : 20),
           right: 16,
           child: FloatingActionButton(
             heroTag: 'btnLocation',
@@ -1420,7 +1685,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
 
         if (podeAnunciar)
           Positioned(
-            bottom: 20,
+            bottom: alturaCardLocal + 20,
             right: 16,
             child: Container(
               decoration: BoxDecoration(
