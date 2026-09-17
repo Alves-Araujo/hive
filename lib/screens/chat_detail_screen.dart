@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
+import '../utils/texto.dart';
 import '../main.dart';
 import '../models/perfil_publico.dart';
 import '../models/usuario.dart';
@@ -107,7 +108,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     final texto = _mensagemController.text.trim();
     if (texto.isEmpty) return;
     _mensagemController.clear();
-    await _enviarDocumentoMensagem({'tipo': 'texto', 'texto': texto});
+    await _enviarDocumentoMensagem({'tipo': 'texto', 'texto': normalizarTracos(texto)});
   }
 
   Future<void> _escolherEEnviarFoto(ImageSource source) async {
@@ -449,7 +450,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: decoracaoBalao,
       child: Text(
-        msg['texto'] ?? '',
+        normalizarTracosOuVazio(msg['texto']),
         style: TextStyle(color: isMinha ? Colors.white : (isDark ? Colors.white : Colors.black87)),
       ),
     );

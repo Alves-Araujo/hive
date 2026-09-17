@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../utils/texto.dart';
 import 'endereco.dart';
 
 class Usuario {
@@ -71,7 +72,9 @@ class Usuario {
   factory Usuario.fromMap(Map<String, dynamic> map, String uid) {
     return Usuario(
       uid: uid,
-      nome: map['nome'] ?? '',
+      // nome aparece em chat, perfil e vitrine -- normaliza os tracos longos
+      // igual o Imovel faz (ver utils/texto.dart)
+      nome: normalizarTracosOuVazio(map['nome']),
       nomeBusca: map['nomeBusca'] ?? '',
       email: map['email'] ?? '',
       tipoUsuario: map['tipoUsuario'] ?? '',

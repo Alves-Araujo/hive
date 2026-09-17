@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../utils/texto.dart';
 import '../main.dart';
 import '../models/imovel.dart';
 import '../services/busca_global_service.dart';
@@ -220,7 +221,7 @@ class _ItemConversaStream extends StatelessWidget {
         if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
           final doc = snapshot.data!.docs.first;
           final data = doc.data() as Map<String, dynamic>;
-          ultimaMensagem = data['texto'] ?? '';
+          ultimaMensagem = normalizarTracosOuVazio(data['texto']);
           temMensagem = true;
 
           if (data['timestamp'] != null) {

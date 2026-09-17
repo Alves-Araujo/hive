@@ -23,7 +23,7 @@ O **Hive** resolve um problema concreto de cidade universitária: encontrar mora
 - Modo escuro dedicado do mapa, independente do tema geral do app
 
 **Perfis e confiança**
-- Três tipos de conta — estudante, proprietário e corretor — cada um com fluxos próprios
+- Três tipos de conta - estudante, proprietário e corretor - cada um com fluxos próprios
 - Login por e-mail/senha ou conta Google
 - Sistema de avaliações entre usuários e de imobiliárias
 - Vínculo verificado entre corretor e imobiliária
@@ -51,7 +51,7 @@ lib/
 └── utils/                 # formatadores, validadores e helpers
 ```
 
-A regra que mantém isso limpo: **tela não fala com o Firebase direto** — sempre passa por `services/`. Trocar a fonte de dados não obriga a mexer na interface.
+A regra que mantém isso limpo: **tela não fala com o Firebase direto** - sempre passa por `services/`. Trocar a fonte de dados não obriga a mexer na interface.
 
 ---
 
@@ -99,7 +99,7 @@ cd hive
 flutter pub get
 ```
 
-**3.** Configure seu próprio Firebase — as credenciais deste repositório apontam para o projeto original:
+**3.** Configure seu próprio Firebase - as credenciais deste repositório apontam para o projeto original:
 
 ```bash
 dart pub global activate flutterfire_cli

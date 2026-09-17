@@ -61,7 +61,7 @@ const List<_LocalConhecido> _locaisConhecidos = [
   // Coordenadas conferidas na propria base do OpenStreetMap (nao a estimativa
   // antiga) -- o Nominatim so tinha "Inatel"/"FAI" cadastrados como bairro/
   // area no lugar do predio, e essa era a causa do pino cair fora do campus
-  _LocalConhecido('Inatel — Instituto Nacional de Telecomunicações', TipoSugestao.faculdade, LatLng(-22.2573047, -45.6958702)),
+  _LocalConhecido('Inatel - Instituto Nacional de Telecomunicações', TipoSugestao.faculdade, LatLng(-22.2573047, -45.6958702)),
   _LocalConhecido('UNIFEI - Universidade Federal de Itajubá', TipoSugestao.faculdade, LatLng(-22.4132556, -45.4488284)),
   _LocalConhecido('FAI - Faculdade de Administração e Informática', TipoSugestao.faculdade, LatLng(-22.2602959, -45.7028555)),
   _LocalConhecido('UNIVÁS - Universidade do Vale do Sapucaí', TipoSugestao.faculdade, LatLng(-22.2197083, -45.9160719)),

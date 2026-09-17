@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../utils/texto.dart';
 
 // versao "publica" do Usuario -- so os dados que qualquer pessoa logada pode
 // ver (nome, foto, tipo de conta...), sem CPF/CNPJ/endereco/telefone/etc.
@@ -32,7 +33,7 @@ class PerfilPublico {
   factory PerfilPublico.fromMap(Map<String, dynamic> map, String uid) {
     return PerfilPublico(
       uid: uid,
-      nome: map['nome'] ?? '',
+      nome: normalizarTracosOuVazio(map['nome']),
       nomeBusca: map['nomeBusca'] ?? '',
       fotoUrl: map['fotoUrl'] ?? '',
       tipoUsuario: map['tipoUsuario'] ?? '',

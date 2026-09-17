@@ -1,6 +1,8 @@
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../utils/texto.dart';
+
 enum TipoListing { moradia, evento }
 
 // tipos especificos de moradia (campo "Tipo" do anuncio)
@@ -96,23 +98,26 @@ class Imovel {
 
     return Imovel(
       id: docId,
-      titulo: map['titulo'] ?? '',
-      descricao: map['descricao'] ?? '',
+      // texto que veio do banco passa por normalizarTracos -- anuncios
+      // antigos foram gravados com travessao e apareciam com o traco longo
+      // na interface (ver utils/texto.dart)
+      titulo: normalizarTracosOuVazio(map['titulo']),
+      descricao: normalizarTracosOuVazio(map['descricao']),
       preco: (map['preco'] ?? 0.0).toDouble(),
       posicao: LatLng(lat, lng),
       tipo: (map['tipo'] ?? '') == 'evento' ? TipoListing.evento : TipoListing.moradia,
-      tags: List<String>.from(map['tags'] ?? []),
-      endereco: map['endereco'] ?? '',
+      tags: List<String>.from(map['tags'] ?? []).map(normalizarTracos).toList(),
+      endereco: normalizarTracosOuVazio(map['endereco']),
       fotos: List<String>.from(map['fotos'] ?? []),
       donoUid: map['donoUid'] ?? '',
       cep: map['cep'] ?? '',
-      logradouro: map['logradouro'] ?? '',
+      logradouro: normalizarTracosOuVazio(map['logradouro']),
       numero: map['numero'] ?? '',
-      complemento: map['complemento'] ?? '',
-      bairro: map['bairro'] ?? '',
-      cidade: map['cidade'] ?? '',
+      complemento: normalizarTracosOuVazio(map['complemento']),
+      bairro: normalizarTracosOuVazio(map['bairro']),
+      cidade: normalizarTracosOuVazio(map['cidade']),
       estado: map['estado'] ?? '',
-      tipoImovel: map['tipoImovel'] ?? '',
+      tipoImovel: normalizarTracosOuVazio(map['tipoImovel']),
       andar: map['andar'] ?? '',
       comprovanteResidenciaUrl: map['comprovanteResidenciaUrl'] ?? '',
       iptuValor: (map['iptuValor'] ?? 0.0).toDouble(),
@@ -125,23 +130,25 @@ class Imovel {
 
   Map<String, dynamic> toMap() {
     return {
-      'titulo': titulo,
-      'descricao': descricao,
+      // normaliza na gravacao tambem, senao um titulo colado (ou "corrigido"
+      // pelo teclado do celular) com travessao voltaria a sujar o banco
+      'titulo': normalizarTracos(titulo),
+      'descricao': normalizarTracos(descricao),
       'preco': preco,
       'posicao': GeoPoint(posicao.latitude, posicao.longitude),
       'tipo': tipo == TipoListing.evento ? 'evento' : 'moradia',
-      'tags': tags,
-      'endereco': endereco,
+      'tags': tags.map(normalizarTracos).toList(),
+      'endereco': normalizarTracos(endereco),
       'fotos': fotos,
       'donoUid': donoUid,
       'cep': cep,
-      'logradouro': logradouro,
+      'logradouro': normalizarTracos(logradouro),
       'numero': numero,
-      'complemento': complemento,
-      'bairro': bairro,
-      'cidade': cidade,
+      'complemento': normalizarTracos(complemento),
+      'bairro': normalizarTracos(bairro),
+      'cidade': normalizarTracos(cidade),
       'estado': estado,
-      'tipoImovel': tipoImovel,
+      'tipoImovel': normalizarTracos(tipoImovel),
       'andar': andar,
       'comprovanteResidenciaUrl': comprovanteResidenciaUrl,
       'iptuValor': iptuValor,

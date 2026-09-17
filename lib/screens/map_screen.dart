@@ -1133,7 +1133,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                               const SizedBox(width: 10),
                               Text(qtd > 0
                                   ? '$qtd filtro(s) aplicado(s) no mapa!'
-                                  : 'Filtros removidos — todos os imóveis visíveis.'),
+                                  : 'Filtros removidos - todos os imóveis visíveis.'),
                             ],
                           ),
                           backgroundColor: corSucesso,
