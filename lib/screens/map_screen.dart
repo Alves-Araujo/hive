@@ -1444,9 +1444,6 @@ class _CentroDoMapaState extends State<CentroDoMapa>
             GlassCard(
               radius: 22,
               espessura: 1.2,
-              // peca pequena nao paga uma camada de blur inteira: rim +
-              // especular ja leem como vidro em 44px (ver glass_card.dart)
-              comBlur: false,
               child: SizedBox(width: 44, height: 44, child: Center(child: child)),
             ),
             // anel por cima, sem preenchimento
@@ -1493,11 +1490,6 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       children: [
         GoogleMap(
           onMapCreated: _onMapCreated,
-          // avisa as superficies de vidro pra soltarem o BackdropFilter
-          // durante o movimento. NAO REMOVA -- ver mapaEmMovimentoGlobal em
-          // main.dart; sem isso o arraste vai a 25% de frames com jank
-          onCameraMoveStarted: () => mapaEmMovimentoGlobal.value = true,
-          onCameraIdle: () => mapaEmMovimentoGlobal.value = false,
           initialCameraPosition: CameraPosition(target: posicaoInatel, zoom: 15.0),
           myLocationEnabled: true,
           myLocationButtonEnabled: false,
@@ -1738,7 +1730,6 @@ class _CentroDoMapaState extends State<CentroDoMapa>
             child: GlassCard(
               radius: 20,
               sombra: AppShadows.nivel2(isDark),
-              comBlur: false, // idem: FAB pequeno nao justifica blur proprio
               child: SizedBox(
                 width: 52,
                 height: 52,

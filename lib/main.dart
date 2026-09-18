@@ -1,4 +1,3 @@
-import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -19,19 +18,6 @@ import 'services/rota_service.dart';
 // controle do tema do app inteiro
 final ValueNotifier<ThemeMode> temaGlobal = ValueNotifier(ThemeMode.system);
 
-// true enquanto o usuario arrasta ou da zoom no mapa.
-//
-// NAO REMOVA. Isso existe por um motivo medido, nao por estilo: cada
-// superficie de vidro e um BackdropFilter, que le e desfoca o fundo a cada
-// frame, e o GoogleMap do Android e platform view (ainda mais caro). Com as
-// superficies desfocando sem parar, o arraste do mapa foi a 25% de frames com
-// jank, p90 de 36ms contra o orcamento de 16,7ms a 60fps, num aparelho de 2018.
-//
-// O GlassCard e a barra inferior escutam isso e soltam o blur durante o
-// movimento, devolvendo na parada -- da vidro real na tela parada E arraste
-// liso. Tirar esse guard faz o mapa travar na hora. Alimentado por
-// onCameraMoveStarted/onCameraIdle no map_screen.
-final ValueNotifier<bool> mapaEmMovimentoGlobal = ValueNotifier(false);
 
 // posicao do inatel, usada como centro padrao do mapa e destino da rota --
 // coordenada conferida na base do OpenStreetMap (o valor antigo era uma
@@ -429,17 +415,10 @@ class _TelaPrincipalState extends State<TelaPrincipal>
         child: ClipRRect(
           // 24 em vez de 28: menos redondo, como pedido, sem ficar quadrado
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          // a barra vive sobre o mapa, entao o blur dela pesa no arraste igual
-          // o dos cards -- solta junto (ver mapaEmMovimentoGlobal)
-          child: ValueListenableBuilder<bool>(
-            valueListenable: mapaEmMovimentoGlobal,
-            builder: (_, emMovimento, filho) => emMovimento
-                ? filho!
-                : BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-                    child: filho,
-                  ),
-            child: DecoratedBox(
+          // sem BackdropFilter: sobre o GoogleMap (platform view) mesmo UM
+          // filtro estoura o orcamento de frame -- a tabela de medicoes esta
+          // no glass_card.dart. O vidro aqui e feito de pintura
+          child: DecoratedBox(
               decoration: BoxDecoration(
                 // mesmo vidro liquido dos cards: preenchimento fraco, fio de
                 // azul no pe, e a quina de cima pegando luz forte
@@ -487,7 +466,6 @@ class _TelaPrincipalState extends State<TelaPrincipal>
             ),
           ),
         ),
-      ),
       ),
     );
   }
