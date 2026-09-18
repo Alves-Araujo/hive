@@ -306,6 +306,16 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
                           ),
                         ],
 
+                        if (!isEvento) ...[
+                          const SizedBox(height: AppSpacing.xl),
+                          _secaoInclusos(imovel, isDark),
+                          const SizedBox(height: AppSpacing.xl),
+                          _secaoDetalhes(imovel, isDark),
+                        ],
+
+                        const SizedBox(height: AppSpacing.xl),
+                        _secaoLocalizacao(imovel, isDark),
+
                         const SizedBox(height: AppSpacing.xl),
                         _buildSecaoAnunciante(isDark),
 
@@ -572,6 +582,189 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _tituloSecao(String texto, bool isDark) => Text(
+        texto,
+        style: AppTextStyles.captionBold.copyWith(
+          color: isDark ? Colors.white70 : Colors.black87,
+        ),
+      );
+
+  // contas inclusas -- campos que o modelo Imovel sempre teve e a tela nunca
+  // mostrou. Exibe os tres com estado ligado/desligado em vez de so os
+  // inclusos: saber que a luz NAO esta inclusa e tao util quanto o contrario
+  Widget _secaoInclusos(Imovel imovel, bool isDark) {
+    final itens = [
+      ('Luz', Icons.bolt_rounded, imovel.incluiLuz),
+      ('Água', Icons.water_drop_rounded, imovel.incluiAgua),
+      ('Wi-Fi', Icons.wifi_rounded, imovel.incluiWifi),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _tituloSecao('Contas inclusas', isDark),
+        const SizedBox(height: AppSpacing.md),
+        Row(
+          children: [
+            for (final (rotulo, icone, incluso) in itens) ...[
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.md + 2),
+                  decoration: BoxDecoration(
+                    color: incluso
+                        ? corSucesso.withAlpha(isDark ? 32 : 20)
+                        : (isDark ? Colors.white.withAlpha(8) : Colors.grey.withAlpha(18)),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                    border: Border.all(
+                      color: incluso
+                          ? corSucesso.withAlpha(70)
+                          : (isDark ? Colors.white.withAlpha(12) : Colors.grey.withAlpha(35)),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(
+                        icone,
+                        size: 20,
+                        color: incluso ? corSucesso : (isDark ? Colors.white30 : Colors.grey),
+                      ),
+                      const SizedBox(height: AppSpacing.xs + 2),
+                      Text(
+                        rotulo,
+                        style: AppTextStyles.label.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: incluso
+                              ? corSucesso
+                              : (isDark ? Colors.white30 : Colors.grey),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (rotulo != 'Wi-Fi') const SizedBox(width: AppSpacing.sm),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+
+  // ficha do imovel -- so mostra linha que tem valor, pra nao virar lista de
+  // "nao informado"
+  Widget _secaoDetalhes(Imovel imovel, bool isDark) {
+    final linhas = <(String, String)>[
+      if (imovel.tipoImovel.isNotEmpty) ('Tipo', imovel.tipoImovel),
+      if (imovel.andar.isNotEmpty) ('Andar', imovel.andar),
+      if (imovel.bairro.isNotEmpty) ('Bairro', imovel.bairro),
+      if (imovel.cidade.isNotEmpty)
+        ('Cidade', imovel.estado.isNotEmpty ? '${imovel.cidade} - ${imovel.estado}' : imovel.cidade),
+      if (imovel.iptuValor > 0) ('IPTU', formatarPreco(imovel.iptuValor)),
+    ];
+    if (linhas.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _tituloSecao('Ficha do imóvel', isDark),
+        const SizedBox(height: AppSpacing.md),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+          decoration: BoxDecoration(
+            color: isDark ? Colors.white.withAlpha(8) : Colors.white,
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+            boxShadow: AppShadows.nivel1(isDark),
+          ),
+          child: Column(
+            children: [
+              for (var i = 0; i < linhas.length; i++) ...[
+                if (i > 0)
+                  Divider(
+                    height: 1,
+                    color: isDark ? Colors.white.withAlpha(10) : Colors.grey.withAlpha(20),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.md + 2),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        linhas[i].$1,
+                        style: AppTextStyles.caption.copyWith(
+                          color: isDark ? Colors.white38 : Colors.grey,
+                        ),
+                      ),
+                      Text(
+                        linhas[i].$2,
+                        style: AppTextStyles.captionBold.copyWith(
+                          color: isDark ? Colors.white : Colors.black87,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // previa do local em LITE MODE: o Android desenha um bitmap estatico em vez
+  // de instanciar um mapa interativo. Isso importa muito aqui -- platform view
+  // interativa foi a origem dos travamentos do mapa principal, e uma previa
+  // nao precisa de gesto nenhum
+  Widget _secaoLocalizacao(Imovel imovel, bool isDark) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _tituloSecao('Localização', isDark),
+        const SizedBox(height: AppSpacing.md),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          child: SizedBox(
+            height: 170,
+            child: Stack(
+              children: [
+                // AbsorbPointer e obrigatorio aqui, nao e zelo: desligar os
+                // gestos do GoogleMap NAO basta -- a platform view do Android
+                // ainda consome o toque, e arrastar em cima da previa deixava
+                // de rolar a pagina e disparava a rota (visto no aparelho).
+                // Com o toque absorvido, o arraste vai pro Scrollable e o
+                // InkWell de cima fica so com o tap
+                AbsorbPointer(
+                  child: GoogleMap(
+                    initialCameraPosition: CameraPosition(target: imovel.posicao, zoom: 15.5),
+                    liteModeEnabled: true,
+                    zoomControlsEnabled: false,
+                    myLocationButtonEnabled: false,
+                    // nenhum gesto: e uma imagem, nao um mapa pra explorar
+                    zoomGesturesEnabled: false,
+                    scrollGesturesEnabled: false,
+                    rotateGesturesEnabled: false,
+                    tiltGesturesEnabled: false,
+                    markers: {
+                      Marker(markerId: const MarkerId('previa'), position: imovel.posicao),
+                    },
+                  ),
+                ),
+                // toque na previa abre a rota, que e o que a pessoa quer
+                // fazer depois de ver onde fica
+                Positioned.fill(
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(onTap: _abrirModalDeRota),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
