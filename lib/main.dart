@@ -62,6 +62,16 @@ const gradienteSecundario = LinearGradient(
   end: Alignment.bottomRight,
 );
 
+// gradiente escuro pras acoes principais -- alinhado com o azul escuro que
+// ja domina a tela: a pilula ativa da barra (#14304F) e a agua do mapa
+// (#1c4e7a). O gradientePrincipal vai de azul claro a ciano, que sobre a
+// tela clara ficava mais berrante do que o resto
+const gradienteAcao = LinearGradient(
+  colors: [Color(0xFF12294A), Color(0xFF17456F), Color(0xFF1C5A8F)],
+  begin: Alignment.centerLeft,
+  end: Alignment.centerRight,
+);
+
 const gradienteEvento = LinearGradient(
   colors: [Color(0xFFF59E0B), Color(0xFFEF4444)],
   begin: Alignment.topLeft,

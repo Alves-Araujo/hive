@@ -618,15 +618,8 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       TipoSugestao.endereco => Icons.signpost_outlined,
     };
 
-    // azul escuro em vez de vidro branco: puxa pra paleta do mapa (a agua e
-    // #1c4e7a) e pra pilula ativa da barra, em vez de ser uma peca branca
-    // solta sobre o mapa claro. Com base escura, texto e icones invertem
-    const Color baseEscura = Color(0xFF14304F);
-
     return GlassCard(
       radius: 24,
-      corBase: baseEscura,
-      opacidade: 236,
       sombra: AppShadows.nivel3(isDark),
       padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.sm, AppSpacing.lg - 2),
       child: Column(
@@ -637,14 +630,16 @@ class _CentroDoMapaState extends State<CentroDoMapa>
             children: [
               Container(
                 padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(gradient: gradientePrincipal, borderRadius: BorderRadius.circular(10)),
+                // mesmo gradiente escuro do botao logo abaixo -- os dois estao
+                // no mesmo card, e o azul claro/ciano destoava
+                decoration: BoxDecoration(gradient: gradienteAcao, borderRadius: BorderRadius.circular(10)),
                 child: Icon(icone, color: Colors.white, size: 18),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
                   local.texto,
-                  style: const TextStyle(fontWeight: FontWeight.w700, color: Colors.white),
+                  style: TextStyle(fontWeight: FontWeight.w700, color: isDark ? Colors.white : Colors.black87),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -654,7 +649,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                   _buscaController.clear();
                   setState(_limparDestaqueBusca);
                 },
-                icon: Icon(Icons.close_rounded, color: Colors.white.withAlpha(150)),
+                icon: Icon(Icons.close_rounded, color: isDark ? Colors.white38 : Colors.grey),
               ),
             ],
           ),
@@ -665,7 +660,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
               onTap: _tracarRotaAteLocalBuscado,
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 13),
-                decoration: BoxDecoration(gradient: gradientePrincipal, borderRadius: BorderRadius.circular(14)),
+                decoration: BoxDecoration(gradient: gradienteAcao, borderRadius: BorderRadius.circular(14)),
                 child: Center(
                   child: _buscandoOrigemRota
                       ? const SizedBox(
