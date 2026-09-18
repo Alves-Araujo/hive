@@ -1541,6 +1541,12 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                                 child: TextField(
                             controller: _buscaController,
                             focusNode: _buscaFocusNode,
+                            // centraliza o texto na vertical. Sem isso o
+                            // InputDecoration alinhava o conteudo pela
+                            // baseline e o hint ficava ~3px acima do centro da
+                            // pilula, desalinhado dos icones da direita --
+                            // acontece quando ha prefixIcon e nenhum suffixIcon
+                            textAlignVertical: TextAlignVertical.center,
                             style: TextStyle(
                               color: isDark ? Colors.white : Colors.black87,
                               fontSize: 15,
