@@ -15,6 +15,7 @@ import '../utils/moeda.dart';
 import '../utils/tempo.dart';
 import '../widgets/animated_gradient_button.dart';
 import '../widgets/avatar_widget.dart';
+import '../widgets/pressionavel.dart';
 import 'chat_detail_screen.dart';
 import 'perfil_publico_screen.dart';
 
@@ -31,6 +32,16 @@ class DetalhesImovelScreen extends StatefulWidget {
 
 class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
   bool _buscandoLocalizacao = false;
+
+  // carrossel do cabecalho
+  final PageController _fotoController = PageController();
+  int _fotoAtual = 0;
+
+  @override
+  void dispose() {
+    _fotoController.dispose();
+    super.dispose();
+  }
 
   void _dispararRotaEVoltar({required LatLng origem, required LatLng destino, required String nomeDestino}) {
     rotaPendenteGlobal.value = RotaPendente(origem: origem, destino: destino, nomeDestino: nomeDestino);
@@ -206,167 +217,360 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
 
     return Scaffold(
       backgroundColor: isDark ? corSuperficieEscura : const Color(0xFFF8F7FF),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        // o design que antes era do badge "casa/evento" (que nao tinha
-        // funcao nenhuma, so decorativo, e ainda vinha quebrado por causa do
-        // bug de largura) foi reaproveitado no botao de voltar de verdade --
-        // leadingWidth explicito + Center garante que o badge fique
-        // centralizado no espaco reservado da AppBar, nao so dentro de si mesmo
-        leadingWidth: 64,
-        leading: Center(
-          child: Material(
-            color: Colors.transparent,
-            borderRadius: BorderRadius.circular(18),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(18),
-              onTap: () => Navigator.pop(context),
-              child: Container(
-                width: 44,
-                height: 44,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  gradient: isEvento ? gradienteEvento : gradientePrincipal,
-                  borderRadius: BorderRadius.circular(18),
+      // cabecalho em imagem cheia: o body passa por tras da status bar pra
+      // foto sangrar ate o topo, igual app de viagem/imovel moderno
+      extendBodyBehindAppBar: true,
+      body: Stack(
+        children: [
+          CustomScrollView(
+            slivers: [
+              // SliverAppBar colapsavel: a foto encolhe ao rolar e o titulo
+              // migra pra barra. Isso e o movimento que a tela nao tinha --
+              // antes era um carrossel solto no meio de uma ListView
+              SliverAppBar(
+                expandedHeight: 330,
+                pinned: true,
+                stretch: true,
+                elevation: 0,
+                backgroundColor: isDark ? corSuperficieEscura : Colors.white,
+                surfaceTintColor: Colors.transparent,
+                leadingWidth: 64,
+                leading: Center(child: _botaoVoltar(isEvento)),
+                // titulo so aparece com a barra colapsada, senao competiria
+                // com o titulo grande que esta sobre a foto
+                title: _TituloColapsado(titulo: imovel.titulo, isDark: isDark),
+                flexibleSpace: FlexibleSpaceBar(
+                  stretchModes: const [StretchMode.zoomBackground],
+                  background: _cabecalhoFoto(imovel, isEvento, isDark),
                 ),
-                child: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 20),
+              ),
+
+              SliverToBoxAdapter(
+                // a folha sobe 26px por cima da foto -- sobreposicao e o que
+                // da profundidade e amarra o conteudo ao cabecalho
+                child: Transform.translate(
+                  offset: const Offset(0, -26),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: isDark ? corSuperficieEscura : const Color(0xFFF8F7FF),
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
+                    ),
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.xxl, AppSpacing.xxl, AppSpacing.xxl, 0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          imovel.titulo,
+                          style: AppTextStyles.heading2.copyWith(
+                            color: isDark ? Colors.white : Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        Row(
+                          children: [
+                            Icon(Icons.location_on_rounded, size: 15, color: corPrimaria.withAlpha(180)),
+                            const SizedBox(width: AppSpacing.xs + 1),
+                            Expanded(
+                              child: Text(
+                                imovel.endereco.isNotEmpty ? imovel.endereco : 'Endereço não informado',
+                                style: AppTextStyles.caption.copyWith(
+                                  color: isDark ? Colors.white38 : Colors.grey,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        if (!isEvento) ...[
+                          const SizedBox(height: AppSpacing.xl),
+                          _cartaoPreco(imovel, isDark),
+                        ],
+
+                        if (imovel.descricao.isNotEmpty) ...[
+                          const SizedBox(height: AppSpacing.xl),
+                          Text(
+                            imovel.descricao,
+                            style: AppTextStyles.body.copyWith(
+                              color: isDark ? Colors.white70 : Colors.black87,
+                            ),
+                          ),
+                        ],
+
+                        if (imovel.tags.isNotEmpty) ...[
+                          const SizedBox(height: AppSpacing.xl),
+                          Wrap(
+                            spacing: AppSpacing.sm,
+                            runSpacing: AppSpacing.sm,
+                            children: imovel.tags.map((tag) => _pilula(tag, isDark)).toList(),
+                          ),
+                        ],
+
+                        const SizedBox(height: AppSpacing.xl),
+                        _buildSecaoAnunciante(isDark),
+
+                        // respiro pra barra de acoes fixa nao cobrir o fim
+                        // do conteudo quando a rolagem chega no fim
+                        const SizedBox(height: 120),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          // acoes fixas na base: antes eram dois botoes no fim da rolagem, o
+          // que obrigava a rolar a tela toda pra pedir rota ou mandar mensagem
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: _barraDeAcoes(imovel, isEvento, isDark),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _botaoVoltar(bool isEvento) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => Navigator.pop(context),
+        child: Container(
+          width: 44,
+          height: 44,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            gradient: isEvento ? gradienteEvento : gradientePrincipal,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: AppShadows.marca(forca: 0.8),
+          ),
+          child: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 20),
+        ),
+      ),
+    );
+  }
+
+  // foto cheia com scrim, ou um estado vazio decente. O estado vazio importa
+  // muito aqui: boa parte dos anuncios do banco nao tem foto, e antes a tela
+  // simplesmente abria com um vazio enorme que parecia tela quebrada
+  Widget _cabecalhoFoto(Imovel imovel, bool isEvento, bool isDark) {
+    final bool temFoto = imovel.fotos.isNotEmpty;
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (temFoto)
+          PageView.builder(
+            controller: _fotoController,
+            itemCount: imovel.fotos.length,
+            onPageChanged: (i) => setState(() => _fotoAtual = i),
+            itemBuilder: (_, i) => Image.network(
+              imovel.fotos[i],
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => _fundoSemFoto(isEvento),
+              loadingBuilder: (_, filho, progresso) =>
+                  progresso == null ? filho : _fundoSemFoto(isEvento),
+            ),
+          )
+        else
+          _fundoSemFoto(isEvento),
+
+        // scrim so na base -- sem ele o titulo branco some em foto clara
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: 120,
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withAlpha(0),
+                    Colors.black.withAlpha(isDark ? 150 : 110),
+                  ],
+                ),
               ),
             ),
           ),
         ),
+
+        if (temFoto && imovel.fotos.length > 1)
+          Positioned(
+            bottom: AppSpacing.xxl + AppSpacing.sm,
+            left: 0,
+            right: 0,
+            child: _indicadorDeFotos(imovel.fotos.length),
+          ),
+      ],
+    );
+  }
+
+  Widget _fundoSemFoto(bool isEvento) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: isEvento ? gradienteEvento : gradientePrincipal,
       ),
-      body: ListView(
-        padding: const EdgeInsets.only(bottom: 40),
+      child: Center(
+        child: Icon(
+          isEvento ? Icons.celebration_rounded : Icons.home_work_rounded,
+          size: 64,
+          color: Colors.white.withAlpha(90),
+        ),
+      ),
+    );
+  }
+
+  // pontinhos de pagina: a largura do ativo cresce, em vez de so mudar de cor
+  Widget _indicadorDeFotos(int total) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        for (var i = 0; i < total; i++)
+          AnimatedContainer(
+            duration: AppMotion.media,
+            curve: AppMotion.suave,
+            margin: const EdgeInsets.symmetric(horizontal: 3),
+            width: i == _fotoAtual ? 20 : 6,
+            height: 6,
+            decoration: BoxDecoration(
+              color: Colors.white.withAlpha(i == _fotoAtual ? 245 : 120),
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _cartaoPreco(Imovel imovel, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.xl, vertical: AppSpacing.lg + 2),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white.withAlpha(10) : Colors.white,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        boxShadow: AppShadows.nivel1(isDark),
+        border: Border.all(
+          color: isDark ? Colors.white.withAlpha(14) : corPrimaria.withAlpha(20),
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          if (imovel.fotos.isNotEmpty) ...[
-            SizedBox(
-              height: 240,
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                scrollDirection: Axis.horizontal,
-                itemCount: imovel.fotos.length,
-                itemBuilder: (context, index) {
-                  return Container(
-                    width: 280,
-                    margin: const EdgeInsets.only(right: 16),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [BoxShadow(color: Colors.black.withAlpha(30), blurRadius: 10, offset: const Offset(0, 4))],
-                      image: DecorationImage(image: NetworkImage(imovel.fotos[index]), fit: BoxFit.cover),
-                    ),
-                  );
-                },
+          Text(
+            'Aluguel mensal',
+            style: AppTextStyles.caption.copyWith(
+              color: isDark ? Colors.white38 : Colors.grey,
+            ),
+          ),
+          ShaderMask(
+            shaderCallback: (bounds) => gradienteSecundario.createShader(bounds),
+            child: Text(
+              '${formatarPreco(imovel.preco)}/mês',
+              style: const TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+                letterSpacing: -0.6,
               ),
             ),
-            const SizedBox(height: 20),
-          ],
+          ),
+        ],
+      ),
+    );
+  }
 
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(imovel.titulo, style: AppTextStyles.heading3.copyWith(color: isDark ? Colors.white : Colors.black87)),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Icon(Icons.location_on_rounded, size: 14, color: corPrimaria.withAlpha(160)),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        imovel.endereco.isNotEmpty ? imovel.endereco : 'Endereço não informado',
-                        style: AppTextStyles.caption.copyWith(color: isDark ? Colors.white38 : Colors.grey),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                Divider(color: isDark ? Colors.white.withAlpha(10) : Colors.grey.withAlpha(20)),
-                const SizedBox(height: 16),
+  Widget _pilula(String texto, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md + 2, vertical: AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white.withAlpha(10) : corPrimaria.withAlpha(12),
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        border: Border.all(
+          color: isDark ? Colors.white.withAlpha(14) : corPrimaria.withAlpha(28),
+        ),
+      ),
+      child: Text(
+        texto,
+        style: AppTextStyles.captionBold.copyWith(
+          fontSize: 12,
+          color: isDark ? Colors.white70 : corPrimaria,
+        ),
+      ),
+    );
+  }
 
-                Text(imovel.descricao, style: AppTextStyles.body.copyWith(color: isDark ? Colors.white70 : Colors.black87)),
-
-                if (imovel.tags.isNotEmpty) ...[
-                  const SizedBox(height: 20),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: imovel.tags.map((tag) {
-                      return Chip(
-                        label: Text(tag, style: TextStyle(fontSize: 12, color: isDark ? Colors.white70 : corPrimaria)),
-                        backgroundColor: isDark ? Colors.white.withAlpha(8) : corPrimaria.withAlpha(10),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: BorderSide(color: isDark ? Colors.white.withAlpha(10) : corPrimaria.withAlpha(20)),
-                        ),
-                        visualDensity: VisualDensity.compact,
-                      );
-                    }).toList(),
-                  ),
-                ],
-
-                if (!isEvento) ...[
-                  const SizedBox(height: 20),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: isDark ? Colors.white.withAlpha(5) : corPrimaria.withAlpha(6),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: isDark ? Colors.white.withAlpha(8) : corPrimaria.withAlpha(15)),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('Aluguel mensal', style: AppTextStyles.caption.copyWith(color: isDark ? Colors.white38 : Colors.grey)),
-                        ShaderMask(
-                          shaderCallback: (bounds) => gradienteSecundario.createShader(bounds),
-                          child: Text(
-                            '${formatarPreco(imovel.preco)}/mês',
-                            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -0.5),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-
-                const SizedBox(height: 20),
-                _buildSecaoAnunciante(isDark),
-
-                const SizedBox(height: 24),
-                Text('Rota', style: AppTextStyles.captionBold.copyWith(color: isDark ? Colors.white70 : Colors.black87)),
-                const SizedBox(height: 12),
-                AnimatedGradientButton(
+  Widget _barraDeAcoes(Imovel imovel, bool isEvento, bool isDark) {
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? corCardEscuro : Colors.white,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withAlpha(isDark ? 70 : 18),
+            blurRadius: 26,
+            offset: const Offset(0, -8),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+              AppSpacing.xl, AppSpacing.lg, AppSpacing.xl, AppSpacing.sm),
+          child: Row(
+            children: [
+              Expanded(
+                child: AnimatedGradientButton(
                   label: 'Calcular Rota',
                   icon: Icons.alt_route_rounded,
                   isLoading: _buscandoLocalizacao,
                   onTap: _abrirModalDeRota,
                 ),
-
-                if (!isEvento) ...[
-                  const SizedBox(height: 16),
-                  AnimatedGradientButton(
-                    label: 'Enviar Mensagem',
-                    icon: Icons.chat_bubble_outline_rounded,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => ChatDetailScreen(
-                            imovelTitulo: imovel.titulo,
-                            imovelId: imovel.id,
-                            donoUid: imovel.donoUid,
-                          ),
+              ),
+              if (!isEvento) ...[
+                const SizedBox(width: AppSpacing.md),
+                // so o icone: dois botoes de largura cheia lado a lado nao
+                // cabem, e "Calcular Rota" e a acao principal aqui
+                Pressionavel(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ChatDetailScreen(
+                          imovelTitulo: imovel.titulo,
+                          imovelId: imovel.id,
+                          donoUid: imovel.donoUid,
                         ),
-                      );
-                    },
+                      ),
+                    );
+                  },
+                  child: Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.white.withAlpha(14) : corPrimaria.withAlpha(14),
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      border: Border.all(
+                        color: isDark ? Colors.white.withAlpha(20) : corPrimaria.withAlpha(34),
+                      ),
+                    ),
+                    child: Icon(Icons.chat_bubble_outline_rounded, color: corPrimaria, size: 22),
                   ),
-                ],
+                ),
               ],
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -610,6 +814,49 @@ class _SeletorDeDestinoState extends State<_SeletorDeDestino> {
                     ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+
+// titulo que so aparece quando a SliverAppBar esta colapsada. Enquanto a foto
+// esta aberta ele ficaria competindo com o titulo grande logo abaixo, entao
+// aparece por fade conforme a barra fecha.
+//
+// Le a fracao de colapso do FlexibleSpaceBarSettings em vez de escutar o
+// ScrollController: e o proprio Sliver que publica esse valor, e assim o
+// widget nao precisa saber nada sobre a rolagem
+class _TituloColapsado extends StatelessWidget {
+  final String titulo;
+  final bool isDark;
+
+  const _TituloColapsado({required this.titulo, required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    final ajustes = context.dependOnInheritedWidgetOfExactType<FlexibleSpaceBarSettings>();
+    double opacidade = 0;
+    if (ajustes != null) {
+      final vao = ajustes.maxExtent - ajustes.minExtent;
+      if (vao > 0) {
+        final fechado = 1 - ((ajustes.currentExtent - ajustes.minExtent) / vao);
+        // so comeca a aparecer depois de 70% fechada, senao os dois titulos
+        // ficam visiveis ao mesmo tempo no meio do caminho
+        opacidade = (((fechado - 0.7) / 0.3)).clamp(0.0, 1.0);
+      }
+    }
+
+    return Opacity(
+      opacity: opacidade,
+      child: Text(
+        titulo,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: AppTextStyles.heading3.copyWith(
+          fontSize: 17,
+          color: isDark ? Colors.white : Colors.black87,
         ),
       ),
     );
