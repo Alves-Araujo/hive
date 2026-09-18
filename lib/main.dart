@@ -448,9 +448,13 @@ class _TelaPrincipalState extends State<TelaPrincipal>
                   stops: const [0, 0.55, 1],
                   colors: isDark
                       ? [
-                          Color.alphaBlend(Colors.white.withAlpha(26), corCardEscuro.withAlpha(246)),
-                          corCardEscuro.withAlpha(242),
-                          Color.alphaBlend(corPrimaria.withAlpha(24), corCardEscuro.withAlpha(246)),
+                          // corSuperficieEscura (#1E1E2A) e nao corCardEscuro
+                          // (#16161F): este ultimo tem luminancia quase igual
+                          // a base nova do mapa escuro (#0f1620), e a barra
+                          // se dissolvia no fundo sem separacao nenhuma
+                          Color.alphaBlend(Colors.white.withAlpha(30), corSuperficieEscura.withAlpha(248)),
+                          corSuperficieEscura.withAlpha(246),
+                          Color.alphaBlend(corPrimaria.withAlpha(26), corSuperficieEscura.withAlpha(248)),
                         ]
                       : [
                           Colors.white.withAlpha(250),
@@ -463,7 +467,7 @@ class _TelaPrincipalState extends State<TelaPrincipal>
                   // branca solida atravessando o topo da barra. Reduzido pra
                   // so separar a barra do mapa sem desenhar contorno
                   top: BorderSide(
-                    color: isDark ? Colors.white.withAlpha(40) : Colors.white.withAlpha(72),
+                    color: isDark ? Colors.white.withAlpha(58) : Colors.white.withAlpha(72),
                     width: 1,
                   ),
                 ),
@@ -501,8 +505,15 @@ class _TelaPrincipalState extends State<TelaPrincipal>
       int index, IconData icon, IconData activeIcon, String label, bool isDark) {
     final bool isSelected = _indiceAtual == index;
 
-    final Color corAtiva = isDark ? Colors.white : const Color(0xFF14304F);
-    final Color corInativa = isDark ? Colors.white38 : const Color(0xFF8A9691);
+    // no escuro a pilula era BRANCA com icone escuro -- invertia a leitura do
+    // modo claro e perdia a identidade azul do app. Agora usa um azul da
+    // marca claro o bastante pra funcionar sobre fundo escuro, e o icone
+    // segue branco nos dois temas
+    final Color corPilula = isDark ? const Color(0xFF1E5E96) : const Color(0xFF14304F);
+    // o rotulo precisa de um azul mais claro que a pilula pra ser legivel
+    // sobre o fundo escuro da barra
+    final Color corAtiva = isDark ? const Color(0xFF8FBEE8) : const Color(0xFF14304F);
+    final Color corInativa = isDark ? const Color(0xFF6B7A88) : const Color(0xFF8A9691);
 
     return Expanded(
       child: GestureDetector(
@@ -517,12 +528,12 @@ class _TelaPrincipalState extends State<TelaPrincipal>
               width: 58,
               height: 34,
               decoration: BoxDecoration(
-                color: isSelected ? corAtiva : Colors.transparent,
+                color: isSelected ? corPilula : Colors.transparent,
                 borderRadius: BorderRadius.circular(15),
                 boxShadow: isSelected
                     ? [
                         BoxShadow(
-                          color: corAtiva.withAlpha(70),
+                          color: corPilula.withAlpha(70),
                           blurRadius: 14,
                           offset: const Offset(0, 5),
                         ),
@@ -535,7 +546,7 @@ class _TelaPrincipalState extends State<TelaPrincipal>
                   child: Icon(
                     isSelected ? activeIcon : icon,
                     key: ValueKey(isSelected),
-                    color: isSelected ? (isDark ? const Color(0xFF14304F) : Colors.white) : corInativa,
+                    color: isSelected ? Colors.white : corInativa,
                     size: 21,
                   ),
                 ),
@@ -561,7 +572,7 @@ class _TelaPrincipalState extends State<TelaPrincipal>
               width: isSelected ? 4 : 0,
               height: isSelected ? 4 : 0,
               decoration: BoxDecoration(
-                color: corAtiva,
+                color: corPilula,
                 shape: BoxShape.circle,
               ),
             ),

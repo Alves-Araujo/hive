@@ -104,10 +104,12 @@ class GlassCard extends StatelessWidget {
         stops: const [0, 0.30, 0.64, 1],
         colors: isDark
             ? [
-                Colors.white.withAlpha(132),
-                Colors.white.withAlpha(42),
-                Colors.white.withAlpha(22),
-                Colors.white.withAlpha(78),
+                // mesma reducao feita no tema claro: 132 no topo desenhava um
+                // contorno visivel em volta da peca em vez de insinuar luz
+                Colors.white.withAlpha(64),
+                Colors.white.withAlpha(30),
+                Colors.white.withAlpha(18),
+                Colors.white.withAlpha(44),
               ]
             : [
                 // era branco puro aqui e 224 no pe, o que desenhava um
@@ -132,9 +134,12 @@ class GlassCard extends StatelessWidget {
           stops: const [0, 0.56, 1],
           colors: isDark
               ? [
-                  Color.alphaBlend(Colors.white.withAlpha(30), corCardEscuro.withAlpha(opacidade)),
-                  corCardEscuro.withAlpha((opacidade * 0.94).round()),
-                  Color.alphaBlend(corPrimaria.withAlpha(30), corCardEscuro.withAlpha(opacidade)),
+                  // no escuro o preenchimento tem que ser ainda mais solido:
+                  // texto claro sobre mapa escuro perde contraste rapido, e
+                  // sem blur nao ha nada suavizando o fundo
+                  Color.alphaBlend(Colors.white.withAlpha(22), corSuperficieEscura.withAlpha(236)),
+                  corSuperficieEscura.withAlpha(232),
+                  Color.alphaBlend(corPrimaria.withAlpha(34), corSuperficieEscura.withAlpha(238)),
                 ]
               : [
                   (corBase ?? Colors.white).withAlpha(opacidade),
@@ -178,7 +183,7 @@ class GlassCard extends StatelessWidget {
                   borderRadius: raio,
                   border: Border(
                     top: BorderSide(
-                      color: isDark ? Colors.black.withAlpha(80) : corPrimaria.withAlpha(30),
+                      color: isDark ? Colors.black.withAlpha(120) : corPrimaria.withAlpha(30),
                       width: 1,
                     ),
                     bottom: BorderSide(
