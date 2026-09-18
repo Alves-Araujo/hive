@@ -68,6 +68,13 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   // "Traçar rota" ate ele (igual o Google Maps, que mostra o botao de rotas
   // no card do local depois que voce seleciona um ponto da busca)
   SugestaoBusca? _localSelecionado;
+
+  // true enquanto o campo de busca deve ser editavel. Precisa ser estado
+  // proprio e nao derivar de _buscaFocusNode.hasFocus: quando o rotulo esta
+  // em tela o TextField nao existe na arvore, entao o FocusNode nao esta
+  // anexado a nada e requestFocus() nao tem onde aplicar -- o toque no rotulo
+  // nao devolvia a edicao
+  bool _editandoBusca = false;
   bool _buscandoOrigemRota = false;
 
   List<Imovel> _imoveisDoBanco = [];
@@ -213,7 +220,12 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       });
     });
 
-    _buscaFocusNode.addListener(() => setState(() {}));
+    _buscaFocusNode.addListener(() {
+      setState(() {
+        // perdeu o foco: volta pro rotulo com reticencias
+        if (!_buscaFocusNode.hasFocus) _editandoBusca = false;
+      });
+    });
   }
 
   // pede permissao de localizacao e centraliza o mapa no gps
@@ -325,6 +337,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   // enquadra a camera no que foi desenhado
   void _selecionarSugestao(SugestaoBusca sugestao) {
     _buscaController.text = sugestao.texto;
+    _editandoBusca = false;
     _buscaFocusNode.unfocus();
     setState(() {
       _sugestoes = [];
@@ -816,6 +829,42 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   // de vidro da busca (igual a referencia). Sem GlassCard proprio de
   // proposito: vidro dentro de vidro aplicaria o BackdropFilter duas vezes --
   // dobra o custo e o resultado sai turvo
+  // rotulo que substitui o campo quando ha local escolhido e nada em foco.
+  // Toca pra voltar a editar -- o TextField reaparece com o nome completo,
+  // que continua guardado no controller
+  Widget _rotuloLocalNaBusca(bool isDark) {
+    return GestureDetector(
+      onTap: () {
+        setState(() => _editandoBusca = true);
+        // o foco so pode ser pedido depois que o TextField entrar na arvore
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _buscaFocusNode.requestFocus(),
+        );
+      },
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md + 2),
+        child: Row(
+          children: [
+            Icon(Icons.search_rounded, color: isDark ? Colors.white54 : const Color(0xFF7C8985), size: 20),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Text(
+                _buscaController.text,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: isDark ? Colors.white : Colors.black87,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _ajustesDentroDaBusca(bool isDark) {
     final Color corIcone = isDark ? Colors.white : const Color(0xFF14304F);
 
@@ -1556,7 +1605,22 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                           child: Row(
                             children: [
                               Expanded(
-                                child: TextField(
+                                // com local escolhido e o campo sem foco,
+                                // mostra um rotulo com reticencias em vez do
+                                // TextField. Motivo: TextField nao tem
+                                // overflow -- texto que nao cabe ele corta
+                                // seco, e "Inatel - Instituto Nacional de
+                                // Telecomunicacoes" virava "Inatel - Instituto
+                                // Nac", parecendo que o nome era aquilo.
+                                //
+                                // Truncar a string do controller NAO serve:
+                                // _atualizarMarcadoresFiltrados filtra os
+                                // imoveis com contains() nesse mesmo texto, e
+                                // com "..." no fim nenhum casaria -- os
+                                // markers todos desapareceriam do mapa
+                                child: (_localSelecionado != null && !_editandoBusca)
+                                    ? _rotuloLocalNaBusca(isDark)
+                                    : TextField(
                             controller: _buscaController,
                             focusNode: _buscaFocusNode,
                             // centraliza o texto na vertical. Sem isso o
