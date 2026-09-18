@@ -1,3 +1,4 @@
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -17,6 +18,20 @@ import 'services/rota_service.dart';
 
 // controle do tema do app inteiro
 final ValueNotifier<ThemeMode> temaGlobal = ValueNotifier(ThemeMode.system);
+
+// true enquanto o usuario arrasta ou da zoom no mapa.
+//
+// NAO REMOVA. Isso existe por um motivo medido, nao por estilo: cada
+// superficie de vidro e um BackdropFilter, que le e desfoca o fundo a cada
+// frame, e o GoogleMap do Android e platform view (ainda mais caro). Com as
+// superficies desfocando sem parar, o arraste do mapa foi a 25% de frames com
+// jank, p90 de 36ms contra o orcamento de 16,7ms a 60fps, num aparelho de 2018.
+//
+// O GlassCard e a barra inferior escutam isso e soltam o blur durante o
+// movimento, devolvendo na parada -- da vidro real na tela parada E arraste
+// liso. Tirar esse guard faz o mapa travar na hora. Alimentado por
+// onCameraMoveStarted/onCameraIdle no map_screen.
+final ValueNotifier<bool> mapaEmMovimentoGlobal = ValueNotifier(false);
 
 // posicao do inatel, usada como centro padrao do mapa e destino da rota --
 // coordenada conferida na base do OpenStreetMap (o valor antigo era uma
@@ -124,6 +139,100 @@ class AppTextStyles {
     letterSpacing: 0.3,
     height: 1.3,
   );
+}
+
+// escala de espacamento -- o app espalhava 6/8/12/14/16/20/24 quase na sorte,
+// e espacamento irregular e o que mais faz um layout parecer improvisado
+class AppSpacing {
+  static const double xs = 4;
+  static const double sm = 8;
+  static const double md = 12;
+  static const double lg = 16;
+  static const double xl = 20;
+  static const double xxl = 24;
+  static const double xxxl = 32;
+}
+
+// raios padronizados -- antes tinha 10, 12, 14, 16, 18, 20 e 24 misturados
+// sem criterio, o que faz os cantos parecerem inconsistentes de perto
+class AppRadius {
+  static const double sm = 12;
+  static const double md = 16;
+  static const double lg = 20;
+  static const double xl = 28;
+  static const double pill = 999;
+}
+
+// sombras em CAMADAS: uma curta e fechada pro contato com a superficie, mais
+// uma longa e difusa pra sensacao de altura. O app usava uma sombra unica em
+// tudo, e e justamente isso que achata os elementos e da a cara de "forma
+// simples" -- objeto real projeta as duas ao mesmo tempo
+class AppShadows {
+  // repousando na superficie (chips, campos, botoes pequenos)
+  static List<BoxShadow> nivel1(bool isDark) => [
+        BoxShadow(
+          color: Colors.black.withAlpha(isDark ? 70 : 10),
+          blurRadius: 2,
+          offset: const Offset(0, 1),
+        ),
+        BoxShadow(
+          color: Colors.black.withAlpha(isDark ? 50 : 12),
+          blurRadius: 8,
+          offset: const Offset(0, 3),
+        ),
+      ];
+
+  // flutuando (cards, paineis, barra de busca)
+  static List<BoxShadow> nivel2(bool isDark) => [
+        BoxShadow(
+          color: Colors.black.withAlpha(isDark ? 80 : 12),
+          blurRadius: 3,
+          offset: const Offset(0, 1),
+        ),
+        BoxShadow(
+          color: Colors.black.withAlpha(isDark ? 60 : 16),
+          blurRadius: 20,
+          offset: const Offset(0, 8),
+        ),
+      ];
+
+  // acima de tudo (folhas, dialogos, FAB ativo)
+  static List<BoxShadow> nivel3(bool isDark) => [
+        BoxShadow(
+          color: Colors.black.withAlpha(isDark ? 90 : 14),
+          blurRadius: 4,
+          offset: const Offset(0, 2),
+        ),
+        BoxShadow(
+          color: Colors.black.withAlpha(isDark ? 70 : 22),
+          blurRadius: 36,
+          offset: const Offset(0, 16),
+        ),
+      ];
+
+  // brilho colorido pra elemento com gradiente da marca -- sombra preta em
+  // cima de gradiente azul suja a cor; a sombra tingida mantem viva
+  static List<BoxShadow> marca({double forca = 1}) => [
+        BoxShadow(
+          color: corPrimaria.withAlpha((70 * forca).round()),
+          blurRadius: 20,
+          offset: const Offset(0, 8),
+        ),
+      ];
+}
+
+// tempos e curvas unicos pro app -- movimento com duracao diferente em cada
+// tela parece defeito; padronizado parece intencional
+class AppMotion {
+  static const Duration rapida = Duration(milliseconds: 150);
+  static const Duration media = Duration(milliseconds: 260);
+  static const Duration lenta = Duration(milliseconds: 420);
+
+  static const Curve suave = Curves.easeOutCubic;
+  static const Curve saida = Curves.easeInCubic;
+  // leve overshoot -- usar so em entrada de elemento, nunca em cor/tamanho
+  // de algo que o dedo esta tocando (da sensacao de imprecisao)
+  static const Curve entrada = Curves.easeOutBack;
 }
 
 // inicializa o firebase antes de rodar o app
@@ -297,86 +406,163 @@ class _TelaPrincipalState extends State<TelaPrincipal>
           children: _telas,
         ),
       ),
-      bottomNavigationBar: Container(
+      // sombra pra CIMA (offset negativo) fica no DecoratedBox de fora, porque
+      // o ClipRect de dentro cortaria ela -- e sem essa sombra a barra de
+      // vidro cola no conteudo e perde a leitura de estar por cima
+      // isola a camada da barra tambem -- ela nao muda durante o arraste
+      bottomNavigationBar: RepaintBoundary(
+        child: DecoratedBox(
         decoration: BoxDecoration(
-          color: isDark ? corCardEscuro : Colors.white,
-          border: Border(
-            top: BorderSide(
-              color: isDark ? Colors.white.withAlpha(8) : Colors.black.withAlpha(6),
-              width: 1,
-            ),
-          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withAlpha(isDark ? 50 : 8),
-              blurRadius: 20,
-              offset: const Offset(0, -4),
+              color: Colors.black.withAlpha(isDark ? 60 : 14),
+              blurRadius: 24,
+              offset: const Offset(0, -6),
             ),
           ],
         ),
-        child: SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                for (var i = 0; i < _itensNav.length; i++)
-                  _buildNavItem(i, _itensNav[i].icon, _itensNav[i].activeIcon, _itensNav[i].label, isDark),
-              ],
+        // vidro tambem aqui: sobre o mapa a barra deixa de ser uma tampa
+        // branca e passa a parecer apoiada em cima do conteudo. O blur e o
+        // que mantem o texto legivel mesmo com o mapa aparecendo por tras
+        // cantos de cima arredondados, igual a referencia -- e o que faz a
+        // barra ler como painel apoiado sobre o mapa, nao como rodape colado
+        child: ClipRRect(
+          // 24 em vez de 28: menos redondo, como pedido, sem ficar quadrado
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          // a barra vive sobre o mapa, entao o blur dela pesa no arraste igual
+          // o dos cards -- solta junto (ver mapaEmMovimentoGlobal)
+          child: ValueListenableBuilder<bool>(
+            valueListenable: mapaEmMovimentoGlobal,
+            builder: (_, emMovimento, filho) => emMovimento
+                ? filho!
+                : BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+                    child: filho,
+                  ),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                // mesmo vidro liquido dos cards: preenchimento fraco, fio de
+                // azul no pe, e a quina de cima pegando luz forte
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  stops: const [0, 0.55, 1],
+                  colors: isDark
+                      ? [
+                          Colors.white.withAlpha(30),
+                          Colors.black.withAlpha(62),
+                          Color.alphaBlend(corPrimaria.withAlpha(42), Colors.black.withAlpha(68)),
+                        ]
+                      : [
+                          Colors.white.withAlpha(150),
+                          Colors.white.withAlpha(128),
+                          Color.alphaBlend(corPrimaria.withAlpha(34), Colors.white.withAlpha(138)),
+                        ],
+                ),
+                border: Border(
+                  top: BorderSide(
+                    color: isDark ? Colors.white.withAlpha(52) : Colors.white.withAlpha(252),
+                    width: 1.4,
+                  ),
+                ),
+              ),
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.only(
+                    left: AppSpacing.sm,
+                    right: AppSpacing.sm,
+                    top: AppSpacing.md,
+                    bottom: AppSpacing.sm,
+                  ),
+                  child: Row(
+                    children: [
+                      for (var i = 0; i < _itensNav.length; i++)
+                        _buildNavItemEmpilhado(
+                            i, _itensNav[i].icon, _itensNav[i].activeIcon, _itensNav[i].label, isDark),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         ),
       ),
+      ),
     );
   }
 
-  Widget _buildNavItem(int index, IconData icon, IconData activeIcon, String label, bool isDark) {
+  // item no padrao da referencia: pilula escura SO atras do icone, e o rotulo
+  // sempre visivel embaixo. Manter o rotulo em todas as abas (e nao so na
+  // ativa) e o que deixa a barra legivel de primeira -- icone sozinho obriga
+  // o usuario a adivinhar, e era isso que a barra antiga fazia
+  Widget _buildNavItemEmpilhado(
+      int index, IconData icon, IconData activeIcon, String label, bool isDark) {
     final bool isSelected = _indiceAtual == index;
 
-    return GestureDetector(
-      onTap: () => setState(() => _indiceAtual = index),
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOutCubic,
-        padding: EdgeInsets.symmetric(
-          horizontal: isSelected ? 20 : 16,
-          vertical: 8,
-        ),
-        decoration: BoxDecoration(
-          color: isSelected ? corPrimaria.withAlpha(18) : Colors.transparent,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
+    final Color corAtiva = isDark ? Colors.white : const Color(0xFF14304F);
+    final Color corInativa = isDark ? Colors.white38 : const Color(0xFF8A9691);
+
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _indiceAtual = index),
+        behavior: HitTestBehavior.opaque,
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              child: Icon(
-                isSelected ? activeIcon : icon,
-                key: ValueKey(isSelected),
-                color: isSelected ? corPrimaria : (isDark ? Colors.white54 : Colors.grey),
-                size: 24,
+            AnimatedContainer(
+              duration: AppMotion.media,
+              curve: AppMotion.suave,
+              width: 58,
+              height: 34,
+              decoration: BoxDecoration(
+                color: isSelected ? corAtiva : Colors.transparent,
+                borderRadius: BorderRadius.circular(15),
+                boxShadow: isSelected
+                    ? [
+                        BoxShadow(
+                          color: corAtiva.withAlpha(70),
+                          blurRadius: 14,
+                          offset: const Offset(0, 5),
+                        ),
+                      ]
+                    : null,
               ),
-            ),
-            AnimatedSize(
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeOutCubic,
-              child: isSelected
-                  ? Padding(
-                padding: const EdgeInsets.only(left: 8),
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    color: corPrimaria,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                    letterSpacing: 0.2,
+              child: Center(
+                child: AnimatedSwitcher(
+                  duration: AppMotion.rapida,
+                  child: Icon(
+                    isSelected ? activeIcon : icon,
+                    key: ValueKey(isSelected),
+                    color: isSelected ? (isDark ? const Color(0xFF14304F) : Colors.white) : corInativa,
+                    size: 21,
                   ),
                 ),
-              )
-                  : const SizedBox.shrink(),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs + 2),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTextStyles.label.copyWith(
+                fontSize: 11.5,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                color: isSelected ? corAtiva : corInativa,
+              ),
+            ),
+            // pontinho embaixo do rotulo ativo, igual a referencia -- marca a
+            // aba atual sem precisar engordar a pilula
+            const SizedBox(height: AppSpacing.xs),
+            AnimatedContainer(
+              duration: AppMotion.media,
+              curve: AppMotion.suave,
+              width: isSelected ? 4 : 0,
+              height: isSelected ? 4 : 0,
+              decoration: BoxDecoration(
+                color: corAtiva,
+                shape: BoxShape.circle,
+              ),
             ),
           ],
         ),

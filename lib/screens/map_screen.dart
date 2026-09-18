@@ -21,6 +21,8 @@ import '../services/usuario_service.dart';
 import '../utils/localizacao.dart';
 import '../utils/moderacao.dart';
 import '../widgets/avatar_widget.dart';
+import '../widgets/glass_card.dart';
+import '../widgets/pressionavel.dart';
 import '../widgets/animated_gradient_button.dart';
 
 class CentroDoMapa extends StatefulWidget {
@@ -616,15 +618,10 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       TipoSugestao.endereco => Icons.signpost_outlined,
     };
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 8, 14),
-      decoration: BoxDecoration(
-        color: isDark ? corCardEscuro : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withAlpha(isDark ? 60 : 15), blurRadius: 16, offset: const Offset(0, 6)),
-        ],
-      ),
+    return GlassCard(
+      radius: 24,
+      sombra: AppShadows.nivel3(isDark),
+      padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.sm, AppSpacing.lg - 2),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -813,27 +810,78 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   // chip fixo na barra superior -- so navega a camera ate a cidade parceira
   // escolhida, nunca oculta/filtra imovel nenhum (isso e trabalho do filtro
   // de cidade que fica dentro da folha de Filtros, uma funcao separada)
-  Widget _buildSeletorCidadeGlobal(bool isDark) {
-    return GestureDetector(
-      onTap: _abrirSeletorCidadeGlobal,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: isDark ? corCardEscuro : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: isDark ? Colors.white.withAlpha(15) : Colors.grey.withAlpha(40)),
+  // filtros + configuracoes, com divisor vertical, vivendo DENTRO do painel
+  // de vidro da busca (igual a referencia). Sem GlassCard proprio de
+  // proposito: vidro dentro de vidro aplicaria o BackdropFilter duas vezes --
+  // dobra o custo e o resultado sai turvo
+  Widget _ajustesDentroDaBusca(bool isDark) {
+    final Color corIcone = isDark ? Colors.white : const Color(0xFF14304F);
+
+    Widget botao({required Widget icone, required VoidCallback onTap}) {
+      return Pressionavel(
+        onTap: onTap,
+        child: SizedBox(width: 42, height: 44, child: Center(child: icone)),
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // divisor que some nas pontas -- linha de ponta a ponta brigaria com
+        // a borda refratada do vidro
+        Container(
+          width: 1,
+          height: 22,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                corIcone.withAlpha(0),
+                corIcone.withAlpha(isDark ? 60 : 50),
+                corIcone.withAlpha(0),
+              ],
+            ),
+          ),
         ),
+        botao(
+          onTap: _mostrarFiltros,
+          icone: Badge(
+            isLabelVisible: _filtroState.temFiltrosAtivos,
+            smallSize: 7,
+            backgroundColor: corPrimaria,
+            child: Icon(Icons.tune_rounded, color: corIcone, size: 21),
+          ),
+        ),
+        botao(
+          onTap: _mostrarConfiguracoes,
+          icone: Icon(Icons.settings_rounded, color: corIcone, size: 21),
+        ),
+        const SizedBox(width: AppSpacing.xs),
+      ],
+    );
+  }
+
+  // ignore: unused_element
+  Widget _buildSeletorCidadeGlobal(bool isDark) {
+    return Pressionavel(
+      onTap: _abrirSeletorCidadeGlobal,
+      child: GlassCard(
+        radius: 20,
+        sombra: AppShadows.nivel1(isDark),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm + 1),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.explore_outlined, size: 15, color: isDark ? Colors.white54 : Colors.grey),
-            const SizedBox(width: 6),
+            Icon(Icons.explore_outlined, size: 16, color: isDark ? Colors.white54 : corPrimaria.withAlpha(180)),
+            const SizedBox(width: AppSpacing.sm - 2),
             Text(
               'Cidades parceiras',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: isDark ? Colors.white70 : Colors.black87),
+              style: AppTextStyles.captionBold.copyWith(
+                fontSize: 12,
+                color: isDark ? Colors.white70 : Colors.black87,
+              ),
             ),
-            const SizedBox(width: 4),
-            Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: isDark ? Colors.white54 : Colors.grey),
           ],
         ),
       ),
@@ -1371,59 +1419,64 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     );
   }
 
+  // avatar com anel de estado, igual a referencia. O anel comunica perfil
+  // completo (verde) ou pendente (ambar) de longe, sem texto -- antes isso era
+  // so um pontinho vermelho de 10px, facil de nao ver
   Widget _buildGlassButton({
     required Widget child,
     required VoidCallback onTap,
     Color? badgeColor,
   }) {
-    bool isDark = Theme.of(context).brightness == Brightness.dark;
-    return GestureDetector(
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final bool pendente = badgeColor != null;
+    final Color corAnel = pendente ? corAtencao : corSucesso;
+
+    return Pressionavel(
       onTap: onTap,
-      child: Stack(
-        children: [
-          Container(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: isDark ? Colors.black.withAlpha(50) : corPrimaria.withAlpha(20),
-                  blurRadius: 16,
-                  offset: const Offset(0, 4),
-                ),
-              ],
+      child: SizedBox(
+        width: 48,
+        height: 48,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // 44 com raio 22 = circulo, entao reusa a mesma primitiva de vidro
+            // dos cards em vez de manter um caminho proprio
+            GlassCard(
+              radius: 22,
+              espessura: 1.2,
+              // peca pequena nao paga uma camada de blur inteira: rim +
+              // especular ja leem como vidro em 44px (ver glass_card.dart)
+              comBlur: false,
+              child: SizedBox(width: 44, height: 44, child: Center(child: child)),
             ),
-            child: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: isDark ? corCardEscuro : Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: isDark ? Colors.white.withAlpha(12) : Colors.white,
-                  width: 2,
-                ),
-              ),
-              child: Center(child: child),
-            ),
-          ),
-          if (badgeColor != null)
-            Positioned(
-              right: 2,
-              top: 2,
+            // anel por cima, sem preenchimento
+            IgnorePointer(
               child: Container(
-                width: 10,
-                height: 10,
+                width: 46,
+                height: 46,
                 decoration: BoxDecoration(
-                  color: badgeColor,
                   shape: BoxShape.circle,
-                  border: Border.all(color: isDark ? corCardEscuro : Colors.white, width: 2),
+                  border: Border.all(color: corAnel.withAlpha(215), width: 2),
                 ),
               ),
             ),
-        ],
+            // UM ponto só (perfil pendente/completo).
+            Positioned(top: 1, right: 2, child: _pontoAnel(corAnel, isDark)),
+          ],
+        ),
       ),
     );
   }
+
+  Widget _pontoAnel(Color cor, bool isDark) => Container(
+        width: 11,
+        height: 11,
+        decoration: BoxDecoration(
+          color: cor,
+          shape: BoxShape.circle,
+          border: Border.all(color: isDark ? corCardEscuro : Colors.white, width: 2),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -1440,6 +1493,11 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       children: [
         GoogleMap(
           onMapCreated: _onMapCreated,
+          // avisa as superficies de vidro pra soltarem o BackdropFilter
+          // durante o movimento. NAO REMOVA -- ver mapaEmMovimentoGlobal em
+          // main.dart; sem isso o arraste vai a 25% de frames com jank
+          onCameraMoveStarted: () => mapaEmMovimentoGlobal.value = true,
+          onCameraIdle: () => mapaEmMovimentoGlobal.value = false,
           initialCameraPosition: CameraPosition(target: posicaoInatel, zoom: 15.0),
           myLocationEnabled: true,
           myLocationButtonEnabled: false,
@@ -1462,6 +1520,10 @@ class _CentroDoMapaState extends State<CentroDoMapa>
             opacity: _fadeAnim,
             child: SlideTransition(
               position: _slideAnim,
+              // isola a camada: o painel de cima nao muda enquanto o mapa
+              // arrasta, entao sem RepaintBoundary o Flutter pode redesenhar
+              // rim/especular/sombra a cada frame do arraste de graca
+              child: RepaintBoundary(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -1475,23 +1537,16 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                       const SizedBox(width: 10),
 
                       Expanded(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: isDark ? corCardEscuro : Colors.white,
-                            borderRadius: BorderRadius.circular(30),
-                            border: Border.all(
-                              color: isDark ? Colors.white.withAlpha(12) : Colors.white,
-                              width: 2,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: isDark ? Colors.black.withAlpha(50) : corPrimaria.withAlpha(20),
-                                blurRadius: 16,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: TextField(
+                        child: GlassCard(
+                          // era pilula; 22 deixa menos redondo sem virar caixa
+                          radius: 22,
+                          // UM painel de vidro so, com a busca e os controles
+                          // dentro (igual a referencia) -- antes eram duas
+                          // pecas separadas flutuando lado a lado
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
                             controller: _buscaController,
                             focusNode: _buscaFocusNode,
                             style: TextStyle(
@@ -1505,35 +1560,31 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                                 fontWeight: FontWeight.w500,
                               ),
                               border: InputBorder.none,
-                              prefixIcon: const Icon(Icons.search_rounded, color: corPrimaria, size: 22),
+                              prefixIcon: Icon(Icons.search_rounded, color: isDark ? Colors.white54 : const Color(0xFF7C8985), size: 20),
+                              // o botao de filtros saiu de dentro do campo e
+                              // foi pro controle da direita, junto da
+                              // engrenagem -- so o "limpar" continua aqui,
+                              // porque pertence ao texto digitado
                               suffixIcon: _buscaComTexto
                                   ? IconButton(
-                                icon: const Icon(Icons.close_rounded, color: Colors.grey, size: 20),
-                                onPressed: () => _buscaController.clear(),
-                              )
-                                  : IconButton(
-                                icon: Badge(
-                                  isLabelVisible: _filtroState.temFiltrosAtivos,
-                                  smallSize: 8,
-                                  backgroundColor: corPrimaria,
-                                  child: const Icon(Icons.tune_rounded, color: corPrimaria, size: 22),
-                                ),
-                                onPressed: _mostrarFiltros,
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                                      icon: const Icon(Icons.close_rounded, color: Colors.grey, size: 20),
+                                      onPressed: () => _buscaController.clear(),
+                                    )
+                                  : null,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md - 1),
                             ),
+                          ),
+                              ),
+                              _ajustesDentroDaBusca(isDark),
+                            ],
                           ),
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      _buildGlassButton(
-                        child: Icon(Icons.settings_rounded, color: isDark ? Colors.white : Colors.black87, size: 22),
-                        onTap: _mostrarConfiguracoes,
-                      ),
                     ],
                   ),
-                  const SizedBox(height: 10),
-                  _buildSeletorCidadeGlobal(isDark),
+                  // chip de "Cidades parceiras" retirado da UI a pedido
+                  // (feature parada por enquanto). Os metodos continuam
+                  // abaixo, marcados como nao usados -- e so religar aqui
 
                   if (_sugestoes.isNotEmpty && _buscaFocusNode.hasFocus)
                     Container(
@@ -1575,6 +1626,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                     ),
                 ],
               ),
+              ),
             ),
           ),
         ),
@@ -1586,15 +1638,14 @@ class _CentroDoMapaState extends State<CentroDoMapa>
             top: topOffset + 68,
             left: 16,
             right: 16,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                color: isDark ? corCardEscuro : Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(color: Colors.black.withAlpha(isDark ? 60 : 15), blurRadius: 16, offset: const Offset(0, 6)),
-                ],
-              ),
+            child: _EntradaDeslizante(
+              // desce de cima porque o card nasce colado no topo -- entrada na
+              // direcao de onde o elemento "vem" explica a origem dele
+              de: const Offset(0, -0.18),
+              child: GlassCard(
+              radius: 24,
+              sombra: AppShadows.nivel3(isDark),
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.lg - 2),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1657,15 +1708,20 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                 ],
               ),
             ),
+            ),
           ),
 
         // card do local buscado + botao de tracar rota ate ele
         if (_mostrandoCardLocal)
           Positioned(
-            bottom: 20,
-            left: 16,
-            right: 16,
-            child: _cardLocalBuscado(isDark),
+            bottom: AppSpacing.xl,
+            left: AppSpacing.lg,
+            right: AppSpacing.lg,
+            // sobe de baixo, porque e na base que ele mora
+            child: _EntradaDeslizante(
+              de: const Offset(0, 0.22),
+              child: _cardLocalBuscado(isDark),
+            ),
           ),
 
         // botao pra focar na localizacao do usuario
@@ -1674,12 +1730,23 @@ class _CentroDoMapaState extends State<CentroDoMapa>
           // card do local buscado estiver ocupando a base da tela
           bottom: alturaCardLocal + (podeAnunciar ? 84 : 20),
           right: 16,
-          child: FloatingActionButton(
-            heroTag: 'btnLocation',
-            mini: true,
-            backgroundColor: isDark ? corCardEscuro : Colors.white,
-            onPressed: _obterLocalizacaoReal,
-            child: Icon(Icons.my_location_rounded, color: isDark ? Colors.white : Colors.black87),
+          // era um FloatingActionButton solido -- virou vidro pra combinar com
+          // as outras superficies flutuantes do mapa, e ganhou o retorno de
+          // toque que o FAB do Material ja tinha e a gente perderia sem isso
+          child: Pressionavel(
+            onTap: _obterLocalizacaoReal,
+            child: GlassCard(
+              radius: 20,
+              sombra: AppShadows.nivel2(isDark),
+              comBlur: false, // idem: FAB pequeno nao justifica blur proprio
+              child: SizedBox(
+                width: 52,
+                height: 52,
+                child: Center(
+                  child: Icon(Icons.my_location_rounded, color: isDark ? Colors.white : Colors.black87, size: 24),
+                ),
+              ),
+            ),
           ),
         ),
 
@@ -1828,6 +1895,55 @@ class _PerfilPreview extends StatelessWidget {
             label: const Text('Sair da conta', style: TextStyle(color: corErro, fontWeight: FontWeight.w600)),
           ),
         ],
+      ),
+    );
+  }
+}
+// entrada de elemento flutuante: desliza da direcao de onde ele "vem" e
+// aparece por fade ao mesmo tempo. Elemento que simplesmente pisca na tela
+// nao explica de onde surgiu -- o deslize curto (uma fracao da altura) da
+// essa leitura sem atrasar a interface.
+//
+// StatefulWidget e nao AnimatedOpacity solto porque precisa disparar uma vez
+// na montagem; como os cards do mapa sao inseridos/removidos por `if` no
+// Stack, cada aparicao monta um novo e roda a animacao de novo.
+class _EntradaDeslizante extends StatefulWidget {
+  final Widget child;
+  final Offset de;
+
+  const _EntradaDeslizante({required this.child, required this.de});
+
+  @override
+  State<_EntradaDeslizante> createState() => _EntradaDeslizanteState();
+}
+
+class _EntradaDeslizanteState extends State<_EntradaDeslizante>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: AppMotion.media,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final curva = CurvedAnimation(parent: _controller, curve: AppMotion.suave);
+    return FadeTransition(
+      opacity: curva,
+      child: SlideTransition(
+        position: Tween<Offset>(begin: widget.de, end: Offset.zero).animate(curva),
+        child: widget.child,
       ),
     );
   }

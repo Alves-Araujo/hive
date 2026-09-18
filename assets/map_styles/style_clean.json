@@ -32,5 +32,36 @@
     "featureType": "transit",
     "elementType": "labels.icon",
     "stylers": [{ "visibility": "simplified" }]
+  },
+  {
+    "featureType": "administrative.land_parcel",
+    "stylers": [{ "visibility": "off" }]
+  },
+
+  {
+    "featureType": "water",
+    "elementType": "geometry",
+    "stylers": [{ "color": "#1c4e7a" }]
+  },
+  {
+    "featureType": "water",
+    "elementType": "labels.text.fill",
+    "stylers": [{ "color": "#a8c6de" }]
+  },
+  {
+    "featureType": "water",
+    "elementType": "labels.text.stroke",
+    "stylers": [{ "visibility": "off" }]
+  },
+
+  {
+    "featureType": "transit.line",
+    "elementType": "geometry",
+    "stylers": [{ "color": "#c3ced8" }]
+  },
+  {
+    "featureType": "administrative.locality",
+    "elementType": "labels.text.fill",
+    "stylers": [{ "color": "#254257" }]
   }
 ]
