@@ -1486,6 +1486,12 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     // usada pra levantar o FAB de localizacao e o botao de anunciar
     final double alturaCardLocal = _mostrandoCardLocal ? 152 : 0;
 
+    // com extendBody: true o body vai ate a base da TELA, entao qualquer
+    // `bottom:` daqui passa a medir do fim da tela e nao do topo da barra de
+    // navegacao. Sem somar isso, FAB, botao de anunciar e card do local ficam
+    // escondidos atras da barra
+    final double acimaDaBarra = alturaBarraNav + MediaQuery.of(context).padding.bottom;
+
     return Stack(
       children: [
         GoogleMap(
@@ -1493,6 +1499,12 @@ class _CentroDoMapaState extends State<CentroDoMapa>
           initialCameraPosition: CameraPosition(target: posicaoInatel, zoom: 15.0),
           myLocationEnabled: true,
           myLocationButtonEnabled: false,
+          // com extendBody o mapa passa por baixo da barra; esse padding
+          // empurra o logo do Google e a atribuicao pra cima dela, o que a
+          // licenca de uso da API exige que fiquem visiveis.
+          // Soma o card do local quando ele esta aberto, senao ele cobre o
+          // logo -- o padding tem que acompanhar TUDO que flutua na base
+          padding: EdgeInsets.only(bottom: acimaDaBarra + alturaCardLocal),
           zoomControlsEnabled: false,
           markers: {
             ..._marcadores,
@@ -1712,7 +1724,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
         // card do local buscado + botao de tracar rota ate ele
         if (_mostrandoCardLocal)
           Positioned(
-            bottom: AppSpacing.xl,
+            bottom: acimaDaBarra + AppSpacing.md,
             left: AppSpacing.lg,
             right: AppSpacing.lg,
             // sobe de baixo, porque e na base que ele mora
@@ -1726,7 +1738,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
         Positioned(
           // sobe se o botao de anunciar estiver visivel, e mais ainda se o
           // card do local buscado estiver ocupando a base da tela
-          bottom: alturaCardLocal + (podeAnunciar ? 84 : 20),
+          bottom: acimaDaBarra + alturaCardLocal + (podeAnunciar ? 84 : AppSpacing.md),
           right: 16,
           // era um FloatingActionButton solido -- virou vidro pra combinar com
           // as outras superficies flutuantes do mapa, e ganhou o retorno de
@@ -1749,7 +1761,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
 
         if (podeAnunciar)
           Positioned(
-            bottom: alturaCardLocal + 20,
+            bottom: acimaDaBarra + alturaCardLocal + AppSpacing.md,
             right: 16,
             child: Container(
               decoration: BoxDecoration(

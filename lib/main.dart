@@ -127,6 +127,13 @@ class AppTextStyles {
   );
 }
 
+// altura util da barra de navegacao inferior, SEM contar a area segura do
+// aparelho. Existe como constante porque duas telas dependem dela: a barra
+// se desenha com essa altura, e o mapa usa o mesmo valor como padding de
+// rodape pra nao esconder o logo do Google atras dela (exigencia de uso da
+// API). Mudar a barra sem mudar aqui esconde a atribuicao
+const double alturaBarraNav = 84;
+
 // escala de espacamento -- o app espalhava 6/8/12/14/16/20/24 quase na sorte,
 // e espacamento irregular e o que mais faz um layout parecer improvisado
 class AppSpacing {
@@ -384,6 +391,13 @@ class _TelaPrincipalState extends State<TelaPrincipal>
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
+      // deixa o body passar POR BAIXO da barra inferior. Sem isso a barra
+      // ocupa um slot proprio abaixo do body, e atras dos cantos arredondados
+      // dela aparecia o backgroundColor do Scaffold em vez do mapa -- dava a
+      // leitura de "forma redonda dentro de um quadrado" branco.
+      // O mapa compensa com padding no rodape (ver alturaBarraNav) pra o logo
+      // do Google e a atribuicao nao ficarem escondidos atras da barra
+      extendBody: true,
       body: AnimatedSwitcher(
         duration: const Duration(milliseconds: 250),
         child: IndexedStack(
@@ -399,17 +413,19 @@ class _TelaPrincipalState extends State<TelaPrincipal>
       bottomNavigationBar: RepaintBoundary(
         child: DecoratedBox(
         decoration: BoxDecoration(
+          // o raio TAMBEM aqui, nao so no ClipRRect: sem ele a sombra e
+          // lancada de um retangulo e aparece como um canto quadrado atras da
+          // quina arredondada, que era metade do efeito de "redondo dentro de
+          // quadrado". Sombra tem que seguir a forma da peca
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withAlpha(isDark ? 60 : 14),
+              color: Colors.black.withAlpha(isDark ? 60 : 20),
               blurRadius: 24,
               offset: const Offset(0, -6),
             ),
           ],
         ),
-        // vidro tambem aqui: sobre o mapa a barra deixa de ser uma tampa
-        // branca e passa a parecer apoiada em cima do conteudo. O blur e o
-        // que mantem o texto legivel mesmo com o mapa aparecendo por tras
         // cantos de cima arredondados, igual a referencia -- e o que faz a
         // barra ler como painel apoiado sobre o mapa, nao como rodape colado
         child: ClipRRect(
