@@ -53,11 +53,15 @@ class GlassCard extends StatelessWidget {
   final List<BoxShadow>? sombra;
 
   // corpo do preenchimento (0-255). Sem blur, abaixo de ~150 o mapa atras
-  // comeca a competir com o texto
+  // comeca a competir com o texto -- por isso fica alto
   final int opacidade;
 
   // "grossura" do vidro na borda refratada
   final double espessura;
+
+  // cor base do preenchimento. null = branco (claro) / corCardEscuro (escuro).
+  // O card de rota usa um azul escuro pra combinar com a paleta do mapa
+  final Color? corBase;
 
   const GlassCard({
     super.key,
@@ -66,8 +70,9 @@ class GlassCard extends StatelessWidget {
     this.padding,
     this.margin,
     this.sombra,
-    this.opacidade = 176,
+    this.opacidade = 212,
     this.espessura = 1.4,
+    this.corBase,
   });
 
   @override
@@ -105,10 +110,13 @@ class GlassCard extends StatelessWidget {
                 Colors.white.withAlpha(78),
               ]
             : [
-                Colors.white,
-                Colors.white.withAlpha(150),
-                Colors.white.withAlpha(96),
-                Colors.white.withAlpha(224),
+                // era branco puro aqui e 224 no pe, o que desenhava um
+                // contorno branco visivel em volta da peca. Agora e so uma
+                // insinuacao de quina iluminada
+                Colors.white.withAlpha(118),
+                Colors.white.withAlpha(64),
+                Colors.white.withAlpha(44),
+                Colors.white.withAlpha(86),
               ],
       );
 
@@ -129,11 +137,11 @@ class GlassCard extends StatelessWidget {
                   Color.alphaBlend(corPrimaria.withAlpha(30), corCardEscuro.withAlpha(opacidade)),
                 ]
               : [
-                  Colors.white.withAlpha(opacidade),
-                  Colors.white.withAlpha((opacidade * 0.92).round()),
+                  (corBase ?? Colors.white).withAlpha(opacidade),
+                  (corBase ?? Colors.white).withAlpha((opacidade * 0.92).round()),
                   Color.alphaBlend(
                     corPrimaria.withAlpha(20),
-                    Colors.white.withAlpha((opacidade * 0.96).round()),
+                    (corBase ?? Colors.white).withAlpha((opacidade * 0.96).round()),
                   ),
                 ],
         ),
@@ -174,7 +182,7 @@ class GlassCard extends StatelessWidget {
                       width: 1,
                     ),
                     bottom: BorderSide(
-                      color: Colors.white.withAlpha(isDark ? 40 : 188),
+                      color: Colors.white.withAlpha(isDark ? 40 : 96),
                       width: 1,
                     ),
                   ),

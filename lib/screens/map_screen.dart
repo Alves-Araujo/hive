@@ -618,8 +618,15 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       TipoSugestao.endereco => Icons.signpost_outlined,
     };
 
+    // azul escuro em vez de vidro branco: puxa pra paleta do mapa (a agua e
+    // #1c4e7a) e pra pilula ativa da barra, em vez de ser uma peca branca
+    // solta sobre o mapa claro. Com base escura, texto e icones invertem
+    const Color baseEscura = Color(0xFF14304F);
+
     return GlassCard(
       radius: 24,
+      corBase: baseEscura,
+      opacidade: 236,
       sombra: AppShadows.nivel3(isDark),
       padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.sm, AppSpacing.lg - 2),
       child: Column(
@@ -637,7 +644,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
               Expanded(
                 child: Text(
                   local.texto,
-                  style: TextStyle(fontWeight: FontWeight.w700, color: isDark ? Colors.white : Colors.black87),
+                  style: const TextStyle(fontWeight: FontWeight.w700, color: Colors.white),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -647,7 +654,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                   _buscaController.clear();
                   setState(_limparDestaqueBusca);
                 },
-                icon: Icon(Icons.close_rounded, color: isDark ? Colors.white38 : Colors.grey),
+                icon: Icon(Icons.close_rounded, color: Colors.white.withAlpha(150)),
               ),
             ],
           ),
@@ -1487,10 +1494,14 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     final double alturaCardLocal = _mostrandoCardLocal ? 152 : 0;
 
     // com extendBody: true o body vai ate a base da TELA, entao qualquer
-    // `bottom:` daqui passa a medir do fim da tela e nao do topo da barra de
-    // navegacao. Sem somar isso, FAB, botao de anunciar e card do local ficam
-    // escondidos atras da barra
-    final double acimaDaBarra = alturaBarraNav + MediaQuery.of(context).padding.bottom;
+    // `bottom:` daqui passa a medir do fim da tela e nao do topo da barra.
+    //
+    // Usa o valor REAL em vez de constante: com extendBody o Scaffold soma a
+    // altura da barra ao padding.bottom do MediaQuery do body, justamente pra
+    // o body poder se desviar dela. Chutar essa altura na mao deu errado duas
+    // vezes -- primeiro contando a area segura em dobro, depois medindo a
+    // barra por pixel (o que variou conforme o conteudo do mapa atras)
+    final double acimaDaBarra = MediaQuery.of(context).padding.bottom;
 
     return Stack(
       children: [

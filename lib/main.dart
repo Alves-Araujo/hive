@@ -127,12 +127,6 @@ class AppTextStyles {
   );
 }
 
-// altura util da barra de navegacao inferior, SEM contar a area segura do
-// aparelho. Existe como constante porque duas telas dependem dela: a barra
-// se desenha com essa altura, e o mapa usa o mesmo valor como padding de
-// rodape pra nao esconder o logo do Google atras dela (exigencia de uso da
-// API). Mudar a barra sem mudar aqui esconde a atribuicao
-const double alturaBarraNav = 84;
 
 // escala de espacamento -- o app espalhava 6/8/12/14/16/20/24 quase na sorte,
 // e espacamento irregular e o que mais faz um layout parecer improvisado
@@ -395,8 +389,8 @@ class _TelaPrincipalState extends State<TelaPrincipal>
       // ocupa um slot proprio abaixo do body, e atras dos cantos arredondados
       // dela aparecia o backgroundColor do Scaffold em vez do mapa -- dava a
       // leitura de "forma redonda dentro de um quadrado" branco.
-      // O mapa compensa com padding no rodape (ver alturaBarraNav) pra o logo
-      // do Google e a atribuicao nao ficarem escondidos atras da barra
+      // O mapa compensa com padding no rodape (le a altura real da barra pelo
+      // padding.bottom do MediaQuery) pra o logo do Google nao ficar escondido
       extendBody: true,
       body: AnimatedSwitcher(
         duration: const Duration(milliseconds: 250),
@@ -436,28 +430,31 @@ class _TelaPrincipalState extends State<TelaPrincipal>
           // no glass_card.dart. O vidro aqui e feito de pintura
           child: DecoratedBox(
               decoration: BoxDecoration(
-                // mesmo vidro liquido dos cards: preenchimento fraco, fio de
-                // azul no pe, e a quina de cima pegando luz forte
+                // quase opaca: sem blur, preenchimento fraco deixava os rotulos
+                // do mapa atravessando e colidindo com "Resumo" e "Chat"
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   stops: const [0, 0.55, 1],
                   colors: isDark
                       ? [
-                          Colors.white.withAlpha(30),
-                          Colors.black.withAlpha(62),
-                          Color.alphaBlend(corPrimaria.withAlpha(42), Colors.black.withAlpha(68)),
+                          Color.alphaBlend(Colors.white.withAlpha(26), corCardEscuro.withAlpha(246)),
+                          corCardEscuro.withAlpha(242),
+                          Color.alphaBlend(corPrimaria.withAlpha(24), corCardEscuro.withAlpha(246)),
                         ]
                       : [
-                          Colors.white.withAlpha(150),
-                          Colors.white.withAlpha(128),
-                          Color.alphaBlend(corPrimaria.withAlpha(34), Colors.white.withAlpha(138)),
+                          Colors.white.withAlpha(250),
+                          Colors.white.withAlpha(243),
+                          Color.alphaBlend(corPrimaria.withAlpha(18), Colors.white.withAlpha(246)),
                         ],
                 ),
                 border: Border(
+                  // era alpha 252 com 1.4 de largura, ou seja, uma linha
+                  // branca solida atravessando o topo da barra. Reduzido pra
+                  // so separar a barra do mapa sem desenhar contorno
                   top: BorderSide(
-                    color: isDark ? Colors.white.withAlpha(52) : Colors.white.withAlpha(252),
-                    width: 1.4,
+                    color: isDark ? Colors.white.withAlpha(40) : Colors.white.withAlpha(72),
+                    width: 1,
                   ),
                 ),
               ),
