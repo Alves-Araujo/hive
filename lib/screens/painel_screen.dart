@@ -4,6 +4,7 @@ import '../main.dart';
 import '../models/imovel.dart';
 import '../models/usuario.dart';
 import '../utils/moeda.dart';
+import '../widgets/cabecalho_tela.dart';
 
 // dashboard so pra proprietarios/corretores -- lista os proprios imoveis
 // cadastrados, atualizando ao vivo
@@ -14,31 +15,19 @@ class PainelScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final double topPadding = MediaQuery.of(context).padding.top;
 
     return Column(
       children: [
-        Container(
-          padding: EdgeInsets.only(top: topPadding + 12, left: 20, right: 20, bottom: 16),
-          decoration: BoxDecoration(
-            color: isDark ? corCardEscuro : Colors.white,
-            boxShadow: [
-              BoxShadow(color: Colors.black.withAlpha(isDark ? 30 : 10), blurRadius: 10, offset: const Offset(0, 2)),
-            ],
-          ),
-          child: Row(
-            children: [
-              Text(
-                'Meus Imóveis',
-                style: AppTextStyles.heading2.copyWith(color: isDark ? Colors.white : Colors.black87),
-              ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(gradient: gradientePrincipal, borderRadius: BorderRadius.circular(14)),
-                child: const Icon(Icons.home_rounded, color: Colors.white, size: 22),
-              ),
-            ],
+        CabecalhoTela(
+          titulo: 'Meus Imóveis',
+          acao: Container(
+            padding: const EdgeInsets.all(AppSpacing.sm + 2),
+            decoration: BoxDecoration(
+              gradient: gradientePrincipal,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              boxShadow: AppShadows.marca(forca: 0.4),
+            ),
+            child: const Icon(Icons.home_rounded, color: Colors.white, size: 22),
           ),
         ),
         Expanded(
@@ -100,7 +89,7 @@ class _ItemPainel extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: isDark ? corCardEscuro : Colors.white,
+        color: isDark ? corSuperficieEscura : Colors.white,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: isDark ? Colors.white.withAlpha(8) : Colors.black.withAlpha(6)),
       ),

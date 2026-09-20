@@ -40,7 +40,7 @@ class SeletorTipoUsuario extends StatelessWidget {
                 color: selected
                     ? corPrimaria.withAlpha(isDark ? 30 : 20)
                     : (isDark ? Colors.white.withAlpha(8) : Colors.white.withAlpha(180)),
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(24),
                 border: Border.all(
                   color: selected
                       ? corPrimaria
@@ -56,7 +56,7 @@ class SeletorTipoUsuario extends StatelessWidget {
                       color: selected
                           ? corPrimaria.withAlpha(30)
                           : (isDark ? Colors.white.withAlpha(8) : Colors.grey.withAlpha(15)),
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(99.0),
                     ),
                     child: Icon(
                       tipo['icon'] as IconData,

@@ -10,18 +10,23 @@ import 'concluir_perfil_screen.dart';
 import 'detalhes_imovel_screen.dart';
 import 'novo_anuncio_screen.dart';
 import '../main.dart';
+import '../models/imobiliaria.dart';
 import '../models/imovel.dart';
 import '../models/filtro_state.dart';
 import '../models/usuario.dart';
 import '../services/auth_service.dart';
 import '../services/busca_service.dart';
 import '../services/imobiliaria_service.dart';
+import '../services/localizacao_service.dart';
 import '../services/rota_service.dart';
 import '../services/usuario_service.dart';
-import '../utils/localizacao.dart';
+import '../utils/distancia.dart';
+import '../utils/pins_mapa.dart';
 import '../utils/moderacao.dart';
 import '../widgets/avatar_widget.dart';
 import '../widgets/glass_card.dart';
+import '../widgets/painel_inatel.dart';
+import '../widgets/painel_localizacao.dart';
 import '../widgets/pressionavel.dart';
 import '../widgets/animated_gradient_button.dart';
 
@@ -55,6 +60,49 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   final FiltroState _filtroState = FiltroState();
 
   Set<Marker> _marcadores = {};
+
+  // pins desenhados uma vez e reusados. Ficam nulos ate _prepararPins()
+  // terminar; enquanto isso os markers saem com o icone padrao, o que evita
+  // a tela abrir sem marcador nenhum
+  BitmapDescriptor? _pinMoradia;
+  BitmapDescriptor? _pinMoradiaOrigem;
+  BitmapDescriptor? _pinMoradiaDestino;
+  BitmapDescriptor? _pinEvento;
+  BitmapDescriptor? _pinEventoOrigem;
+  BitmapDescriptor? _pinEventoDestino;
+  BitmapDescriptor? _pinInatel;
+  BitmapDescriptor? _pinInatelOrigem;
+  BitmapDescriptor? _pinInatelDestino;
+  Marker? _marcadorInatel;
+
+  // imobiliarias cadastradas com endereco geocodificado
+  BitmapDescriptor? _pinImobiliaria;
+  List<Imobiliaria> _imobiliarias = [];
+  Set<Marker> _marcadoresImobiliarias = {};
+  StreamSubscription<List<Imobiliaria>>? _inscricaoImobiliarias;
+
+  // --- modo navegacao ("Ir") ---
+  bool _navegando = false;
+  StreamSubscription<Position>? _inscricaoNav;
+  Position? _posicaoNav;
+  BitmapDescriptor? _setaNav;
+  // rumo suavizado. Guardado a parte do GPS porque a leitura crua oscila e
+  // faria o mapa tremer a cada frame
+  double _rumoSuave = 0;
+  // limita a frequencia das animacoes de camera -- ver _aoMoverNavegando
+  DateTime _ultimoAjusteCamera = DateTime.fromMillisecondsSinceEpoch(0);
+  // o usuario arrastou o mapa: para de seguir ate ele recentralizar
+  bool _seguindoCamera = true;
+  // metros que faltam SEGUINDO A ROTA (ver TrilhaRota) -- antes era linha
+  // reta, que numa malha de quarteiroes chega a mostrar metade do caminho real
+  double? _metrosRestantes;
+  // tempo restante estimado, proporcional ao trecho que falta
+  int? _segundosRestantes;
+  // rota preparada pra consulta rapida; refeita quando o trajeto muda
+  TrilhaRota? _trilhaNav;
+  // recalculo automatico quando o usuario sai do trajeto
+  bool _recalculandoRota = false;
+  DateTime _ultimoRecalculo = DateTime.fromMillisecondsSinceEpoch(0);
   bool _buscaComTexto = false;
 
   // destaque visual do resultado de busca selecionado -- rua vira linha
@@ -62,7 +110,11 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   // Google Maps mostra), ponto de interesse vira marker
   Set<Polyline> _destaqueRuaBusca = {};
   Set<Polyline> _destaqueAreaBusca = {};
+  Set<Polygon> _preenchimentoAreaBusca = {};
   Marker? _destaquePoiBusca;
+
+  // contorno do bairro chegando (busca no Overpass depois da escolha)
+  bool _carregandoContorno = false;
 
   // ultimo resultado de busca escolhido -- fica guardado pra oferecer o
   // "Traçar rota" ate ele (igual o Google Maps, que mostra o botao de rotas
@@ -100,6 +152,8 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   late VoidCallback _rotaAtivaListener;
   late VoidCallback _rotaCarregandoListener;
   late VoidCallback _rotaErroListener;
+  late VoidCallback _localizacaoListener;
+  late VoidCallback _bairroListener;
 
   late AnimationController _animIniciaisController;
   late Animation<double> _fadeAnim;
@@ -112,7 +166,13 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     _perfilAtual = widget.perfil;
     _carregarDadosUsuarioLogado();
     _carregarEstilosDoAsset();
-    _obterLocalizacaoReal(); // ja dispara a busca do gps ao abrir a tela
+    // le o estado da permissao SEM pedir nada e, se ja houver, liga o
+    // acompanhamento em tempo real
+    LocalizacaoService.instance.verificar();
+    _localizacaoListener = () {
+      if (mounted) setState(() {});
+    };
+    LocalizacaoService.instance.estado.addListener(_localizacaoListener);
     _verificarVinculoPendente();
 
     _animIniciaisController = AnimationController(
@@ -125,6 +185,17 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _animIniciaisController, curve: Curves.easeOutCubic));
     _animIniciaisController.forward();
+
+    // imobiliarias com endereco geocodificado -- atualiza ao vivo, igual os
+    // imoveis, entao uma que acaba de se cadastrar ja aparece no mapa
+    _inscricaoImobiliarias =
+        ImobiliariaService.instance.streamComPosicao().listen((lista) {
+      if (!mounted) return;
+      setState(() {
+        _imobiliarias = lista;
+        _atualizarMarcadoresImobiliarias();
+      });
+    });
 
     FirebaseFirestore.instance.collection('imoveis').snapshots().listen((snapshot) {
       if (mounted) {
@@ -168,7 +239,13 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     };
     rotaAtivaGlobal.addListener(_rotaAtivaListener);
     _rotaCarregandoListener = () {
-      if (mounted) setState(() => _carregandoRota = rotaCarregandoGlobal.value);
+      if (!mounted) return;
+      setState(() {
+        _carregandoRota = rotaCarregandoGlobal.value;
+        // o recalculo acabou -- inclusive quando falhou, senao um erro de
+        // rede travaria o "Recalculando" na tela pra sempre
+        if (!_carregandoRota) _recalculandoRota = false;
+      });
     };
     rotaCarregandoGlobal.addListener(_rotaCarregandoListener);
     _rotaErroListener = () {
@@ -181,6 +258,14 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     };
     rotaErroGlobal.addListener(_rotaErroListener);
 
+    _bairroListener = () {
+      final pedido = bairroPendenteGlobal.value;
+      if (pedido == null || !mounted) return;
+      bairroPendenteGlobal.value = null;
+      _mostrarBairroNoMapa(pedido);
+    };
+    bairroPendenteGlobal.addListener(_bairroListener);
+
     _buscaController.addListener(() {
       setState(() {
         _buscaComTexto = _buscaController.text.isNotEmpty;
@@ -188,17 +273,20 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       });
       _atualizarMarcadoresFiltrados();
 
-      // debounce so pras sugestoes -- evita recalcular a lista a cada tecla
+      // as sugestoes locais (imoveis + lista fixa) saem NA HORA, sem debounce
+      // e sem rede: sao um filtro em memoria, esperar pra mostrar era so
+      // atraso de graça. O debounce fica so pra parte online, que custa uma
+      // chamada por consulta
+      final termoAgora = _buscaController.text;
+      setState(() {
+        _sugestoes =
+            BuscaService.instance.buscarSugestoes(termoAgora, _imoveisDoBanco);
+      });
+
       _debounceSugestoes?.cancel();
-      _debounceSugestoes = Timer(const Duration(milliseconds: 400), () async {
+      _debounceSugestoes = Timer(const Duration(milliseconds: 250), () async {
         if (!mounted) return;
         final termo = _buscaController.text;
-
-        // sugestoes locais (imoveis + lista fixa de faculdades/cidades
-        // conhecidas) aparecem na hora, sem depender de internet
-        setState(() {
-          _sugestoes = BuscaService.instance.buscarSugestoes(termo, _imoveisDoBanco);
-        });
 
         // se ja achou uma instituicao conhecida (Inatel, UNIFEI, FAI, UNIVÁS...)
         // na lista fixa, nao busca online pra essa mesma consulta -- evita que
@@ -209,7 +297,12 @@ class _CentroDoMapaState extends State<CentroDoMapa>
 
         // ruas, bairros e cidades de verdade vem depois, via busca online --
         // soma na lista sem duplicar, e so aplica se o texto nao mudou nesse meio tempo
-        final locaisOnline = await BuscaService.instance.buscarLocaisOnline(termo);
+        // referencia de proximidade: onde a pessoa esta; sem permissao de
+        // localizacao, a faculdade -- que e o centro de gravidade do app
+        final locaisOnline = await BuscaService.instance.buscarLocaisOnline(
+          termo,
+          perto: LocalizacaoService.instance.posicao.value ?? posicaoInatel,
+        );
         if (!mounted || _buscaController.text != termo || locaisOnline.isEmpty) return;
         setState(() {
           final jaTem = _sugestoes.map((s) => normalizarNome(s.texto)).toSet();
@@ -229,32 +322,143 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   }
 
   // pede permissao de localizacao e centraliza o mapa no gps
-  Future<void> _obterLocalizacaoReal() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return;
+  // desenha os pins na densidade real da tela. Roda em didChangeDependencies
+  // e nao em initState porque precisa do MediaQuery, que so existe depois que
+  // o widget tem contexto
+  bool _pinsPedidos = false;
 
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) return;
+  Future<void> _prepararPins() async {
+    final double densidade = MediaQuery.of(context).devicePixelRatio;
+    final moradia = await PinsMapa.obter(TipoPin.moradia, densidade);
+    final moradiaO = await PinsMapa.obter(TipoPin.moradia, densidade, isOrigem: true);
+    final moradiaD = await PinsMapa.obter(TipoPin.moradia, densidade, isDestino: true);
+    
+    final evento = await PinsMapa.obter(TipoPin.evento, densidade);
+    final eventoO = await PinsMapa.obter(TipoPin.evento, densidade, isOrigem: true);
+    final eventoD = await PinsMapa.obter(TipoPin.evento, densidade, isDestino: true);
+
+    final inatel = await PinsMapa.obter(TipoPin.faculdade, densidade);
+    final inatelO = await PinsMapa.obter(TipoPin.faculdade, densidade, isOrigem: true);
+    final inatelD = await PinsMapa.obter(TipoPin.faculdade, densidade, isDestino: true);
+
+    final imobiliaria = await PinsMapa.obter(TipoPin.imobiliaria, densidade);
+
+    if (!mounted) return;
+    setState(() {
+      _pinMoradia = moradia;
+      _pinMoradiaOrigem = moradiaO;
+      _pinMoradiaDestino = moradiaD;
+      
+      _pinEvento = evento;
+      _pinEventoOrigem = eventoO;
+      _pinEventoDestino = eventoD;
+      
+      _pinInatel = inatel;
+      _pinInatelOrigem = inatelO;
+      _pinInatelDestino = inatelD;
+
+      _pinImobiliaria = imobiliaria;
+
+      _atualizarMarcadorInatel();
+      _atualizarMarcadoresImobiliarias();
+    });
+    _atualizarMarcadoresFiltrados();
+  }
+
+  // pins das imobiliarias -- ficam FORA de _marcadores de proposito, igual o
+  // Inatel: nao sao anuncios, entao nao podem sumir quando a pessoa filtra
+  // por preco ou tag
+  void _atualizarMarcadoresImobiliarias() {
+    final icone = _pinImobiliaria;
+    if (icone == null) return;
+    _marcadoresImobiliarias = _imobiliarias
+        .where((i) => i.posicao != null)
+        .map((i) => Marker(
+              markerId: MarkerId('imobiliaria_${i.id}'),
+              position: i.posicao!,
+              icon: icone,
+              zIndexInt: 1,
+              infoWindow: InfoWindow(
+                title: i.nome,
+                snippet: i.endereco.isNotEmpty ? i.endereco : 'Imobiliária',
+              ),
+            ))
+        .toSet();
+  }
+
+  void _atualizarMarcadorInatel() {
+    if (_pinInatel == null) return;
+    final ativa = rotaAtivaGlobal.value;
+    BitmapDescriptor icone = _pinInatel!;
+    if (ativa != null) {
+      if (ativa.origem == posicaoInatel) icone = _pinInatelOrigem!;
+      if (ativa.destino == posicaoInatel) icone = _pinInatelDestino!;
     }
-
-    if (permission == LocationPermission.deniedForever) return;
-
-    Position position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high)
+    _marcadorInatel = Marker(
+      markerId: const MarkerId('inatel_fixo'),
+      position: posicaoInatel,
+      icon: icone,
+      zIndexInt: 2,
+      // sem infoWindow: o toque abre o painel completo da faculdade (fotos,
+      // engenharias e links), e o balaozinho do Google por cima dele so
+      // roubaria o lugar do proprio pin
+      onTap: _abrirPainelInatel,
     );
+  }
 
-    if (_mapController != null) {
-      _mapController!.animateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(
-            target: LatLng(position.latitude, position.longitude),
-            zoom: 16.0,
-          ),
-        ),
-      );
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_pinsPedidos) {
+      _pinsPedidos = true;
+      _prepararPins();
     }
+  }
+
+  // centraliza o mapa em quem esta usando. Sem permissao, explica e pergunta
+  // em vez de simplesmente nao fazer nada (era o que acontecia antes: o toque
+  // no botao morria em silencio e parecia defeito)
+  Future<void> _obterLocalizacaoReal() async {
+    final servico = LocalizacaoService.instance;
+
+    if (!servico.permitida) {
+      final liberou = await pedirLocalizacaoComExplicacao(context);
+      if (!liberou || !mounted) return;
+    }
+
+    final posicao = await servico.posicaoParaRota();
+    if (posicao == null || !mounted) {
+      if (mounted) _avisarSemLocalizacao();
+      return;
+    }
+
+    _mapController?.animateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(target: posicao, zoom: 16.0),
+      ),
+    );
+  }
+
+  // centraliza em quem ja tinha permitido, sem abrir dialogo nenhum
+  Future<void> _centralizarSeJaPermitido() async {
+    final servico = LocalizacaoService.instance;
+    if (!servico.permitida) return;
+    final posicao = await servico.posicaoParaRota();
+    if (posicao == null || !mounted) return;
+    _mapController?.animateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(target: posicao, zoom: 16.0),
+      ),
+    );
+  }
+
+  void _avisarSemLocalizacao() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Não conseguimos acessar sua localização agora.'),
+        backgroundColor: corErro,
+      ),
+    );
   }
 
   Future<void> _carregarDadosUsuarioLogado() async {
@@ -281,8 +485,8 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     final isDark = Theme.of(context).brightness == Brightness.dark;
     showModalBottomSheet(
       context: context,
-      backgroundColor: isDark ? corCardEscuro : Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      backgroundColor: isDark ? superficieEscura : superficieClara,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl))),
       builder: (sheetContext) {
         return Padding(
           padding: const EdgeInsets.all(24),
@@ -328,6 +532,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   void _limparDestaqueBusca() {
     _destaqueRuaBusca = {};
     _destaqueAreaBusca = {};
+    _preenchimentoAreaBusca = {};
     _destaquePoiBusca = null;
     _localSelecionado = null;
   }
@@ -335,16 +540,81 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   // ao escolher um resultado, desenha o destaque certo pro tipo de local
   // (igual o Google Maps faz: rua pintada, bairro delimitado, POI com pin) e
   // enquadra a camera no que foi desenhado
-  void _selecionarSugestao(SugestaoBusca sugestao) {
+  Future<void> _selecionarSugestao(SugestaoBusca sugestao) async {
     _buscaController.text = sugestao.texto;
     _editandoBusca = false;
     _buscaFocusNode.unfocus();
+    _desenharSugestao(sugestao);
+
+    // bairro cujo contorno ainda nao foi buscado: mostra o ponto na hora e
+    // troca pelo tracejado quando o contorno chegar. A alternativa era travar
+    // a lista inteira esperando isso -- era assim antes, e era lento
+    if (sugestao.contornoPendente) {
+      setState(() => _carregandoContorno = true);
+      final completa = await BuscaService.instance.garantirContorno(sugestao);
+      if (!mounted) return;
+      setState(() => _carregandoContorno = false);
+      // texto trocado nesse meio tempo: a escolha ja nao vale mais
+      if (_localSelecionado?.texto != sugestao.texto) return;
+      _desenharSugestao(completa);
+    }
+  }
+
+  // atende o "ver o bairro no mapa" vindo da tela do imovel: acha o contorno
+  // real da regiao e desenha o mesmo tracejado da busca. Reusa o caminho da
+  // sugestao inteiro -- desenho, enquadramento e card sao os mesmos
+  Future<void> _mostrarBairroNoMapa(BairroPendente pedido) async {
+    final inicial = SugestaoBusca(
+      texto: pedido.nome,
+      detalhe: 'Bairro',
+      tipo: TipoSugestao.endereco,
+      destino: pedido.perto,
+    );
+    _buscaController.text = pedido.nome;
+    _editandoBusca = false;
+    _desenharSugestao(inicial);
+
+    setState(() => _carregandoContorno = true);
+    final pontos = await BuscaService.instance
+        .buscarContornoDeArea(pedido.nome, pedido.perto);
+    if (!mounted) return;
+    setState(() => _carregandoContorno = false);
+    // a pessoa pode ter buscado outra coisa enquanto o contorno vinha
+    if (_localSelecionado?.texto != pedido.nome) return;
+
+    if (pontos.length >= 3) {
+      _desenharSugestao(inicial.comGeometria(TipoGeometria.area, pontos));
+    } else {
+      // bairro sem contorno no OpenStreetMap (comum em cidade pequena):
+      // fica o pin, e a pessoa fica sabendo por que nao veio o tracejado
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'O contorno do bairro ${pedido.nome} ainda não está mapeado no OpenStreetMap.'),
+          backgroundColor: corPrimaria,
+        ),
+      );
+    }
+  }
+
+  void _desenharSugestao(SugestaoBusca sugestao) {
+    // area/linha sem pontos ainda (contorno a caminho) cai no marker: sem
+    // essa guarda o caso "area vazia" tentava fechar o anel pelo primeiro
+    // ponto de uma lista VAZIA e estourava, derrubando o setState inteiro
+    // -- o destaque nao aparecia e a camera nem chegava a se mover.
+    //
+    // Fica FORA do setState porque o enquadramento da camera, la embaixo,
+    // usa os dois valores
+    final bool temGeometria = sugestao.pontosGeometria.length >= 2;
+    final TipoGeometria tipoEfetivo =
+        temGeometria ? sugestao.tipoGeometria : TipoGeometria.ponto;
+
     setState(() {
       _sugestoes = [];
       _limparDestaqueBusca();
       _localSelecionado = sugestao;
 
-      switch (sugestao.tipoGeometria) {
+      switch (tipoEfetivo) {
         case TipoGeometria.linha:
           _destaqueRuaBusca = {
             Polyline(
@@ -355,17 +625,26 @@ class _CentroDoMapaState extends State<CentroDoMapa>
             ),
           };
         case TipoGeometria.area:
-          // igual o Google Maps mostra pra bairro/regiao: so o contorno
-          // tracejado, sem nenhum preenchimento -- por isso e um Polyline
-          // fechado (o Polygon do plugin nao suporta traco pontilhado) com
-          // as pontas iguais, nao um Polygon com fillColor
+          // bairro/regiao igual o Google Maps: contorno TRACEJADO com um
+          // preenchimento bem fraco por baixo. Sao duas camadas porque o
+          // Polygon do plugin nao aceita traco pontilhado e o Polyline nao
+          // aceita preenchimento -- entao o Polygon entra so pela cor de
+          // dentro (stroke zerado) e o Polyline fechado faz o tracejado
           _destaqueAreaBusca = {
             Polyline(
               polylineId: const PolylineId('destaque_busca'),
-              points: sugestao.pontosGeometria,
+              points: [...sugestao.pontosGeometria, sugestao.pontosGeometria.first],
               color: const Color(0xFFE53935),
               width: 4,
               patterns: [PatternItem.dash(20), PatternItem.gap(12)],
+            ),
+          };
+          _preenchimentoAreaBusca = {
+            Polygon(
+              polygonId: const PolygonId('preenchimento_busca'),
+              points: sugestao.pontosGeometria,
+              strokeWidth: 0,
+              fillColor: const Color(0xFFE53935).withAlpha(18),
             ),
           };
         case TipoGeometria.ponto:
@@ -378,7 +657,11 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       }
     });
 
-    if (sugestao.pontosGeometria.length > 1) {
+    // enquadra pelo DESENHO quando existe um desenho. Enquadrar por pontos
+    // soltos que nao viraram contorno (o Overpass as vezes devolve dois
+    // pontos) abria uma visao larga sem nada dentro -- parecia que o mapa
+    // tinha pulado pro lugar errado
+    if (temGeometria && tipoEfetivo != TipoGeometria.ponto) {
       _mapController?.animateCamera(
         CameraUpdate.newLatLngBounds(RotaService.calcularBounds(sugestao.pontosGeometria), 60),
       );
@@ -400,9 +683,13 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     temaGlobal.removeListener(_temaListener);
     _filtroState.removeListener(_filtroListener);
     cidadeFiltroGlobal.removeListener(_cidadeFiltroListener);
+    _inscricaoNav?.cancel();
+    _inscricaoImobiliarias?.cancel();
     rotaAtivaGlobal.removeListener(_rotaAtivaListener);
     rotaCarregandoGlobal.removeListener(_rotaCarregandoListener);
     rotaErroGlobal.removeListener(_rotaErroListener);
+    LocalizacaoService.instance.estado.removeListener(_localizacaoListener);
+    bairroPendenteGlobal.removeListener(_bairroListener);
     _filtroState.dispose();
     _debounceSugestoes?.cancel();
     _buscaController.dispose();
@@ -440,15 +727,28 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       return true;
     }).toList();
 
+    final rota = rotaAtivaGlobal.value;
+
     setState(() {
       _marcadores = imovelFiltrados.map((item) {
         final bool isEvento = item.tipo == TipoListing.evento;
+        
+        BitmapDescriptor? iconeBase = isEvento ? _pinEvento : _pinMoradia;
+        if (rota != null) {
+          if (item.posicao == rota.origem) {
+            iconeBase = isEvento ? _pinEventoOrigem : _pinMoradiaOrigem;
+          } else if (item.posicao == rota.destino) {
+            iconeBase = isEvento ? _pinEventoDestino : _pinMoradiaDestino;
+          }
+        }
+
         return Marker(
           markerId: MarkerId(item.id),
           position: item.posicao,
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-            isEvento ? BitmapDescriptor.hueOrange : BitmapDescriptor.hueAzure,
-          ),
+          icon: iconeBase ??
+              BitmapDescriptor.defaultMarkerWithHue(
+                isEvento ? BitmapDescriptor.hueOrange : BitmapDescriptor.hueAzure,
+              ),
           infoWindow: InfoWindow(
             title: item.titulo,
             snippet: item.descricao,
@@ -474,18 +774,30 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     final ativa = rotaAtivaGlobal.value;
     _rotaAtual = ativa;
     _carregandoRota = rotaCarregandoGlobal.value;
+    
     if (ativa == null) {
       _rotas = {};
       _marcadoresRota = {};
+      _atualizarMarcadoresFiltrados();
+      _atualizarMarcadorInatel();
       return;
     }
+    
+    // Atualiza as cores dos pins que ja existem no mapa (moradias, eventos, inatel)
+    _atualizarMarcadoresFiltrados();
+    _atualizarMarcadorInatel();
+
     // desenha todas as alternativas: as nao escolhidas em cinza e por baixo
     // (zIndex menor), clicaveis pra virar a ativa; a escolhida em destaque por
     // cima. consumeTapEvents evita que o toque atravesse a linha e caia no
     // mapa (que fecha paineis/limpa selecao)
+    //
+    // Navegando, so a linha escolhida fica: alternativa cinza no meio do
+    // trajeto vira ruido e ainda e clicavel, o que trocaria a rota debaixo de
+    // quem esta dirigindo
     _rotas = {
       for (var i = 0; i < ativa.opcoes.length; i++)
-        if (i != ativa.indiceSelecionado)
+        if (i != ativa.indiceSelecionado && !_navegando)
           Polyline(
             polylineId: PolylineId('rota_alt_$i'),
             points: ativa.opcoes[i].pontos,
@@ -503,17 +815,28 @@ class _CentroDoMapaState extends State<CentroDoMapa>
         zIndex: 2,
       ),
     };
+
+    // se a origem ou destino for um local generico (buscado via Google, etc)
+    // e nao estiver na nossa lista de imoveis/Inatel, ai sim criamos um pin generico
+    final origemEhImovelOuInatel = ativa.origem == posicaoInatel || _imoveisDoBanco.any((i) => i.posicao == ativa.origem);
+    final destinoEhImovelOuInatel = ativa.destino == posicaoInatel || _imoveisDoBanco.any((i) => i.posicao == ativa.destino);
+
     _marcadoresRota = {
-      Marker(
-        markerId: const MarkerId('rota_origem'),
-        position: ativa.origem,
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-      ),
-      Marker(
-        markerId: const MarkerId('rota_destino'),
-        position: ativa.destino,
-        infoWindow: InfoWindow(title: ativa.nomeDestino),
-      ),
+      // o pin de origem some na navegacao: ele marca de onde a rota partiu, e
+      // durante o deslocamento fica bem embaixo da seta, escondendo justamente
+      // a unica coisa que importa olhar
+      if (!origemEhImovelOuInatel && !_navegando)
+        Marker(
+          markerId: const MarkerId('rota_origem'),
+          position: ativa.origem,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+        ),
+      if (!destinoEhImovelOuInatel)
+        Marker(
+          markerId: const MarkerId('rota_destino'),
+          position: ativa.destino,
+          infoWindow: InfoWindow(title: ativa.nomeDestino),
+        ),
     };
   }
 
@@ -529,7 +852,10 @@ class _CentroDoMapaState extends State<CentroDoMapa>
 
     setState(_sincronizarComRotaGlobal);
 
-    if (rotaNova) {
+    // navegando, a camera pertence ao deslocamento: enquadrar a rota inteira
+    // aqui jogaria a visao do usuario pra longe no meio do caminho, toda vez
+    // que um recalculo chegasse
+    if (rotaNova && !_navegando) {
       // enquadra TODAS as alternativas, nao so a escolhida, pra elas ja
       // aparecerem na tela e o usuario ver que existe opcao
       _mapController?.animateCamera(
@@ -547,12 +873,32 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   // vem de graca, sem nenhum caminho novo de calculo
   Future<void> _tracarRotaAteLocalBuscado() async {
     final local = _localSelecionado;
-    if (local == null || _buscandoOrigemRota) return;
+    if (local == null) return;
+    await _tracarRotaAte(destino: local.destino, nomeDestino: local.texto);
+  }
+
+  // pega a localizacao atual e pede a rota ate um destino qualquer. Nasceu de
+  // _tracarRotaAteLocalBuscado, que era o unico caminho -- o painel da
+  // faculdade precisa do MESMO comportamento (mesma origem, mesmo modo de
+  // transporte escolhido, mesmo tratamento de erro), entao chama daqui em vez
+  // de repetir o bloco
+  Future<void> _tracarRotaAte({
+    required LatLng destino,
+    required String nomeDestino,
+  }) async {
+    if (_buscandoOrigemRota) return;
+
+    // rota parte de ONDE A PESSOA ESTA -- sem permissao nao ha o que calcular.
+    // Explica e pergunta; se ela recusar, sai sem erro nenhum na cara
+    if (!LocalizacaoService.instance.permitida) {
+      final liberou = await pedirLocalizacaoComExplicacao(context);
+      if (!liberou || !mounted) return;
+    }
 
     setState(() => _buscandoOrigemRota = true);
     LatLng? origem;
     try {
-      origem = await obterLocalizacaoAtual();
+      origem = await LocalizacaoService.instance.posicaoParaRota();
     } catch (e) {
       origem = null;
     }
@@ -560,12 +906,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     setState(() => _buscandoOrigemRota = false);
 
     if (origem == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Não conseguimos acessar sua localização atual.'),
-          backgroundColor: corErro,
-        ),
-      );
+      _avisarSemLocalizacao();
       return;
     }
 
@@ -576,9 +917,381 @@ class _CentroDoMapaState extends State<CentroDoMapa>
 
     rotaPendenteGlobal.value = RotaPendente(
       origem: origem,
-      destino: local.destino,
-      nomeDestino: local.texto,
+      destino: destino,
+      nomeDestino: nomeDestino,
       modo: modoParaApi,
+    );
+  }
+
+  // painel da faculdade -- abre ao tocar no pin fixo do Inatel
+  void _abrirPainelInatel() {
+    PainelInatel.mostrar(
+      context,
+      aoTracarRota: () => _tracarRotaAte(
+        destino: posicaoInatel,
+        nomeDestino: 'Inatel - Instituto Nacional de Telecomunicações',
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // MODO NAVEGACAO
+  // ---------------------------------------------------------------------
+
+  // mistura dois angulos de bussola pelo menor caminho.
+  //
+  // Interpolar 350 -> 10 na marra daria uma volta de 340 graus pro lado
+  // errado (o mapa girando inteiro). O truque do (+540) % 360 - 180 traz a
+  // diferenca pro intervalo [-180, 180], que e sempre o caminho curto.
+  double _misturarRumo(double atual, double alvo, double fator) {
+    final double delta = ((alvo - atual + 540) % 360) - 180;
+    return (atual + delta * fator + 360) % 360;
+  }
+
+  Future<void> _iniciarNavegacao() async {
+    if (_navegando) return;
+
+    // le o DPR antes dos await: depois deles o context pode nao valer mais
+    final double densidade = MediaQuery.of(context).devicePixelRatio;
+
+    // navegar e seguir a pessoa pelo trajeto: sem localizacao nao existe modo
+    // "Ir". Mesmo pedido explicado das outras acoes, nada de dialogo seco
+    if (!LocalizacaoService.instance.permitida) {
+      final liberou = await pedirLocalizacaoComExplicacao(context);
+      if (!liberou || !mounted) return;
+    }
+
+    final seta = _setaNav ?? await setaNavegacao(densidade);
+    if (!mounted) return;
+
+    setState(() {
+      _setaNav = seta;
+      _navegando = true;
+      _rumoSuave = 0;
+      _seguindoCamera = true;
+      _metrosRestantes = null;
+      _segundosRestantes = null;
+      _trilhaNav = null;
+      _recalculandoRota = false;
+      _ultimoRecalculo = DateTime.now();
+      // redesenha rota e pins ja no modo navegacao (sem alternativas, sem
+      // pin de origem) -- eles foram montados com _navegando ainda falso
+      _sincronizarComRotaGlobal();
+    });
+    navegandoGlobal.value = true;
+
+    // o stream de navegacao e de alta precisao e entrega toda leitura; o
+    // ambiente (15 m) nao acrescenta nada aqui e so gastaria bateria em
+    // paralelo. Volta a valer em _encerrarNavegacao
+    LocalizacaoService.instance.pararAcompanhamento();
+
+    _inscricaoNav = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        // bestForNavigation e o modo de maior precisao; distanceFilter 0
+        // entrega toda atualizacao, necessario pra camera acompanhar liso
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 0,
+      ),
+    ).listen(_aoMoverNavegando);
+  }
+
+  void _aoMoverNavegando(Position posicao) {
+    // o rumo do GPS so tem sentido em movimento: parado ele devolve lixo ou
+    // o ultimo valor, e usar isso faria o mapa girar sozinho com o usuario
+    // imovel. Abaixo de ~0,7 m/s (caminhada lenta) mantem o rumo anterior
+    if (posicao.speed > 0.7 && posicao.heading >= 0) {
+      _rumoSuave = _misturarRumo(_rumoSuave, posicao.heading, 0.28);
+    }
+
+    final ativa = _rotaAtual;
+    final LatLng aqui = LatLng(posicao.latitude, posicao.longitude);
+
+    // quanto falta PELA ROTA (nao em linha reta) e o quanto o usuario esta
+    // afastado dela. A trilha e remontada quando o trajeto muda -- comparar
+    // por identidade cobre tanto o inicio da navegacao quanto um recalculo
+    double? restante;
+    double? desvio;
+    int? segundos;
+    if (ativa != null) {
+      if (!identical(_trilhaNav?.pontos, ativa.selecionada.pontos)) {
+        _trilhaNav = TrilhaRota.montar(ativa.selecionada.pontos);
+      }
+      final trilha = _trilhaNav!;
+      final progresso = trilha.progresso(aqui);
+      restante = progresso.metrosRestantes;
+      desvio = progresso.desvioMetros;
+
+      // a API so devolve a duracao do trajeto inteiro, entao o que falta sai
+      // por proporcao do que falta andar. Nao e previsao de transito, e uma
+      // estimativa honesta -- melhor que nao mostrar tempo nenhum
+      if (trilha.total > 0) {
+        segundos =
+            (ativa.selecionada.duracaoSegundos * (restante / trilha.total)).round();
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _posicaoNav = posicao;
+      _metrosRestantes = restante;
+      _segundosRestantes = segundos;
+    });
+
+    // chegada mede em LINHA RETA ate o destino: no fim do trajeto as duas
+    // medidas se encontram, e a reta nao depende de o GPS ter acompanhado a
+    // linha ate o ultimo ponto. 35 m cobre o erro tipico do GPS urbano
+    final destino = ativa?.destino;
+    if (destino != null) {
+      final emLinhaReta = Geolocator.distanceBetween(
+        posicao.latitude, posicao.longitude,
+        destino.latitude, destino.longitude,
+      );
+      if (emLinhaReta < 35) {
+        _encerrarNavegacao(chegou: true);
+        return;
+      }
+    }
+
+    // saiu do trajeto: pede uma rota nova a partir de onde esta, igual o
+    // Waze/Maps fazem. 70 m e folgado o bastante pra nao disparar com erro de
+    // GPS entre predios, e o intervalo minimo evita repetir a chamada (que e
+    // paga) enquanto a anterior nao chegou ou o usuario segue fora da linha
+    if (desvio != null && desvio > 70) _recalcularRotaNavegando(aqui);
+
+    if (!_seguindoCamera) return;
+
+    // NAO dispara animacao a cada leitura: cada animateCamera novo cancela o
+    // anterior, e com leituras chegando de fracao em fracao de segundo a
+    // camera nunca terminava o movimento -- era por isso que a inclinacao
+    // parecia nao aplicar. Uma animacao por vez, com duracao proxima do
+    // intervalo entre leituras, da movimento continuo de verdade
+    final agora = DateTime.now();
+    if (agora.difference(_ultimoAjusteCamera).inMilliseconds < 850) return;
+    _ultimoAjusteCamera = agora;
+
+    _mapController?.animateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(
+          target: LatLng(posicao.latitude, posicao.longitude),
+          zoom: 17.5,
+          tilt: 55, // perspectiva 3D
+          bearing: _rumoSuave, // o movimento aponta pro topo da tela
+        ),
+      ),
+      duration: const Duration(milliseconds: 800),
+    );
+  }
+
+  // pede o trajeto de novo a partir da posicao atual, mantendo destino, nome
+  // e modo. Reusa o mesmo pipeline global (rotaPendenteGlobal) que todo o
+  // resto do app usa pra calcular rota -- nenhum caminho de calculo novo
+  void _recalcularRotaNavegando(LatLng origem) {
+    final ativa = _rotaAtual;
+    if (ativa == null || _recalculandoRota) return;
+    if (DateTime.now().difference(_ultimoRecalculo).inSeconds < 20) return;
+
+    _ultimoRecalculo = DateTime.now();
+    setState(() => _recalculandoRota = true);
+
+    rotaPendenteGlobal.value = RotaPendente(
+      origem: origem,
+      destino: ativa.destino,
+      nomeDestino: ativa.nomeDestino,
+      modo: ativa.modo,
+    );
+  }
+
+  // volta a seguir depois de o usuario ter arrastado o mapa
+  void _recentralizarNavegacao() {
+    setState(() => _seguindoCamera = true);
+    final p = _posicaoNav;
+    if (p == null) return;
+    _ultimoAjusteCamera = DateTime.now();
+    _mapController?.animateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(
+          target: LatLng(p.latitude, p.longitude),
+          zoom: 17.5,
+          tilt: 55,
+          bearing: _rumoSuave,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _encerrarNavegacao({bool chegou = false}) async {
+    await _inscricaoNav?.cancel();
+    _inscricaoNav = null;
+    // religa o acompanhamento ambiente -- verificar() em vez de religar na
+    // mao porque a permissao pode ter mudado nos ajustes durante o trajeto
+    LocalizacaoService.instance.verificar();
+    if (!mounted) return;
+    setState(() {
+      _navegando = false;
+      _posicaoNav = null;
+      _metrosRestantes = null;
+      _segundosRestantes = null;
+      _trilhaNav = null;
+      _recalculandoRota = false;
+      _seguindoCamera = true;
+      // volta a desenhar alternativas e pins que ficam escondidos na navegacao
+      _sincronizarComRotaGlobal();
+    });
+    navegandoGlobal.value = false;
+
+    if (chegou) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Você chegou em ${_rotaAtual?.nomeDestino ?? "seu destino"}.'),
+          backgroundColor: corSucesso,
+        ),
+      );
+    }
+    // desfaz inclinacao e rotacao, senao o mapa fica torto depois de sair
+    final alvo = _rotaAtual != null
+        ? _rotaAtual!.selecionada.pontos.first
+        : posicaoInatel;
+    _mapController?.animateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(target: alvo, zoom: 16, tilt: 0, bearing: 0),
+      ),
+    );
+  }
+
+  Widget _painelNavegacao(bool isDark) {
+    final String restante = _metrosRestantes == null
+        ? '--'
+        : formatarDistancia(_metrosRestantes!);
+    final String? tempo = _segundosRestantes == null
+        ? null
+        : formatarDuracaoCurta(_segundosRestantes!);
+    final String destinoTexto = _rotaAtual?.nomeDestino ?? '';
+
+    return Stack(
+      children: [
+        // faixa superior: so o essencial. Durante o deslocamento o usuario
+        // olha a tela de relance, entao cabe pouca informacao
+        Positioned(
+          top: (MediaQuery.of(context).padding.top > 0
+                  ? MediaQuery.of(context).padding.top
+                  : 6) +
+              AppSpacing.sm,
+          left: AppSpacing.lg,
+          right: AppSpacing.lg,
+          child: GlassCard(
+            radius: 22,
+            sombra: AppShadows.nivel3(isDark),
+            padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(AppSpacing.sm + 2),
+                  decoration: BoxDecoration(
+                    gradient: gradientePrincipal,
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                  ),
+                  child: const Icon(Icons.navigation_rounded,
+                      color: Colors.white, size: 20),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: [
+                          Text(
+                            restante,
+                            style: AppTextStyles.heading3.copyWith(
+                              color: isDark ? Colors.white : Colors.black87,
+                            ),
+                          ),
+                          if (tempo != null) ...[
+                            const SizedBox(width: AppSpacing.sm),
+                            Text(
+                              '· $tempo',
+                              style: AppTextStyles.bodyBold.copyWith(
+                                color: isDark ? Colors.white70 : corPrimaria,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      Text(
+                        // o recalculo troca a linha debaixo do usuario; sem
+                        // aviso a distancia pula sozinha e parece defeito
+                        _recalculandoRota
+                            ? 'Recalculando rota...'
+                            : 'até $destinoTexto',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.caption.copyWith(
+                          color: _recalculandoRota
+                              // azul da marca e escuro demais pra texto pequeno
+                              // no vidro escuro -- no modo noturno usa o tom
+                              // claro da mesma familia
+                              ? (isDark ? const Color(0xFF8FBEE8) : corPrimaria)
+                              : (isDark ? Colors.white38 : Colors.grey),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // rodape: encerrar, e recentralizar caso o usuario tenha arrastado
+        Positioned(
+          left: AppSpacing.lg,
+          right: AppSpacing.lg,
+          bottom: MediaQuery.of(context).padding.bottom + AppSpacing.xl,
+          child: Row(
+            children: [
+              if (!_seguindoCamera) ...[
+                Pressionavel(
+                  onTap: _recentralizarNavegacao,
+                  child: GlassCard(
+                    radius: AppRadius.md,
+                    child: const SizedBox(
+                      width: 54,
+                      height: 54,
+                      child: Icon(Icons.my_location_rounded, size: 24),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+              ],
+              Expanded(
+                child: Pressionavel(
+                  onTap: _encerrarNavegacao,
+                  child: Container(
+                    height: 54,
+                    decoration: BoxDecoration(
+                      color: corErro,
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      boxShadow: AppShadows.nivel2(isDark),
+                    ),
+                    child: Center(
+                      child: Text(
+                        'Encerrar navegação',
+                        style: AppTextStyles.bodyBold.copyWith(
+                          color: Colors.white,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -645,16 +1358,41 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                 padding: const EdgeInsets.all(8),
                 // mesmo gradiente escuro do botao logo abaixo -- os dois estao
                 // no mesmo card, e o azul claro/ciano destoava
-                decoration: BoxDecoration(gradient: gradienteAcao, borderRadius: BorderRadius.circular(10)),
+                decoration: BoxDecoration(gradient: gradientePrincipal, borderRadius: BorderRadius.circular(10)),
                 child: Icon(icone, color: Colors.white, size: 18),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  local.texto,
-                  style: TextStyle(fontWeight: FontWeight.w700, color: isDark ? Colors.white : Colors.black87),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      local.texto,
+                      style: TextStyle(fontWeight: FontWeight.w700, color: isDark ? Colors.white : Colors.black87),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    // o contorno do bairro chega depois da escolha; sem esse
+                    // aviso o tracejado aparecia do nada segundos depois e
+                    // parecia falha de renderizacao
+                    if (_carregandoContorno)
+                      Text(
+                        'Traçando o bairro...',
+                        style: AppTextStyles.caption.copyWith(
+                          color: isDark ? Colors.white38 : Colors.black45,
+                        ),
+                      )
+                    else if (local.detalhe.isNotEmpty)
+                      Text(
+                        local.detalhe,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.caption.copyWith(
+                          color: isDark ? Colors.white38 : Colors.black45,
+                        ),
+                      ),
+                  ],
                 ),
               ),
               IconButton(
@@ -673,7 +1411,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
               onTap: _tracarRotaAteLocalBuscado,
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 13),
-                decoration: BoxDecoration(gradient: gradienteAcao, borderRadius: BorderRadius.circular(14)),
+                decoration: BoxDecoration(gradient: gradientePrincipal, borderRadius: BorderRadius.circular(14)),
                 child: Center(
                   child: _buscandoOrigemRota
                       ? const SizedBox(
@@ -819,7 +1557,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   void _onMapCreated(GoogleMapController controller) {
     _mapController = controller;
     _atualizarEstiloMapa();
-    _obterLocalizacaoReal();
+    // so centraliza sozinho em quem JA permitiu antes -- abrir o app pedindo
+    // permissao antes de a pessoa ver o mapa e pedir sem ter explicado nada
+    _centralizarSeJaPermitido();
   }
 
   // chip fixo na barra superior -- so navega a camera ate a cidade parceira
@@ -947,8 +1687,8 @@ class _CentroDoMapaState extends State<CentroDoMapa>
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: isDark ? corCardEscuro : Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      backgroundColor: isDark ? superficieEscura : superficieClara,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl))),
       builder: (sheetContext) {
         return SafeArea(
           child: Padding(
@@ -1014,9 +1754,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: isDark ? corCardEscuro : Colors.white,
+      backgroundColor: isDark ? superficieEscura : superficieClara,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
       ),
       builder: (context) {
         return StatefulBuilder(
@@ -1258,8 +1998,8 @@ class _CentroDoMapaState extends State<CentroDoMapa>
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: isDark ? corCardEscuro : Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      backgroundColor: isDark ? superficieEscura : superficieClara,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl))),
       builder: (sheetContext) {
         return _PerfilPreview(
           perfil: _perfilAtual,
@@ -1291,7 +2031,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     final confirmou = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        backgroundColor: isDark ? corCardEscuro : Colors.white,
+        backgroundColor: isDark ? superficieEscura : superficieClara,
         title: const Text('Sair da conta?'),
         content: const Text('Você vai precisar entrar de novo pra acessar o app.'),
         actions: [
@@ -1313,7 +2053,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl))),
       builder: (context) {
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setModalState) {
@@ -1326,9 +2066,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                 (temaGlobal.value == ThemeMode.system &&
                     MediaQuery.platformBrightnessOf(context) == Brightness.dark);
             return ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
               child: Container(
-                color: isDark ? corCardEscuro : Colors.white,
+                color: isDark ? superficieEscura : superficieClara,
                 padding: const EdgeInsets.all(24.0),
                 child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -1339,8 +2079,8 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                       width: 40,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: isDark ? Colors.white.withAlpha(30) : Colors.grey.shade300,
-                        borderRadius: BorderRadius.circular(2),
+                        color: isDark ? Colors.white.withAlpha(40) : Colors.grey.shade400,
+                        borderRadius: BorderRadius.circular(AppRadius.pill),
                       ),
                     ),
                   ),
@@ -1358,15 +2098,20 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                   Container(
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
-                      color: isDark ? Colors.white.withAlpha(5) : Colors.grey.withAlpha(8),
-                      borderRadius: BorderRadius.circular(16),
+                      color: isDark ? Colors.white.withAlpha(12) : Colors.white,
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      border: Border.all(
+                        color: isDark ? Colors.white.withAlpha(16) : corPrimaria.withAlpha(20),
+                      ),
+                      boxShadow: AppShadows.nivel1(isDark),
                     ),
                     child: ListTile(
                       leading: Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
                           gradient: gradientePrincipal,
-                          borderRadius: BorderRadius.circular(10),
+                          borderRadius: BorderRadius.circular(AppRadius.sm),
+                          boxShadow: AppShadows.marca(forca: 0.35),
                         ),
                         child: const Icon(Icons.dark_mode_rounded, color: Colors.white, size: 20),
                       ),
@@ -1379,8 +2124,8 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                       trailing: DropdownButton<ThemeMode>(
                         value: temaGlobal.value,
                         underline: const SizedBox(),
-                        borderRadius: BorderRadius.circular(12),
-                        dropdownColor: isDark ? corSuperficieEscura : Colors.white,
+                        borderRadius: BorderRadius.circular(AppRadius.sm),
+                        dropdownColor: isDark ? superficieEscura : superficieClara,
                         items: const [
                           DropdownMenuItem(value: ThemeMode.system, child: Text('Sistema')),
                           DropdownMenuItem(value: ThemeMode.light, child: Text('Claro')),
@@ -1394,6 +2139,8 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                       ),
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  _linhaLocalizacao(isDark, setModalState),
                   const SizedBox(height: 20),
 
                   Text(
@@ -1429,6 +2176,75 @@ class _CentroDoMapaState extends State<CentroDoMapa>
           },
         );
       },
+    );
+  }
+
+  // estado da localizacao dentro das Configuracoes -- e daqui que a pessoa
+  // volta atras sem ter que caçar o botao do mapa, nos dois sentidos:
+  // permitir depois de ter recusado, ou rever a permissao nos ajustes
+  Widget _linhaLocalizacao(bool isDark, StateSetter setModalState) {
+    final estado = LocalizacaoService.instance.estado.value;
+    final bool ativa = estado == EstadoLocalizacao.permitida;
+
+    final String situacao = switch (estado) {
+      EstadoLocalizacao.permitida => 'Ativada - seguindo você em tempo real',
+      EstadoLocalizacao.servicoDesligado => 'Localização do aparelho desligada',
+      EstadoLocalizacao.negadaParaSempre => 'Bloqueada nos ajustes do sistema',
+      _ => 'Desativada - toque para permitir',
+    };
+
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white.withAlpha(12) : Colors.white,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(
+          color: isDark ? Colors.white.withAlpha(16) : corPrimaria.withAlpha(20),
+        ),
+        boxShadow: AppShadows.nivel1(isDark),
+      ),
+      child: ListTile(
+        onTap: () async {
+          await pedirLocalizacaoComExplicacao(context);
+          // a folha nao se redesenha sozinha: ela vive num StatefulBuilder
+          setModalState(() {});
+        },
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            gradient: ativa ? gradientePrincipal : null,
+            color: ativa
+                ? null
+                : (isDark ? Colors.white.withAlpha(20) : Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            boxShadow: ativa ? AppShadows.marca(forca: 0.35) : null,
+          ),
+          child: Icon(
+            ativa ? Icons.my_location_rounded : Icons.location_disabled_rounded,
+            color: ativa ? Colors.white : (isDark ? Colors.white54 : Colors.black45),
+            size: 20,
+          ),
+        ),
+        title: Text(
+          'Minha localização',
+          style: AppTextStyles.bodyBold.copyWith(
+            color: isDark ? Colors.white : Colors.black87,
+          ),
+        ),
+        subtitle: Text(
+          situacao,
+          style: AppTextStyles.caption.copyWith(
+            color: ativa
+                ? (isDark ? const Color(0xFF8FBEE8) : corPrimaria)
+                : (isDark ? Colors.white38 : Colors.black45),
+          ),
+        ),
+        trailing: Icon(
+          Icons.arrow_forward_ios_rounded,
+          size: 14,
+          color: isDark ? Colors.white38 : Colors.black38,
+        ),
+      ),
     );
   }
 
@@ -1522,14 +2338,20 @@ class _CentroDoMapaState extends State<CentroDoMapa>
         decoration: BoxDecoration(
           color: cor,
           shape: BoxShape.circle,
-          border: Border.all(color: isDark ? corCardEscuro : Colors.white, width: 2),
+          border: Border.all(color: isDark ? superficieEscura : superficieClara, width: 2),
         ),
       );
 
   @override
   Widget build(BuildContext context) {
     bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final double topOffset = MediaQuery.of(context).padding.top + 10;
+    // em tela cheia a barra de status some e padding.top vira 0, o que
+    // colaria a barra de busca na borda de cima -- o minimo garante respiro
+    // em tela cheia a barra de status some e padding.top vira 0. O minimo
+    // aqui e so pra nao colar na borda -- ficava alto demais quando era 26,
+    // porque sobrava o espaco que a barra de status ocupava antes
+    final double recuoTopo = MediaQuery.of(context).padding.top;
+    final double topOffset = (recuoTopo > 0 ? recuoTopo : 6) + 8;
     final bool podeAnunciar = _perfilAtual.perfilCompleto &&
         _perfilAtual.tipoUsuario.toLowerCase() == 'proprietario';
 
@@ -1547,30 +2369,90 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     // barra por pixel (o que variou conforme o conteudo do mapa atras)
     final double acimaDaBarra = MediaQuery.of(context).padding.bottom;
 
+    // sem isso o mapa fica pedindo permissao por conta propria e os botoes
+    // que dependem da posicao nao teriam como se mostrar desligados
+    final bool temLocalizacao = LocalizacaoService.instance.permitida;
+
     return Stack(
       children: [
         GoogleMap(
           onMapCreated: _onMapCreated,
+          // o Flutter nao informa a CAUSA do movimento da camera (gesto do
+          // usuario ou animacao nossa). A heuristica: se comecou a mover e
+          // nao acabamos de pedir uma animacao, foi o dedo -- ai paramos de
+          // seguir e mostramos o botao de recentralizar, em vez de disputar
+          // o controle da camera com quem esta olhando o mapa
+          onCameraMoveStarted: () {
+            if (!_navegando || !_seguindoCamera) return;
+            final desdeOAjuste =
+                DateTime.now().difference(_ultimoAjusteCamera).inMilliseconds;
+            if (desdeOAjuste > 1300) {
+              setState(() => _seguindoCamera = false);
+            }
+          },
           initialCameraPosition: CameraPosition(target: posicaoInatel, zoom: 15.0),
-          myLocationEnabled: true,
+          // so liga o ponto azul com permissao NOSSA na mao: com true o
+          // proprio plugin do mapa abre o dialogo do sistema por fora, sem
+          // explicar nada -- e e justamente a pergunta que a gente quer fazer
+          // no nosso tempo, com o motivo na frente
+          myLocationEnabled: temLocalizacao && !_navegando,
           myLocationButtonEnabled: false,
           // com extendBody o mapa passa por baixo da barra; esse padding
           // empurra o logo do Google e a atribuicao pra cima dela, o que a
           // licenca de uso da API exige que fiquem visiveis.
           // Soma o card do local quando ele esta aberto, senao ele cobre o
           // logo -- o padding tem que acompanhar TUDO que flutua na base
-          padding: EdgeInsets.only(bottom: acimaDaBarra + alturaCardLocal),
+          // o alvo da camera fica no centro da area util. Durante a
+          // navegacao um recuo grande no topo empurra esse centro pra baixo,
+          // deixando mais mapa a frente visivel -- que e o que importa
+          // enquanto se desloca
+          padding: EdgeInsets.only(
+            top: _navegando ? 260 : 0,
+            // na navegacao a barra inferior some, mas entra o painel de
+            // encerrar -- o logo do Google tem que ficar acima dele
+            bottom: _navegando
+                ? MediaQuery.of(context).padding.bottom + 96
+                : acimaDaBarra + alturaCardLocal,
+          ),
           zoomControlsEnabled: false,
           markers: {
-            ..._marcadores,
+            // seta direcional -- substitui o ponto azul padrao durante a
+            // navegacao (myLocationEnabled desliga logo abaixo)
+            if (_navegando && _posicaoNav != null && _setaNav != null)
+              Marker(
+                markerId: const MarkerId('seta_navegacao'),
+                position: LatLng(_posicaoNav!.latitude, _posicaoNav!.longitude),
+                icon: _setaNav!,
+                // rotation em graus de bussola. Como a camera tambem gira pelo
+                // rumo, a seta acaba sempre apontando pro topo da tela
+                rotation: _rumoSuave,
+                anchor: const Offset(0.5, 0.5), // gira em torno do proprio centro
+                flat: true, // deita no mapa: acompanha giro e inclinacao
+                zIndexInt: 5,
+              ),
+            // o Inatel fica FORA de _marcadores de proposito: e ponto de
+            // referencia fixo, entao nao pode sumir quando o usuario filtra
+            // por preco, tag ou cidade
+            ?_marcadorInatel,
+            if (!_navegando) ..._marcadoresImobiliarias,
+            // navegando, o mapa fica so com o trajeto, a seta e o destino.
+            // Os pins de anuncios e o destaque da busca viram poluicao visual
+            // exatamente quando o usuario tem menos tempo pra olhar a tela
+            if (!_navegando) ..._marcadores,
             ..._marcadoresRota,
-            ?_destaquePoiBusca,
+            if (!_navegando) ?_destaquePoiBusca,
           },
-          polylines: {..._rotas, ..._destaqueRuaBusca, ..._destaqueAreaBusca},
+          polylines: {
+            ..._rotas,
+            if (!_navegando) ..._destaqueRuaBusca,
+            if (!_navegando) ..._destaqueAreaBusca,
+          },
+          polygons: _navegando ? const {} : _preenchimentoAreaBusca,
           mapType: _modoMapaAtual == 'Satélite' ? MapType.satellite : MapType.normal,
           style: _estiloAtivo,
         ),
 
+        if (!_navegando)
         Positioned(
           top: topOffset,
           left: 16,
@@ -1671,7 +2553,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                       margin: const EdgeInsets.only(top: 8),
                       constraints: const BoxConstraints(maxHeight: 260),
                       decoration: BoxDecoration(
-                        color: isDark ? corCardEscuro : Colors.white,
+                        color: isDark ? superficieEscura : superficieClara,
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
                           BoxShadow(color: Colors.black.withAlpha(isDark ? 60 : 15), blurRadius: 16, offset: const Offset(0, 6)),
@@ -1694,11 +2576,29 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                             TipoSugestao.endereco => Icons.signpost_outlined,
                           };
                           return ListTile(
+                            dense: true,
                             leading: Icon(icone, color: corPrimaria),
                             title: Text(
                               sugestao.texto,
-                              style: TextStyle(color: isDark ? Colors.white : Colors.black87),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTextStyles.bodyBold.copyWith(
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
                             ),
+                            // onde o lugar fica (cidade, estado) numa linha
+                            // separada: antes vinha tudo grudado no titulo,
+                            // numa linha so, e o nome do lugar se perdia
+                            subtitle: sugestao.detalhe.isEmpty
+                                ? null
+                                : Text(
+                                    sugestao.detalhe,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: AppTextStyles.caption.copyWith(
+                                      color: isDark ? Colors.white38 : Colors.black45,
+                                    ),
+                                  ),
                             onTap: () => _selecionarSugestao(sugestao),
                           );
                         },
@@ -1713,7 +2613,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
 
         // cartao com a distancia/duracao da rota pedida na tela de detalhes,
         // ou um spinner enquanto ela ainda ta sendo calculada
-        if (_carregandoRota || _rotaAtual != null)
+        if (!_navegando && (_carregandoRota || _rotaAtual != null))
           Positioned(
             top: topOffset + 68,
             left: 16,
@@ -1730,7 +2630,10 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (_rotaAtual != null) ...[
+                  // navegando, o seletor de modal e o de alternativas saem:
+                  // trocar de rota no meio do percurso nao faz sentido e eles
+                  // roubam espaco de tela que a navegacao precisa
+                  if (_rotaAtual != null && !_navegando) ...[
                     _seletorModoTransporte(isDark),
                     const SizedBox(height: 12),
                     Divider(height: 1, color: isDark ? Colors.white.withAlpha(10) : Colors.grey.withAlpha(20)),
@@ -1779,10 +2682,39 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                                 ],
                               ),
                             ),
-                            IconButton(
-                              onPressed: _limparRota,
-                              icon: Icon(Icons.close_rounded, color: isDark ? Colors.white38 : Colors.grey),
+                            // "Ir" entra na navegacao; navegando, vira "Sair"
+                            Pressionavel(
+                              onTap: _navegando ? _encerrarNavegacao : _iniciarNavegacao,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: AppSpacing.lg, vertical: AppSpacing.sm + 2),
+                                decoration: BoxDecoration(
+                                  gradient: _navegando ? null : gradientePrincipal,
+                                  color: _navegando ? corErro : null,
+                                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      _navegando ? Icons.close_rounded : Icons.navigation_rounded,
+                                      color: Colors.white,
+                                      size: 17,
+                                    ),
+                                    const SizedBox(width: AppSpacing.xs + 2),
+                                    Text(
+                                      _navegando ? 'Sair' : 'Ir',
+                                      style: AppTextStyles.captionBold.copyWith(color: Colors.white),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
+                            if (!_navegando)
+                              IconButton(
+                                onPressed: _limparRota,
+                                icon: Icon(Icons.close_rounded, color: isDark ? Colors.white38 : Colors.grey),
+                              ),
                           ],
                         ),
                 ],
@@ -1790,6 +2722,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
             ),
             ),
           ),
+
+        // painel do modo navegacao -- substitui busca e card de rota
+        if (_navegando) _painelNavegacao(isDark),
 
         // card do local buscado + botao de tracar rota ate ele
         if (_mostrandoCardLocal)
@@ -1804,7 +2739,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
             ),
           ),
 
-        // botao pra focar na localizacao do usuario
+        // botao pra focar na localizacao do usuario. Sai na navegacao: o
+        // painel tem o proprio recentralizar e os dois colidiam no canto
+        if (!_navegando)
         Positioned(
           // sobe se o botao de anunciar estiver visivel, e mais ainda se o
           // card do local buscado estiver ocupando a base da tela
@@ -1822,14 +2759,25 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                 width: 52,
                 height: 52,
                 child: Center(
-                  child: Icon(Icons.my_location_rounded, color: isDark ? Colors.white : Colors.black87, size: 24),
+                  // icone cortado quando nao ha permissao: o botao continua
+                  // clicavel (abre a explicacao), mas dizendo de cara que a
+                  // localizacao esta desligada em vez de fingir que funciona
+                  child: Icon(
+                    temLocalizacao
+                        ? Icons.my_location_rounded
+                        : Icons.location_disabled_rounded,
+                    color: temLocalizacao
+                        ? (isDark ? Colors.white : Colors.black87)
+                        : (isDark ? Colors.white38 : Colors.black38),
+                    size: 24,
+                  ),
                 ),
               ),
             ),
           ),
         ),
 
-        if (podeAnunciar)
+        if (podeAnunciar && !_navegando)
           Positioned(
             bottom: acimaDaBarra + alturaCardLocal + AppSpacing.md,
             right: 16,

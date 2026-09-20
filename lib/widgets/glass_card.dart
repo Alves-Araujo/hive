@@ -59,9 +59,13 @@ class GlassCard extends StatelessWidget {
   // "grossura" do vidro na borda refratada
   final double espessura;
 
-  // cor base do preenchimento. null = branco (claro) / corCardEscuro (escuro).
-  // O card de rota usa um azul escuro pra combinar com a paleta do mapa
+  // cor base do preenchimento. null = usa a cor de superficie padrao.
+  //
+  // NAO e branco puro: sobre o mapa (cujos tons sao off-white e bege) uma
+  // peca branca pura fica mais clara que tudo em volta e nao orna. O tom
+  // frio abaixo acompanha os cinzas do mapa e o azul do app
   final Color? corBase;
+
 
   const GlassCard({
     super.key,
@@ -104,12 +108,13 @@ class GlassCard extends StatelessWidget {
         stops: const [0, 0.30, 0.64, 1],
         colors: isDark
             ? [
-                // mesma reducao feita no tema claro: 132 no topo desenhava um
-                // contorno visivel em volta da peca em vez de insinuar luz
-                Colors.white.withAlpha(64),
-                Colors.white.withAlpha(30),
-                Colors.white.withAlpha(18),
-                Colors.white.withAlpha(44),
+                // no escuro qualquer branco salta muito mais que no claro --
+                // o que la e sutil, aqui vira contorno esbranquicado. Por
+                // isso estes valores sao bem menores que os do tema claro
+                Colors.white.withAlpha(34),
+                Colors.white.withAlpha(16),
+                Colors.white.withAlpha(10),
+                Colors.white.withAlpha(22),
               ]
             : [
                 // era branco puro aqui e 224 no pe, o que desenhava um
@@ -137,16 +142,16 @@ class GlassCard extends StatelessWidget {
                   // no escuro o preenchimento tem que ser ainda mais solido:
                   // texto claro sobre mapa escuro perde contraste rapido, e
                   // sem blur nao ha nada suavizando o fundo
-                  Color.alphaBlend(Colors.white.withAlpha(22), corSuperficieEscura.withAlpha(236)),
-                  corSuperficieEscura.withAlpha(232),
-                  Color.alphaBlend(corPrimaria.withAlpha(34), corSuperficieEscura.withAlpha(238)),
+                  Color.alphaBlend(Colors.white.withAlpha(20), (corBase ?? superficieEscura).withAlpha(238)),
+                  (corBase ?? superficieEscura).withAlpha(236),
+                  Color.alphaBlend(corPrimaria.withAlpha(30), (corBase ?? superficieEscura).withAlpha(240)),
                 ]
               : [
-                  (corBase ?? Colors.white).withAlpha(opacidade),
-                  (corBase ?? Colors.white).withAlpha((opacidade * 0.92).round()),
+                  (corBase ?? superficieClara).withAlpha(opacidade),
+                  (corBase ?? superficieClara).withAlpha((opacidade * 0.94).round()),
                   Color.alphaBlend(
-                    corPrimaria.withAlpha(20),
-                    (corBase ?? Colors.white).withAlpha((opacidade * 0.96).round()),
+                    corPrimaria.withAlpha(16),
+                    (corBase ?? superficieClara).withAlpha((opacidade * 0.97).round()),
                   ),
                 ],
         ),
@@ -165,8 +170,8 @@ class GlassCard extends StatelessWidget {
                     end: const Alignment(0.75, 1),
                     stops: const [0, 0.12, 0.27, 1],
                     colors: [
-                      Colors.white.withAlpha(isDark ? 74 : 176),
-                      Colors.white.withAlpha(isDark ? 30 : 74),
+                      Colors.white.withAlpha(isDark ? 34 : 176),
+                      Colors.white.withAlpha(isDark ? 14 : 74),
                       Colors.white.withAlpha(0),
                       Colors.white.withAlpha(0),
                     ],
@@ -175,19 +180,19 @@ class GlassCard extends StatelessWidget {
               ),
             ),
           ),
-          // espessura: invertida em relacao ao rim de fora
+          // NAO reintroduzir uma borda superior aqui. Existia uma hairline
+          // escura no topo (pra simular espessura do vidro) e ela lia como
+          // uma linha cinza atravessando a barra e o botao de localizacao --
+          // foi reportada como defeito. So o realce inferior ficou, porque
+          // esse le como luz e nao como risco
           Positioned.fill(
             child: IgnorePointer(
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   borderRadius: raio,
                   border: Border(
-                    top: BorderSide(
-                      color: isDark ? Colors.black.withAlpha(120) : corPrimaria.withAlpha(30),
-                      width: 1,
-                    ),
                     bottom: BorderSide(
-                      color: Colors.white.withAlpha(isDark ? 40 : 96),
+                      color: Colors.white.withAlpha(isDark ? 16 : 70),
                       width: 1,
                     ),
                   ),

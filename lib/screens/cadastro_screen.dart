@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../main.dart';
+import '../widgets/campo_formulario.dart';
 import '../services/auth_service.dart';
 import '../services/usuario_service.dart';
 import '../utils/moderacao.dart';
@@ -218,26 +219,7 @@ class _TelaCadastroState extends State<TelaCadastro>
   }
 
   InputDecoration _inputDeco(String label, IconData icon, bool isDark) {
-    return InputDecoration(
-      labelText: label,
-      labelStyle: TextStyle(
-        color: isDark ? Colors.white38 : Colors.grey.shade500,
-        fontWeight: FontWeight.w500,
-      ),
-      prefixIcon: Icon(icon, color: corPrimaria.withAlpha(160), size: 22),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(18)),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(18),
-        borderSide: BorderSide(color: isDark ? Colors.white.withAlpha(15) : Colors.grey.withAlpha(40)),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(18),
-        borderSide: const BorderSide(color: corPrimaria, width: 1.5),
-      ),
-      filled: true,
-      fillColor: isDark ? Colors.white.withAlpha(8) : Colors.white.withAlpha(180),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-    );
+    return decoracaoCampo(isDark: isDark, rotulo: label, icone: icon);
   }
 
   @override

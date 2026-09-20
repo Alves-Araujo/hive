@@ -12,6 +12,7 @@ import '../services/usuario_service.dart';
 import '../utils/chamada.dart';
 import '../widgets/animated_gradient_button.dart';
 import '../widgets/avatar_widget.dart';
+import '../widgets/card_imovel_vertical.dart';
 import 'chat_detail_screen.dart';
 
 // perfil publico de uma pessoa (aluno/corretor/proprietario) OU de uma
@@ -123,7 +124,7 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? corFundoEscuro : const Color(0xFFF6F5FF),
+      backgroundColor: isDark ? corSuperficieEscura : const Color(0xFFF6F5FF),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -159,7 +160,7 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
                 Container(
                   height: 56,
                   width: 56,
-                  decoration: BoxDecoration(gradient: gradienteSecundario, borderRadius: BorderRadius.circular(18)),
+                  decoration: BoxDecoration(gradient: gradientePrincipal, borderRadius: BorderRadius.circular(99.0)),
                   child: IconButton(
                     icon: const Icon(Icons.call_rounded, color: Colors.white),
                     onPressed: _ligar,
@@ -211,7 +212,7 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
             return Container(
               margin: const EdgeInsets.only(bottom: 10),
               decoration: BoxDecoration(
-                color: isDark ? corCardEscuro : Colors.white,
+                color: isDark ? superficieEscura : superficieClara,
                 borderRadius: BorderRadius.circular(16),
               ),
               child: ListTile(
@@ -272,43 +273,8 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
             style: AppTextStyles.caption.copyWith(color: isDark ? Colors.white38 : Colors.grey),
           );
         }
-        return SizedBox(
-          height: 130,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: imoveis.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 12),
-            itemBuilder: (context, index) {
-              final imovel = imoveis[index];
-              return Container(
-                width: 150,
-                decoration: BoxDecoration(
-                  color: isDark ? corCardEscuro : Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: imovel.fotos.isNotEmpty
-                          ? Image.network(imovel.fotos.first, width: double.infinity, fit: BoxFit.cover)
-                          : Container(color: corPrimaria.withAlpha(30), child: const Icon(Icons.home_rounded, color: corPrimaria)),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: Text(
-                        imovel.titulo,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontWeight: FontWeight.w600, fontSize: 12),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
+        return Column(
+          children: imoveis.map((imovel) => CardImovelVertical(imovel: imovel, isDark: isDark)).toList(),
         );
       },
     );
@@ -341,7 +307,7 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: isDark ? corCardEscuro : Colors.white,
+                  color: isDark ? superficieEscura : superficieClara,
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Column(
@@ -393,7 +359,7 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
                     margin: const EdgeInsets.only(bottom: 10),
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: isDark ? corCardEscuro : Colors.white,
+                      color: isDark ? superficieEscura : superficieClara,
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Column(

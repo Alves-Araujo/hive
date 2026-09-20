@@ -161,7 +161,7 @@ class _CampoEnderecoState extends State<CampoEndereco> {
                 initialValue: c.estado,
                 isExpanded: true,
                 style: TextStyle(color: isDark ? Colors.white : Colors.black87),
-                dropdownColor: isDark ? corCardEscuro : Colors.white,
+                dropdownColor: isDark ? superficieEscura : superficieClara,
                 decoration: InputDecoration(
                   labelText: 'UF',
                   labelStyle: TextStyle(color: isDark ? Colors.white54 : Colors.grey.shade600),

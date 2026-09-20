@@ -6,6 +6,7 @@ import '../main.dart';
 import '../models/imovel.dart';
 import '../services/busca_global_service.dart';
 import '../widgets/avatar_widget.dart';
+import '../widgets/cabecalho_tela.dart';
 import 'chat_detail_screen.dart';
 import 'perfil_publico_screen.dart';
 
@@ -73,48 +74,16 @@ class _TelaListaChatsState extends State<TelaListaChats> {
   @override
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final double topPadding = MediaQuery.of(context).padding.top;
     final bool pesquisando = _buscaController.text.trim().isNotEmpty;
 
     return Column(
       children: [
-        Container(
-          padding: EdgeInsets.only(top: topPadding + 12, left: 20, right: 20, bottom: 16),
-          decoration: BoxDecoration(
-            color: isDark ? corCardEscuro : Colors.white,
-            boxShadow: [
-              BoxShadow(color: Colors.black.withAlpha(isDark ? 30 : 10), blurRadius: 10, offset: const Offset(0, 2)),
-            ],
-          ),
-          child: Column(
-            children: [
-              const Row(
-                children: [
-                  Text('Caixa de Entrada', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: -0.5)),
-                ],
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _buscaController,
-                focusNode: _buscaFocusNode,
-                style: TextStyle(color: isDark ? Colors.white : Colors.black87),
-                decoration: InputDecoration(
-                  hintText: 'Buscar alunos, corretores, imobiliárias...',
-                  hintStyle: TextStyle(color: isDark ? Colors.white38 : Colors.black38),
-                  prefixIcon: const Icon(Icons.search_rounded, color: corPrimaria),
-                  suffixIcon: pesquisando
-                      ? IconButton(
-                          icon: const Icon(Icons.close_rounded, color: Colors.grey, size: 20),
-                          onPressed: () => _buscaController.clear(),
-                        )
-                      : null,
-                  filled: true,
-                  fillColor: isDark ? Colors.white.withAlpha(10) : Colors.grey.withAlpha(15),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                ),
-              ),
-            ],
+        CabecalhoTela(
+          titulo: 'Caixa de Entrada',
+          rodape: CampoBuscaPadrao(
+            controller: _buscaController,
+            focusNode: _buscaFocusNode,
+            dica: 'Buscar alunos, corretores, imobiliárias...',
           ),
         ),
         Expanded(

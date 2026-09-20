@@ -1,3 +1,5 @@
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+
 class Imobiliaria {
   final String id;
   final String nome;
@@ -10,6 +12,11 @@ class Imobiliaria {
   final String fotoUrl;
   final String endereco;
 
+  // coordenada do escritorio, pro pin no mapa. Fica null quando o endereco
+  // nao pode ser geocodificado (ou em cadastro antigo, feito antes disso
+  // existir) -- e a ausencia dela que decide se a imobiliaria aparece no mapa
+  final LatLng? posicao;
+
   Imobiliaria({
     required this.id,
     required this.nome,
@@ -21,6 +28,7 @@ class Imobiliaria {
     this.emailVerificado = false,
     this.fotoUrl = '',
     this.endereco = '',
+    this.posicao,
   });
 
   factory Imobiliaria.fromMap(Map<String, dynamic> map, String id) {
@@ -35,6 +43,10 @@ class Imobiliaria {
       emailVerificado: map['emailVerificado'] ?? false,
       fotoUrl: map['fotoUrl'] ?? '',
       endereco: map['endereco'] ?? '',
+      posicao: (map['latitude'] is num && map['longitude'] is num)
+          ? LatLng((map['latitude'] as num).toDouble(),
+              (map['longitude'] as num).toDouble())
+          : null,
     );
   }
 
@@ -49,6 +61,10 @@ class Imobiliaria {
       'emailVerificado': emailVerificado,
       'fotoUrl': fotoUrl,
       'endereco': endereco,
+      // gravados soltos (nao como GeoPoint) pra seguir o mesmo formato que
+      // os imoveis ja usam na colecao "imoveis"
+      if (posicao != null) 'latitude': posicao!.latitude,
+      if (posicao != null) 'longitude': posicao!.longitude,
     };
   }
 }

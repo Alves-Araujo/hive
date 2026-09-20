@@ -17,7 +17,7 @@ class AnimatedGradientButton extends StatefulWidget {
     this.isLoading = false,
     this.icon,
     this.height = 56,
-    this.borderRadius = 18,
+    this.borderRadius = AppRadius.md,
   });
 
   @override
@@ -70,10 +70,13 @@ class _AnimatedGradientButtonState extends State<AnimatedGradientButton>
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
+                  // mesmo azul escuro do gradientePrincipal, usado no botao de
+                  // rota e na pilula da barra. O roxo #7C3AED que estava aqui
+                  // nao existe em mais lugar nenhum da identidade
                   colors: const [
-                    corPrimaria,
-                    corPrimaria2,
-                    Color(0xFF7C3AED),
+                    Color(0xFF12294A),
+                    Color(0xFF17456F),
+                    Color(0xFF1C5A8F),
                   ],
                   stops: [
                     0.0,
@@ -81,18 +84,7 @@ class _AnimatedGradientButtonState extends State<AnimatedGradientButton>
                     1.0,
                   ],
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: corPrimaria.withAlpha(80),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8),
-                  ),
-                  BoxShadow(
-                    color: corPrimaria2.withAlpha(40),
-                    blurRadius: 40,
-                    offset: const Offset(0, 16),
-                  ),
-                ],
+                boxShadow: AppShadows.marca(forca: 0.9),
               ),
               child: Center(
                 child: widget.isLoading

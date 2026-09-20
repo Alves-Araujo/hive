@@ -8,13 +8,15 @@ import '../models/imovel.dart';
 import '../models/perfil_publico.dart';
 import '../services/avaliacao_service.dart';
 import '../services/busca_service.dart';
+import '../services/localizacao_service.dart';
 import '../services/perfil_publico_service.dart';
 import '../services/rota_service.dart';
-import '../utils/localizacao.dart';
+import '../utils/distancia.dart';
 import '../utils/moeda.dart';
 import '../utils/tempo.dart';
 import '../widgets/animated_gradient_button.dart';
 import '../widgets/avatar_widget.dart';
+import '../widgets/painel_localizacao.dart';
 import '../widgets/pressionavel.dart';
 import 'chat_detail_screen.dart';
 import 'perfil_publico_screen.dart';
@@ -49,23 +51,26 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
   }
 
   Future<void> _rotaDaMinhaLocalizacaoAteAqui() async {
+    // a rota sai de onde a pessoa esta: sem permissao, explica e pergunta --
+    // mesmo painel do mapa, pra o pedido ser sempre o mesmo em todo o app
+    if (!LocalizacaoService.instance.permitida) {
+      final liberou = await pedirLocalizacaoComExplicacao(context);
+      if (!liberou || !mounted) return;
+    }
+
     setState(() => _buscandoLocalizacao = true);
     LatLng? origem;
     try {
-      origem = await obterLocalizacaoAtual();
+      origem = await LocalizacaoService.instance.posicaoParaRota();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro ao obter sua localização: $e'), backgroundColor: corErro),
-        );
-      }
+      origem = null;
     }
     if (!mounted) return;
     setState(() => _buscandoLocalizacao = false);
 
     if (origem == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Não conseguimos acessar sua localização atual.'), backgroundColor: corErro),
+        const SnackBar(content: Text('Não conseguimos acessar sua localização agora.'), backgroundColor: corErro),
       );
       return;
     }
@@ -90,7 +95,7 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
     final sugestaoEscolhida = await showModalBottomSheet<SugestaoBusca>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: isDark ? corCardEscuro : Colors.white,
+      backgroundColor: isDark ? superficieEscura : superficieClara,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       builder: (sheetContext) => _SeletorDeDestino(imoveis: imoveis),
     );
@@ -107,7 +112,7 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     showModalBottomSheet(
       context: context,
-      backgroundColor: isDark ? corCardEscuro : Colors.white,
+      backgroundColor: isDark ? superficieEscura : superficieClara,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       builder: (sheetContext) {
         return SafeArea(
@@ -171,12 +176,12 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(AppRadius.xl),
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: isDark ? Colors.white.withAlpha(8) : Colors.grey.withAlpha(15),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(AppRadius.xl),
         ),
         child: Row(
           children: [
@@ -255,11 +260,29 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
                       color: isDark ? corSuperficieEscura : const Color(0xFFF8F7FF),
                       borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
                     ),
+                    // o topo paga os 26px que a folha subiu por cima da foto,
+                    // senao o titulo encosta na imagem -- era o que acontecia:
+                    // 24 de padding menos 26 de sobreposicao davam ZERO de
+                    // respiro entre a foto e o texto
                     padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.xxl, AppSpacing.xxl, AppSpacing.xxl, 0),
+                      AppSpacing.xxl, AppSpacing.xxl + 26, AppSpacing.xxl, 0),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // puxador: marca onde a folha comeca. Sem foto (ou com
+                        // foto escura) a superficie se confundia com a imagem
+                        // e nao dava pra ver onde uma acabava e a outra comecava
+                        Center(
+                          child: Container(
+                            width: 40,
+                            height: 4,
+                            margin: const EdgeInsets.only(bottom: AppSpacing.lg),
+                            decoration: BoxDecoration(
+                              color: isDark ? Colors.white24 : Colors.black12,
+                              borderRadius: BorderRadius.circular(AppRadius.pill),
+                            ),
+                          ),
+                        ),
                         Text(
                           imovel.titulo,
                           style: AppTextStyles.heading2.copyWith(
@@ -282,6 +305,11 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
                           ],
                         ),
 
+                        if (imovel.bairro.isNotEmpty) ...[
+                          const SizedBox(height: AppSpacing.md),
+                          _chipBairro(imovel, isDark),
+                        ],
+
                         if (!isEvento) ...[
                           const SizedBox(height: AppSpacing.xl),
                           _cartaoPreco(imovel, isDark),
@@ -302,7 +330,17 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
                           Wrap(
                             spacing: AppSpacing.sm,
                             runSpacing: AppSpacing.sm,
-                            children: imovel.tags.map((tag) => _pilula(tag, isDark)).toList(),
+                            // a tag de faculdade vira a distancia real medida ate o Inatel --
+                            // "Perto da Faculdade" e opiniao de quem anunciou,
+                            // "320 m da faculdade" e verificavel
+                            children: imovel.tags
+                                .map((tag) => _pilula(
+                                      tag == tagPertoDaFaculdade
+                                          ? rotuloDistanciaFaculdade(imovel.posicao)
+                                          : tag,
+                                      isDark,
+                                    ))
+                                .toList(),
                           ),
                         ],
 
@@ -346,9 +384,9 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
   Widget _botaoVoltar(bool isEvento) {
     return Material(
       color: Colors.transparent,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(99.0),
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(99.0),
         onTap: () => Navigator.pop(context),
         child: Container(
           width: 44,
@@ -356,7 +394,7 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
           alignment: Alignment.center,
           decoration: BoxDecoration(
             gradient: isEvento ? gradienteEvento : gradientePrincipal,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(99.0),
             boxShadow: AppShadows.marca(forca: 0.8),
           ),
           child: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 20),
@@ -368,6 +406,54 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
   // foto cheia com scrim, ou um estado vazio decente. O estado vazio importa
   // muito aqui: boa parte dos anuncios do banco nao tem foto, e antes a tela
   // simplesmente abria com um vazio enorme que parecia tela quebrada
+  // bairro do imovel, clicavel: leva pro mapa com o contorno tracejado da
+  // regiao, igual o Google Maps faz quando voce toca no nome de um bairro.
+  // Antes o bairro so aparecia perdido na lista de "Detalhes", como texto
+  Widget _chipBairro(Imovel imovel, bool isDark) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Pressionavel(
+        onTap: () {
+          bairroPendenteGlobal.value = BairroPendente(
+            nome: imovel.bairro,
+            perto: imovel.posicao,
+          );
+          Navigator.of(context).popUntil((route) => route.isFirst);
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+          decoration: BoxDecoration(
+            color: isDark ? Colors.white.withAlpha(14) : Colors.white,
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+            border: Border.all(
+              color: isDark
+                  ? Colors.white.withAlpha(20)
+                  : corPrimaria.withAlpha(26),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.map_outlined,
+                  size: 15, color: isDark ? Colors.white54 : corPrimaria),
+              const SizedBox(width: AppSpacing.xs + 2),
+              Text(
+                'Bairro ${imovel.bairro}',
+                style: AppTextStyles.captionBold.copyWith(
+                  color: isDark ? Colors.white70 : Colors.black87,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Icon(Icons.arrow_forward_ios_rounded,
+                  size: 11, color: isDark ? Colors.white38 : Colors.black38),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _cabecalhoFoto(Imovel imovel, bool isEvento, bool isDark) {
     final bool temFoto = imovel.fotos.isNotEmpty;
 
@@ -462,10 +548,10 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
   Widget _cartaoPreco(Imovel imovel, bool isDark) {
     return Container(
       padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.xl, vertical: AppSpacing.lg + 2),
+          horizontal: AppSpacing.xl, vertical: AppSpacing.lg),
       decoration: BoxDecoration(
-        color: isDark ? Colors.white.withAlpha(10) : Colors.white,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
+        color: isDark ? corSuperficieEscura : Colors.white,
+        borderRadius: BorderRadius.circular(99.0),
         boxShadow: AppShadows.nivel1(isDark),
         border: Border.all(
           color: isDark ? Colors.white.withAlpha(14) : corPrimaria.withAlpha(20),
@@ -522,7 +608,7 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
   Widget _barraDeAcoes(Imovel imovel, bool isEvento, bool isDark) {
     return Container(
       decoration: BoxDecoration(
-        color: isDark ? corCardEscuro : Colors.white,
+        color: isDark ? superficieEscura : superficieClara,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
         boxShadow: [
           BoxShadow(
@@ -569,7 +655,7 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
                     height: 56,
                     decoration: BoxDecoration(
                       color: isDark ? Colors.white.withAlpha(14) : corPrimaria.withAlpha(14),
-                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      borderRadius: BorderRadius.circular(99.0),
                       border: Border.all(
                         color: isDark ? Colors.white.withAlpha(20) : corPrimaria.withAlpha(34),
                       ),
@@ -780,7 +866,7 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
 
         return Container(
           padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(color: isDark ? corCardEscuro : Colors.white, borderRadius: BorderRadius.circular(18)),
+          decoration: BoxDecoration(color: isDark ? superficieEscura : superficieClara, borderRadius: BorderRadius.circular(18)),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

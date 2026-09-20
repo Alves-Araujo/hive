@@ -4,6 +4,7 @@ import 'package:flutter/services.dart' show TextInputFormatter;
 import 'package:image_picker/image_picker.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../main.dart';
+import '../widgets/campo_formulario.dart';
 import '../models/endereco.dart';
 import '../models/usuario.dart';
 import '../services/imgbb_service.dart';
@@ -140,7 +141,7 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        backgroundColor: isDark ? corCardEscuro : Colors.white,
+        backgroundColor: isDark ? superficieEscura : superficieClara,
         title: const Text('Termos de Privacidade'),
         content: const SingleChildScrollView(
           child: Text(
@@ -637,12 +638,12 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
     final temData = _dataNascimento != null;
     return InkWell(
       onTap: _escolherDataNascimento,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(99.0),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
           color: isDark ? Colors.white.withAlpha(8) : Colors.grey.withAlpha(15),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(99.0),
         ),
         child: Row(
           children: [
@@ -673,7 +674,7 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: isDark ? corCardEscuro : Colors.white,
+        color: isDark ? superficieEscura : superficieClara,
         borderRadius: BorderRadius.circular(22),
         boxShadow: [
           BoxShadow(color: Colors.black.withAlpha(isDark ? 40 : 8), blurRadius: 16, offset: const Offset(0, 6)),
@@ -686,7 +687,7 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
             children: [
               Container(
                 padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(gradient: gradientePrincipal, borderRadius: BorderRadius.circular(10)),
+                decoration: BoxDecoration(gradient: gradientePrincipal, borderRadius: BorderRadius.circular(99.0)),
                 child: Icon(icone, color: Colors.white, size: 18),
               ),
               const SizedBox(width: 10),
@@ -715,7 +716,7 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
         decoration: BoxDecoration(
           gradient: selecionado ? gradientePrincipal : null,
           color: selecionado ? null : (isDark ? Colors.white.withAlpha(8) : Colors.grey.withAlpha(15)),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(99.0),
         ),
         child: Text(
           label,
@@ -748,14 +749,10 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
       validator: validator,
       onChanged: onChanged,
       style: TextStyle(color: isDark ? Colors.white : Colors.black87),
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: TextStyle(color: isDark ? Colors.white54 : Colors.grey.shade600),
-        prefixIcon: Icon(icon, color: isDark ? Colors.white54 : corPrimaria),
-        filled: true,
-        fillColor: isDark ? Colors.white.withAlpha(8) : Colors.grey.withAlpha(15),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: decoracaoCampo(
+        isDark: isDark,
+        rotulo: label,
+        icone: icon,
       ),
     );
   }

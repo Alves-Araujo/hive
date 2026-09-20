@@ -59,5 +59,13 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- Sem isso o url_launcher nao enxerga o navegador no Android 11+ e
+             canLaunchUrl/launchUrl falham calados: a partir da API 30 o app so
+             ve os apps que declara aqui. E o que abre o site do Inatel e a
+             pagina do vestibular no painel da faculdade. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
     </queries>
 </manifest>

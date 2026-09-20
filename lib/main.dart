@@ -15,6 +15,11 @@ import 'screens/resumo_screen.dart';
 import 'screens/chat_list_screen.dart';
 import 'services/rota_service.dart';
 
+// true enquanto o modo "Ir" esta ativo. A barra de navegacao inferior some
+// nesse estado: navegacao e um modo que toma a tela, e trocar de aba no meio
+// do percurso nao faz sentido -- a barra so rouba altura util do mapa
+final ValueNotifier<bool> navegandoGlobal = ValueNotifier(false);
+
 // controle do tema do app inteiro
 final ValueNotifier<ThemeMode> temaGlobal = ValueNotifier(ThemeMode.system);
 
@@ -44,32 +49,42 @@ const corFundoEscuro = Color(0xFF0A0A10);
 const corCardEscuro = Color(0xFF16161F);
 const corSuperficieEscura = Color(0xFF1E1E2A);
 
+// superficies do vidro -- deliberadamente NAO sao branco puro nem cinza
+// neutro: sobre o mapa (tons off-white/bege no claro, azulado no escuro) uma
+// peca branca pura fica mais clara que tudo em volta e destoa. Estes tons
+// frios acompanham o mapa e o azul do app
+const superficieClara = Color(0xFFEFF3F8);
+const superficieEscura = Color(0xFF16222E);
+
 // cores pra feedback (sucesso, aviso, erro)
 const corSucesso = Color(0xFF10B981);
 const corAtencao = Color(0xFFF59E0B);
 const corErro = Color(0xFFEF4444);
 
 // gradientes usados nos botoes e cards
+// gradiente da marca. UNICO -- antes existiam dois concorrentes: este, que
+// ia de azul a ciano (#00B4DB), e um "gradientePrincipal" criado depois pro botao
+// de rota porque o primeiro ficava berrante sobre a tela clara. Dois
+// gradientes de marca e o caminho pra tela nenhuma combinar com a outra,
+// entao o azul escuro virou o unico e os ~16 usos espalhados seguem ele.
 const gradientePrincipal = LinearGradient(
-  colors: [corPrimaria, corPrimaria2, Color(0xFF00B4DB)],
-  begin: Alignment.topLeft,
-  end: Alignment.bottomRight,
+  colors: [Color(0xFF12294A), Color(0xFF17456F), Color(0xFF1C5A8F)],
+  begin: Alignment.centerLeft,
+  end: Alignment.centerRight,
 );
 
+// gradiente de DESTAQUE DE PRECO -- e a unica coisa pra que ele serve.
+//
+// A regra que mantem o app coerente: gradientePrincipal em marca e acao
+// (botoes, selos de icone, estado selecionado); gradienteSecundario SO em
+// preco (cartao do resumo, ficha do imovel, badge do filtro). O ciano so
+// funciona como destaque justamente por ser a unica cor viva da tela -- usar
+// em botao, como estava no "ligar" do perfil publico, gasta esse contraste e
+// faz o preco deixar de saltar.
 const gradienteSecundario = LinearGradient(
   colors: [Color(0xFF06B6D4), Color(0xFF3B82F6)],
   begin: Alignment.topLeft,
   end: Alignment.bottomRight,
-);
-
-// gradiente escuro pras acoes principais -- alinhado com o azul escuro que
-// ja domina a tela: a pilula ativa da barra (#14304F) e a agua do mapa
-// (#1c4e7a). O gradientePrincipal vai de azul claro a ciano, que sobre a
-// tela clara ficava mais berrante do que o resto
-const gradienteAcao = LinearGradient(
-  colors: [Color(0xFF12294A), Color(0xFF17456F), Color(0xFF1C5A8F)],
-  begin: Alignment.centerLeft,
-  end: Alignment.centerRight,
 );
 
 const gradienteEvento = LinearGradient(
@@ -239,6 +254,11 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // tela cheia: esconde a barra de status e a de navegacao do sistema.
+  // "sticky" faz elas reaparecerem temporariamente ao deslizar da borda e
+  // sumirem sozinhas depois, em vez de ficarem presas na tela
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
   _ouvirPedidosDeRota();
 
@@ -414,7 +434,11 @@ class _TelaPrincipalState extends State<TelaPrincipal>
       // o ClipRect de dentro cortaria ela -- e sem essa sombra a barra de
       // vidro cola no conteudo e perde a leitura de estar por cima
       // isola a camada da barra tambem -- ela nao muda durante o arraste
-      bottomNavigationBar: RepaintBoundary(
+      bottomNavigationBar: ValueListenableBuilder<bool>(
+        valueListenable: navegandoGlobal,
+        builder: (_, navegando, barra) =>
+            navegando ? const SizedBox.shrink() : barra!,
+        child: RepaintBoundary(
         child: DecoratedBox(
         decoration: BoxDecoration(
           // o raio TAMBEM aqui, nao so no ClipRRect: sem ele a sombra e
@@ -448,18 +472,20 @@ class _TelaPrincipalState extends State<TelaPrincipal>
                   stops: const [0, 0.55, 1],
                   colors: isDark
                       ? [
-                          // corSuperficieEscura (#1E1E2A) e nao corCardEscuro
-                          // (#16161F): este ultimo tem luminancia quase igual
-                          // a base nova do mapa escuro (#0f1620), e a barra
-                          // se dissolvia no fundo sem separacao nenhuma
-                          Color.alphaBlend(Colors.white.withAlpha(30), corSuperficieEscura.withAlpha(248)),
-                          corSuperficieEscura.withAlpha(246),
-                          Color.alphaBlend(corPrimaria.withAlpha(26), corSuperficieEscura.withAlpha(248)),
+                          // tom azulado e mais claro que a base do mapa
+                          // escuro (#0f1620) -- com corCardEscuro (#16161F) a
+                          // luminancia era quase igual a do mapa e a barra se
+                          // dissolvia no fundo, sem separacao nenhuma
+                          Color.alphaBlend(Colors.white.withAlpha(26), superficieEscura.withAlpha(248)),
+                          superficieEscura.withAlpha(246),
+                          Color.alphaBlend(corPrimaria.withAlpha(24), superficieEscura.withAlpha(248)),
                         ]
                       : [
-                          Colors.white.withAlpha(250),
-                          Colors.white.withAlpha(243),
-                          Color.alphaBlend(corPrimaria.withAlpha(18), Colors.white.withAlpha(246)),
+                          // NAO branco puro: sobre o mapa (off-white e bege) a
+                          // barra branca ficava mais clara que tudo e nao ornava
+                          superficieClara.withAlpha(250),
+                          superficieClara.withAlpha(244),
+                          Color.alphaBlend(corPrimaria.withAlpha(16), superficieClara.withAlpha(247)),
                         ],
                 ),
                 border: Border(
@@ -467,7 +493,7 @@ class _TelaPrincipalState extends State<TelaPrincipal>
                   // branca solida atravessando o topo da barra. Reduzido pra
                   // so separar a barra do mapa sem desenhar contorno
                   top: BorderSide(
-                    color: isDark ? Colors.white.withAlpha(58) : Colors.white.withAlpha(72),
+                    color: isDark ? Colors.white.withAlpha(18) : Colors.white.withAlpha(52),
                     width: 1,
                   ),
                 ),
@@ -493,6 +519,7 @@ class _TelaPrincipalState extends State<TelaPrincipal>
             ),
           ),
         ),
+      ),
       ),
     );
   }

@@ -1,9 +1,10 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show ValueNotifier, debugPrint;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 import '../models/imovel.dart';
 import '../utils/moderacao.dart';
+import '../utils/texto.dart';
 
 enum TipoSugestao { cidade, faculdade, moradia, endereco }
 
@@ -18,14 +19,52 @@ class SugestaoBusca {
   final TipoGeometria tipoGeometria;
   final List<LatLng> pontosGeometria; // so preenchido quando tipoGeometria != ponto
 
-  SugestaoBusca({
+  // linha de apoio na lista (cidade/estado, rua...) -- o display_name do
+  // Nominatim vem inteiro numa string so e fica ilegivel numa linha unica
+  final String detalhe;
+
+  // area cujo contorno ainda nao foi buscado. Buscar o contorno leva
+  // segundos (Overpass), e fazer isso PARA CADA sugestao antes de mostrar a
+  // lista era o motivo de as sugestoes demorarem tanto a aparecer -- agora
+  // so acontece quando a pessoa escolhe o resultado
+  final bool contornoPendente;
+
+  const SugestaoBusca({
     required this.texto,
     required this.tipo,
     required this.destino,
     this.tipoGeometria = TipoGeometria.ponto,
     this.pontosGeometria = const [],
+    this.detalhe = '',
+    this.contornoPendente = false,
   });
+
+  SugestaoBusca comGeometria(TipoGeometria tipo, List<LatLng> pontos) =>
+      SugestaoBusca(
+        texto: texto,
+        tipo: this.tipo,
+        destino: destino,
+        tipoGeometria: tipo,
+        pontosGeometria: pontos,
+        detalhe: detalhe,
+      );
 }
+
+// pedido de "mostra esse bairro no mapa", feito da tela de detalhes do
+// imovel e consumido pelo mapa -- mesmo padrao do rotaPendenteGlobal, que
+// ja existia pra rota. A tela de detalhes nao desenha nada: ela so diz qual
+// bairro quer ver e volta pro mapa, que trata de achar o contorno
+class BairroPendente {
+  final String nome;
+
+  // ponto de referencia (a posicao do imovel) -- e o que distingue o "Centro"
+  // certo entre os milhares de bairros com esse nome no Brasil
+  final LatLng perto;
+
+  const BairroPendente({required this.nome, required this.perto});
+}
+
+final ValueNotifier<BairroPendente?> bairroPendenteGlobal = ValueNotifier(null);
 
 class _LocalConhecido {
   final String nome;
@@ -79,31 +118,85 @@ class BuscaService {
   BuscaService._();
   static final BuscaService instance = BuscaService._();
 
-  List<SugestaoBusca> buscarSugestoes(String query, List<Imovel> imoveis) {
-    final termo = normalizarNome(query);
-    if (termo.isEmpty) return [];
+  // quebra o que foi digitado em palavras soltas.
+  //
+  // E o que torna a busca "mais livre": antes o texto inteiro tinha que
+  // aparecer na mesma ordem, entao "sapucai santa rita" nao achava "Santa
+  // Rita do Sapucaí", e "republica centro" nao achava "República Estudantil
+  // Central" no bairro Centro. Agora basta cada palavra aparecer em algum
+  // lugar, em qualquer ordem, sem acento e sem ligar pra maiuscula
+  List<String> _palavras(String query) => normalizarNome(query)
+      .split(' ')
+      .where((p) => p.isNotEmpty)
+      .toList();
 
-    final sugestoes = <SugestaoBusca>[];
+  // relevancia: quanto MENOR, mais em cima na lista. Null = nao casa.
+  //
+  // Casar no inicio do nome vale mais do que casar no comeco de uma palavra
+  // do meio, que por sua vez vale mais do que casar dentro de uma palavra --
+  // e o que faz "cen" mostrar "Centro" antes de "Vila Adélia, perto do
+  // centro". Sem isso a ordem era so a de insercao no laço
+  int? _pontuar(String alvo, List<String> palavras) {
+    final texto = normalizarNome(alvo);
+    var pontos = 0;
+    for (final palavra in palavras) {
+      final posicao = texto.indexOf(palavra);
+      if (posicao < 0) return null;
+      if (posicao == 0) {
+        pontos += 0;
+      } else if (texto[posicao - 1] == ' ') {
+        pontos += 3;
+      } else {
+        pontos += 8;
+      }
+    }
+    // desempate: entre dois que casam igual, o nome mais curto e o mais
+    // especifico ("Centro" antes de "Centro Comercial de Santa Rita")
+    return pontos + (texto.length ~/ 25);
+  }
+
+  List<SugestaoBusca> buscarSugestoes(String query, List<Imovel> imoveis) {
+    final palavras = _palavras(query);
+    if (palavras.isEmpty) return [];
+
+    final ranqueadas = <({int pontos, SugestaoBusca sugestao})>[];
 
     for (final local in _locaisConhecidos) {
-      if (normalizarNome(local.nome).contains(termo)) {
-        sugestoes.add(SugestaoBusca(texto: local.nome, tipo: local.tipo, destino: local.posicao));
-      }
+      final pontos = _pontuar(local.nome, palavras);
+      if (pontos == null) continue;
+      ranqueadas.add((
+        // instituicao e cidade da lista fixa sao o resultado mais provavel
+        // quando a pessoa digita o nome delas -- entram na frente
+        pontos: pontos - 2,
+        sugestao: SugestaoBusca(
+            texto: local.nome, tipo: local.tipo, destino: local.posicao),
+      ));
     }
 
     for (final imovel in imoveis) {
-      // combina titulo, endereco, tipo (Casa/Apartamento/Pensão/...) e cidade
-      // -- antes so titulo+endereco batiam, entao buscar "pensao" nao achava
-      // uma Pensão cujo titulo/endereco nao continha essa palavra
-      final combinado = normalizarNome(
-        '${imovel.titulo} ${imovel.endereco} ${imovel.tipoImovel} ${imovel.cidade}',
+      // combina titulo, endereco, tipo (Casa/Apartamento/Pensão/...), bairro e
+      // cidade -- antes so titulo+endereco batiam, entao buscar "pensao" nao
+      // achava uma Pensão cujo titulo/endereco nao continha essa palavra
+      final pontos = _pontuar(
+        '${imovel.titulo} ${imovel.endereco} ${imovel.tipoImovel} ${imovel.bairro} ${imovel.cidade}',
+        palavras,
       );
-      if (combinado.contains(termo)) {
-        sugestoes.add(SugestaoBusca(texto: imovel.titulo, tipo: TipoSugestao.moradia, destino: imovel.posicao));
-      }
+      if (pontos == null) continue;
+      ranqueadas.add((
+        pontos: pontos,
+        sugestao: SugestaoBusca(
+          texto: imovel.titulo,
+          tipo: TipoSugestao.moradia,
+          destino: imovel.posicao,
+          detalhe: [imovel.bairro, imovel.cidade]
+              .where((p) => p.isNotEmpty)
+              .join(' · '),
+        ),
+      ));
     }
 
-    return sugestoes.take(8).toList();
+    ranqueadas.sort((a, b) => a.pontos.compareTo(b.pontos));
+    return ranqueadas.map((r) => r.sugestao).take(8).toList();
   }
 
   // autocomplete de verdade (ruas, bairros, cidades -- nao so a listinha fixa
@@ -113,23 +206,40 @@ class BuscaService {
   // gente). Limitado ao Brasil pra nao trazer resultado de fora.
   // polygon_geojson pede a geometria de verdade (contorno da rua/bairro), nao
   // so o ponto central -- e o que permite desenhar o destaque certo no mapa
-  Future<List<SugestaoBusca>> buscarLocaisOnline(String query) async {
+  Future<List<SugestaoBusca>> buscarLocaisOnline(String query,
+      {LatLng? perto}) async {
     if (query.trim().length < 3) return [];
+
+    // caixa de ~100 km em volta do ponto de referencia (onde a pessoa esta,
+    // ou o Inatel). Sem isso "Centro" devolvia o centro de Alagoas e o de
+    // Nova Friburgo antes do centro da cidade em que a pessoa esta -- o
+    // Nominatim nao tem como adivinhar a regiao sozinho.
+    // bounded=0: e preferencia, nao cerca. Buscar uma cidade de outro estado
+    // continua funcionando, so vem depois do que esta perto
+    final referencia = perto ?? const LatLng(-22.2573047, -45.6958702);
+    const double raioGraus = 0.9;
 
     final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
       'q': query,
       'format': 'json',
       'addressdetails': '1',
       'countrycodes': 'br',
-      'limit': '8',
+      'limit': '10',
       'polygon_geojson': '1',
       'polygon_threshold': '0.002', // simplifica o contorno, senao vem pesado demais
+      'viewbox': '${referencia.longitude - raioGraus},'
+          '${referencia.latitude + raioGraus},'
+          '${referencia.longitude + raioGraus},'
+          '${referencia.latitude - raioGraus}',
+      'bounded': '0',
     });
 
     try {
       final resposta = await http
           .get(uri, headers: {'User-Agent': 'moradia-app-inatel/1.0'})
-          .timeout(const Duration(seconds: 6));
+          // 6 s era tempo demais pra uma lista que precisa acompanhar quem
+          // esta digitando: passou disso, a sugestao ja nao serve mais
+          .timeout(const Duration(seconds: 3));
       if (resposta.statusCode != 200) return [];
 
       final lista = json.decode(resposta.body) as List<dynamic>;
@@ -163,27 +273,43 @@ class BuscaService {
             ? const <LatLng>[]
             : _extrairPontos(item['geojson'] as Map<String, dynamic>?, tipoGeometria);
 
-        // bairro sem contorno no proprio Nominatim -- tenta achar o contorno
-        // real (o formato de verdade das ruas, nao um circulo aproximado) via
-        // Overpass, que consegue puxar o "way"/"relation" com esse nome. Se
-        // nem isso existir no OpenStreetMap (bem comum em bairro de cidade
-        // pequena, que muita vez so tem um ponto cadastrado e nunca teve o
-        // contorno desenhado por ninguem), vira um marker mesmo -- nunca mais
-        // um circulo fake no lugar da area
-        if (tipoGeometria == TipoGeometria.area && pontosGeometria.length < 3) {
-          final nomeCurto = item['name'] as String? ?? texto.split(',').first;
-          pontosGeometria = await _buscarContornoBairro(nomeCurto, LatLng(lat, lng));
-          if (pontosGeometria.length < 3) tipoGeometria = TipoGeometria.ponto;
-        }
+        // bairro sem contorno no proprio Nominatim: o contorno real (o
+        // formato de verdade das ruas, nao um circulo aproximado) existe no
+        // Overpass, mas buscar la e LENTO -- e antes isso acontecia AQUI,
+        // para cada area da lista, antes de mostrar qualquer sugestao. Era a
+        // causa da demora. Agora so marca que falta, e o contorno e buscado
+        // quando a pessoa escolhe o resultado (ver garantirContorno)
+        final bool faltaContorno =
+            tipoGeometria == TipoGeometria.area && pontosGeometria.length < 3;
+
+        // display_name vem inteiro numa string so ("Centro, Santa Rita do
+        // Sapucaí, Minas Gerais, Brasil"): o comeco e o nome do lugar, o
+        // resto e onde ele fica. Separado, a lista fica legivel
+        final partes = texto.split(',');
+        final nome = (item['name'] as String?)?.trim().isNotEmpty == true
+            ? (item['name'] as String).trim()
+            : partes.first.trim();
+        final detalhe = partes.length > 1
+            ? partes.sublist(1).map((p) => p.trim()).take(3).join(', ')
+            : '';
 
         sugestoes.add(SugestaoBusca(
-          texto: texto,
+          texto: capitalizarNome(nome),
+          detalhe: detalhe,
           tipo: ehCidade ? TipoSugestao.cidade : TipoSugestao.endereco,
           destino: LatLng(lat, lng),
           tipoGeometria: tipoGeometria,
           pontosGeometria: pontosGeometria,
+          contornoPendente: faltaContorno,
         ));
       }
+
+      // o viewbox e so uma dica pro Nominatim, que as vezes devolve o lugar
+      // distante primeiro mesmo assim. Ordenar por distancia aqui garante
+      // que o bairro da cidade da pessoa venha antes do homonimo do outro
+      // estado -- e o comportamento que se espera de uma busca no mapa
+      sugestoes.sort((a, b) => _distanciaAprox(a.destino, referencia)
+          .compareTo(_distanciaAprox(b.destino, referencia)));
       return sugestoes;
     } catch (e) {
       debugPrint('Erro ao buscar locais online: $e');
@@ -191,10 +317,32 @@ class BuscaService {
     }
   }
 
+  // so pra ORDENAR: compara distancias em graus ao quadrado, sem raiz e sem
+  // trigonometria. Nao vira metro nenhum -- e a ordem que importa aqui
+  double _distanciaAprox(LatLng a, LatLng b) {
+    final dx = a.longitude - b.longitude;
+    final dy = a.latitude - b.latitude;
+    return dx * dx + dy * dy;
+  }
+
+  // completa a sugestao escolhida com o contorno que faltava.
+  //
+  // Roda no momento da escolha, nao na montagem da lista: uma busca lenta
+  // aqui atrasa UM resultado que a pessoa ja pediu, em vez de segurar a lista
+  // inteira enquanto ela ainda esta digitando
+  Future<SugestaoBusca> garantirContorno(SugestaoBusca sugestao) async {
+    if (!sugestao.contornoPendente) return sugestao;
+    final pontos = await buscarContornoDeArea(sugestao.texto, sugestao.destino);
+    return sugestao.comGeometria(
+      pontos.length >= 3 ? TipoGeometria.area : TipoGeometria.ponto,
+      pontos,
+    );
+  }
+
   // busca o contorno real (way ou relation do tipo boundary/place) de um
   // bairro/regiao via Overpass API -- gratuito tambem, mesma infra do
   // OpenStreetMap. So chamado quando o Nominatim nao trouxe poligono nenhum
-  Future<List<LatLng>> _buscarContornoBairro(String nome, LatLng perto) async {
+  Future<List<LatLng>> buscarContornoDeArea(String nome, LatLng perto) async {
     final nomeEscapado = nome.replaceAll('\\', r'\\').replaceAll('"', r'\"');
     final query = '[out:json][timeout:15];'
         '('

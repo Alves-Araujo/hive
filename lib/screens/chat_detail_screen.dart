@@ -136,7 +136,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     showModalBottomSheet(
       context: context,
-      backgroundColor: isDark ? corCardEscuro : Colors.white,
+      backgroundColor: isDark ? superficieEscura : superficieClara,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       builder: (sheetContext) {
         return SafeArea(
@@ -266,9 +266,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     final double larguraMaxima = MediaQuery.of(context).size.width * 0.7;
 
     return Scaffold(
-      backgroundColor: isDark ? corSuperficieEscura : const Color(0xFFF8F7FF),
+      backgroundColor: isDark ? corFundoEscuro : const Color(0xFFF4F6FA),
       appBar: AppBar(
-        backgroundColor: isDark ? corCardEscuro : Colors.white,
+        backgroundColor: isDark ? superficieEscura : superficieClara,
+        surfaceTintColor: Colors.transparent,
         elevation: 1,
         iconTheme: IconThemeData(color: isDark ? Colors.white : Colors.black87),
         titleSpacing: 0,
@@ -392,17 +393,22 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   }
 
   Widget _buildConteudoMensagem(String mensagemId, String tipo, Map<String, dynamic> msg, bool isMinha, bool isDark) {
+    // minha mensagem leva o gradiente da marca; a recebida, a superficie do
+    // app. A quina "mordida" de 4px do lado de quem enviou e o que da a
+    // leitura de origem sem precisar de seta nem rotulo
     final decoracaoBalao = BoxDecoration(
-      color: isMinha ? corPrimaria : (isDark ? Colors.white.withAlpha(15) : Colors.white),
+      gradient: isMinha ? gradientePrincipal : null,
+      color: isMinha ? null : (isDark ? Colors.white.withAlpha(16) : superficieClara),
       borderRadius: BorderRadius.only(
-        topLeft: const Radius.circular(16),
-        topRight: const Radius.circular(16),
-        bottomLeft: Radius.circular(isMinha ? 16 : 4),
-        bottomRight: Radius.circular(isMinha ? 4 : 16),
+        topLeft: const Radius.circular(AppRadius.md),
+        topRight: const Radius.circular(AppRadius.md),
+        bottomLeft: Radius.circular(isMinha ? AppRadius.md : 4),
+        bottomRight: Radius.circular(isMinha ? 4 : AppRadius.md),
       ),
-      boxShadow: [
-        if (!isMinha) BoxShadow(color: Colors.black.withAlpha(5), blurRadius: 4, offset: const Offset(0, 2)),
-      ],
+      border: isMinha
+          ? null
+          : Border.all(color: isDark ? Colors.white.withAlpha(14) : Colors.black.withAlpha(10)),
+      boxShadow: AppShadows.nivel1(isDark),
     );
 
     if (tipo == 'imagem') {
@@ -462,7 +468,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       decoration: BoxDecoration(
-        color: isDark ? corCardEscuro : Colors.white,
+        color: isDark ? corSuperficieEscura : Colors.white,
         boxShadow: [
           BoxShadow(color: Colors.black.withAlpha(10), blurRadius: 10, offset: const Offset(0, -4)),
         ],
@@ -509,7 +515,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                               filled: true,
                               fillColor: isDark ? Colors.white.withAlpha(10) : Colors.grey.withAlpha(15),
                               border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(24),
+                                borderRadius: BorderRadius.circular(99.0),
                                 borderSide: BorderSide.none,
                               ),
                               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),

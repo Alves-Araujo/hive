@@ -11,6 +11,7 @@ import '../models/imovel.dart';
 import '../services/imgbb_service.dart';
 import '../widgets/animated_gradient_button.dart';
 import '../main.dart';
+import '../widgets/campo_formulario.dart';
 
 const int _limiteTamanhoImagemBytes = 32 * 1024 * 1024; // 32MB por foto
 
@@ -306,7 +307,7 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? corSuperficieEscura : const Color(0xFFF8F7FF),
+      backgroundColor: isDark ? corFundoEscuro : const Color(0xFFF4F6FA),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -451,14 +452,8 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
                       initialValue: _estadoSelecionado,
                       isExpanded: true,
                       style: TextStyle(color: isDark ? Colors.white : Colors.black87),
-                      dropdownColor: isDark ? corCardEscuro : Colors.white,
-                      decoration: InputDecoration(
-                        labelText: 'UF',
-                        labelStyle: TextStyle(color: isDark ? Colors.white54 : Colors.black54),
-                        filled: true,
-                        fillColor: isDark ? corCardEscuro : Colors.white,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-                      ),
+                      dropdownColor: isDark ? superficieEscura : superficieClara,
+                      decoration: decoracaoCampo(isDark: isDark, rotulo: 'UF'),
                       items: estadosBrasileiros
                           .map((uf) => DropdownMenuItem(value: uf, child: Text(uf)))
                           .toList(),
@@ -491,6 +486,7 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
                     return ChoiceChip(
                       label: Text(tipo),
                       selected: selecionado,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(99.0)),
                       selectedColor: corPrimaria,
                       labelStyle: TextStyle(
                         color: selecionado ? Colors.white : (isDark ? Colors.white70 : Colors.black87),
@@ -535,6 +531,7 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
                       child: ChoiceChip(
                         label: const Text('Valor (R\$)'),
                         selected: !_iptuEhUpload,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(99.0)),
                         selectedColor: corPrimaria,
                         labelStyle: TextStyle(color: !_iptuEhUpload ? Colors.white : (isDark ? Colors.white70 : Colors.black87)),
                         onSelected: (_) => setState(() => _iptuEhUpload = false),
@@ -545,6 +542,7 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
                       child: ChoiceChip(
                         label: const Text('Anexar comprovante'),
                         selected: _iptuEhUpload,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(99.0)),
                         selectedColor: corPrimaria,
                         labelStyle: TextStyle(color: _iptuEhUpload ? Colors.white : (isDark ? Colors.white70 : Colors.black87)),
                         onSelected: (_) => setState(() => _iptuEhUpload = true),
@@ -572,29 +570,26 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
                 const SizedBox(height: 24),
                 Text('O que está incluso', style: AppTextStyles.captionBold.copyWith(color: isDark ? Colors.white70 : Colors.black87)),
                 const SizedBox(height: 4),
-                CheckboxListTile(
+                SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Luz'),
                   value: _incluiLuz,
                   activeColor: corPrimaria,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  onChanged: (v) => setState(() => _incluiLuz = v ?? false),
+                  onChanged: (v) => setState(() => _incluiLuz = v),
                 ),
-                CheckboxListTile(
+                SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Água'),
                   value: _incluiAgua,
                   activeColor: corPrimaria,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  onChanged: (v) => setState(() => _incluiAgua = v ?? false),
+                  onChanged: (v) => setState(() => _incluiAgua = v),
                 ),
-                CheckboxListTile(
+                SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Wi-Fi'),
                   value: _incluiWifi,
                   activeColor: corPrimaria,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  onChanged: (v) => setState(() => _incluiWifi = v ?? false),
+                  onChanged: (v) => setState(() => _incluiWifi = v),
                 ),
 
                 const SizedBox(height: 20),
@@ -632,6 +627,7 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
                     children: _tagsSelecionadas.where((t) => !tagsDisponiveis.contains(t)).map((tag) {
                       return Chip(
                         label: Text(tag),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(99.0)),
                         onDeleted: () => _alternarTag(tag),
                         backgroundColor: corPrimaria.withAlpha(20),
                       );
@@ -669,6 +665,7 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
             return FilterChip(
               label: Text(tag),
               selected: selecionado,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(99.0)),
               selectedColor: corPrimaria.withAlpha(50),
               checkmarkColor: isDark ? Colors.white : corPrimaria,
               backgroundColor: isDark ? Colors.white.withAlpha(10) : Colors.grey.withAlpha(20),
@@ -700,6 +697,7 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
               return FilterChip(
                 label: Text(tag),
                 selected: selecionado,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(99.0)),
                 selectedColor: corPrimaria.withAlpha(50),
                 checkmarkColor: isDark ? Colors.white : corPrimaria,
                 backgroundColor: isDark ? Colors.white.withAlpha(10) : Colors.grey.withAlpha(20),
@@ -712,6 +710,7 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
             FilterChip(
               label: const Text('Outro'),
               selected: _generoOutroSelecionado,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(99.0)),
               selectedColor: corPrimaria.withAlpha(50),
               checkmarkColor: isDark ? Colors.white : corPrimaria,
               backgroundColor: isDark ? Colors.white.withAlpha(10) : Colors.grey.withAlpha(20),
@@ -870,17 +869,13 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
       inputFormatters: formatters,
       style: TextStyle(color: isDark ? Colors.white : Colors.black87),
       validator: validator,
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: TextStyle(color: isDark ? Colors.white54 : Colors.black54),
-        prefixIcon: Icon(icon, color: isDark ? Colors.white54 : corPrimaria),
-        filled: true,
-        fillColor: isDark ? corCardEscuro : Colors.white,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: isDark ? Colors.white.withAlpha(10) : Colors.black.withAlpha(10)),
-        ),
+      // campo de varias linhas nao usa pilula: em caixa alta o raio de
+      // pilula deforma e o texto encosta nas laterais
+      decoration: decoracaoCampo(
+        isDark: isDark,
+        rotulo: label,
+        icone: icon,
+        raio: maxLines > 1 ? AppRadius.lg : AppRadius.md + 6,
       ),
     );
   }

@@ -1,4 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:geocoding/geocoding.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart' show LatLng;
 import '../models/imobiliaria.dart';
 import '../models/perfil_publico.dart';
 import '../utils/moderacao.dart';
@@ -28,7 +31,24 @@ class ImobiliariaService {
   }) async {
     final cnpjBusca = normalizarCnpj(cnpj);
     final existente = await _colecao.where('cnpjBusca', isEqualTo: cnpjBusca).limit(1).get();
-    if (existente.docs.isNotEmpty) return existente.docs.first.id;
+    if (existente.docs.isNotEmpty) {
+      final doc = existente.docs.first;
+      // imobiliaria cadastrada antes de existir pin no mapa fica sem
+      // coordenada pra sempre se ninguem preencher -- aproveita esse cadastro
+      // pra completar, sem obrigar nada de quem esta se vinculando
+      final dados = doc.data();
+      if (dados['latitude'] == null && endereco.trim().isNotEmpty) {
+        final posicao = await _geocodificar(endereco);
+        if (posicao != null) {
+          await doc.reference.update({
+            'endereco': endereco,
+            'latitude': posicao.latitude,
+            'longitude': posicao.longitude,
+          });
+        }
+      }
+      return doc.id;
+    }
 
     final novaImobiliaria = Imobiliaria(
       id: '',
@@ -38,9 +58,34 @@ class ImobiliariaService {
       cnpjBusca: cnpjBusca,
       email: email,
       emailBusca: email.toLowerCase().trim(),
+      endereco: endereco,
+      // o endereco e digitado como texto; o pin no mapa precisa de coordenada
+      posicao: await _geocodificar(endereco),
     );
     final doc = await _colecao.add(novaImobiliaria.toMap());
     return doc.id;
+  }
+
+  // endereco escrito -> coordenada. Null quando o servico nao reconhece o
+  // endereco: a imobiliaria e cadastrada do mesmo jeito, so nao entra no mapa
+  Future<LatLng?> _geocodificar(String endereco) async {
+    if (endereco.trim().isEmpty) return null;
+    try {
+      final locais = await Geocoding().locationFromAddress(endereco);
+      if (locais.isEmpty) return null;
+      return LatLng(locais.first.latitude, locais.first.longitude);
+    } catch (e) {
+      debugPrint('Não foi possível geocodificar a imobiliária: $e');
+      return null;
+    }
+  }
+
+  // imobiliarias com coordenada -- as unicas que tem como aparecer no mapa
+  Stream<List<Imobiliaria>> streamComPosicao() {
+    return _colecao.snapshots().map((snap) => snap.docs
+        .map((d) => Imobiliaria.fromMap(d.data(), d.id))
+        .where((i) => i.posicao != null)
+        .toList());
   }
 
   // pendente = ainda nao confirmada por ninguem que tenha esse e-mail

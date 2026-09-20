@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart' show ValueNotifier, debugPrint;
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' show LatLng, LatLngBounds;
@@ -76,6 +78,101 @@ class RotaAtiva {
         modo: modo,
         indiceSelecionado: indice,
       );
+}
+
+// onde o usuario esta em relacao ao trajeto, recalculado a cada leitura de GPS
+class ProgressoRota {
+  // metros que faltam ANDANDO PELA ROTA -- nao em linha reta. A diferenca
+  // nao e detalhe: em malha urbana a linha reta chega a mentir o dobro, e
+  // era ela que o painel de navegacao mostrava
+  final double metrosRestantes;
+
+  // o quanto o usuario esta afastado da linha. Acima de certo limite ele
+  // saiu do trajeto e vale recalcular
+  final double desvioMetros;
+
+  const ProgressoRota({required this.metrosRestantes, required this.desvioMetros});
+}
+
+// a rota preparada pra ser consultada a cada segundo.
+//
+// Guarda, pra cada ponto, quantos metros faltam dali ate o fim. Esse
+// acumulado e calculado UMA vez por rota porque a consulta roda a cada
+// leitura de GPS -- refazer a soma inteira toda vez seria trabalho jogado fora
+class TrilhaRota {
+  final List<LatLng> pontos;
+
+  // restanteAte[i] = metros de pontos[i] ate o destino, seguindo a linha
+  final List<double> restanteAte;
+
+  double get total => restanteAte.isEmpty ? 0 : restanteAte.first;
+
+  TrilhaRota._(this.pontos, this.restanteAte);
+
+  factory TrilhaRota.montar(List<LatLng> pontos) {
+    final restante = List<double>.filled(pontos.length, 0);
+    for (var i = pontos.length - 2; i >= 0; i--) {
+      restante[i] = restante[i + 1] + _metrosEntre(pontos[i], pontos[i + 1]);
+    }
+    return TrilhaRota._(pontos, restante);
+  }
+
+  // acha o ponto da rota mais proximo da posicao atual e mede dali pra frente.
+  //
+  // Projeta em cada SEGMENTO, nao no vertice mais proximo: em rua reta o
+  // Google manda vertices distantes entre si, e medir so por vertice acusaria
+  // desvio de quem esta exatamente em cima da linha
+  ProgressoRota progresso(LatLng atual) {
+    if (pontos.length < 2) {
+      return const ProgressoRota(metrosRestantes: 0, desvioMetros: 0);
+    }
+
+    double melhorDist = double.infinity;
+    double melhorRestante = 0;
+
+    for (var i = 0; i < pontos.length - 1; i++) {
+      final a = pontos[i];
+      final b = pontos[i + 1];
+
+      // plano local em metros: sobre poucos km o erro dessa aproximacao fica
+      // abaixo de 1%, e ela evita trigonometria esferica a cada segmento
+      final mLng = _metrosPorGrauLng(a.latitude);
+      final abx = (b.longitude - a.longitude) * mLng;
+      final aby = (b.latitude - a.latitude) * _metrosPorGrauLat;
+      final apx = (atual.longitude - a.longitude) * mLng;
+      final apy = (atual.latitude - a.latitude) * _metrosPorGrauLat;
+
+      final comprimento2 = abx * abx + aby * aby;
+      // t = onde cai a projecao dentro do segmento, preso em [0,1] pra nao
+      // "passar do fim" quando o usuario esta depois do ultimo ponto
+      final t = comprimento2 == 0
+          ? 0.0
+          : ((apx * abx + apy * aby) / comprimento2).clamp(0.0, 1.0);
+
+      final dx = apx - abx * t;
+      final dy = apy - aby * t;
+      final dist = math.sqrt(dx * dx + dy * dy);
+
+      if (dist < melhorDist) {
+        melhorDist = dist;
+        final comprimento = math.sqrt(comprimento2);
+        melhorRestante = restanteAte[i + 1] + comprimento * (1 - t);
+      }
+    }
+
+    return ProgressoRota(metrosRestantes: melhorRestante, desvioMetros: melhorDist);
+  }
+}
+
+const double _metrosPorGrauLat = 111320.0;
+
+double _metrosPorGrauLng(double lat) =>
+    _metrosPorGrauLat * math.cos(lat * math.pi / 180);
+
+double _metrosEntre(LatLng a, LatLng b) {
+  final dx = (b.longitude - a.longitude) * _metrosPorGrauLng(a.latitude);
+  final dy = (b.latitude - a.latitude) * _metrosPorGrauLat;
+  return math.sqrt(dx * dx + dy * dy);
 }
 
 // resultado da rota mais recente e se uma busca ta em andamento -- ficam

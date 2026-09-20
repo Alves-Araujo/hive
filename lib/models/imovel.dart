@@ -9,7 +9,18 @@ enum TipoListing { moradia, evento }
 const List<String> tiposImovelDisponiveis = ['Casa', 'Apartamento', 'República', 'Pensão', 'Kitnet'];
 
 // tags organizadas por categoria, usadas na criacao do anuncio e nos filtros do mapa
-const List<String> tagsPositivas = ['Mobiliado', 'Garagem', 'Com Wi-Fi', 'Suíte', 'Elevador', 'Perto da Facul'];
+// "Perto da Facul" virou "Perto da Faculdade". O nome antigo continua
+// gravado nos anuncios ja existentes, entao NAO basta renomear aqui: sem
+// converter na leitura, anuncio antigo mostraria o texto velho e deixaria de
+// casar com o filtro novo. Ver tagCompativel() abaixo
+const String tagPertoDaFaculdade = 'Perto da Faculdade';
+const String _tagPertoDaFaculdadeAntiga = 'Perto da Facul';
+
+const List<String> tagsPositivas = ['Mobiliado', 'Garagem', 'Com Wi-Fi', 'Suíte', 'Elevador', tagPertoDaFaculdade];
+
+// converte tag gravada no banco pro nome atual
+String tagCompativel(String tag) =>
+    tag == _tagPertoDaFaculdadeAntiga ? tagPertoDaFaculdade : tag;
 const List<String> tagsNegativas = ['Sem elevador'];
 const List<String> tagsPreferenciaGenero = ['Exclusivo para Mulheres', 'Exclusivo para Homens'];
 
@@ -106,7 +117,7 @@ class Imovel {
       preco: (map['preco'] ?? 0.0).toDouble(),
       posicao: LatLng(lat, lng),
       tipo: (map['tipo'] ?? '') == 'evento' ? TipoListing.evento : TipoListing.moradia,
-      tags: List<String>.from(map['tags'] ?? []).map(normalizarTracos).toList(),
+      tags: List<String>.from(map['tags'] ?? []).map(normalizarTracos).map(tagCompativel).toList(),
       endereco: normalizarTracosOuVazio(map['endereco']),
       fotos: List<String>.from(map['fotos'] ?? []),
       donoUid: map['donoUid'] ?? '',
