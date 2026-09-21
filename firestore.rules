@@ -14,25 +14,6 @@ service cloud.firestore {
         allow read: if request.auth != null;
         allow create: if request.auth != null && request.resource.data.avaliadorUid == request.auth.uid;
       }
-
-      // avisos pessoais (mensagem, avaliacao) -- so o dono le e apaga; quem
-      // gera o aviso so cria, assinando com o proprio uid, e nunca pra si
-      match /notificacoes/{notificacaoId} {
-        allow read, delete: if request.auth != null && request.auth.uid == uid;
-        allow create: if request.auth != null
-          && request.auth.uid != uid
-          && request.resource.data.autorUid == request.auth.uid;
-      }
-    }
-
-    // avisos pra todo mundo (moradia, evento, imobiliaria nova). Leitura
-    // aberta pra quem esta logado; criacao assinada com o proprio uid e
-    // restrita a esses tipos. Ninguem edita ou apaga aviso depois de criado
-    match /notificacoes/{notificacaoId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null
-        && request.resource.data.autorUid == request.auth.uid
-        && request.resource.data.tipo in ['novaMoradia', 'novoEvento', 'novaImobiliaria'];
     }
 
     // versao publica do perfil (nome, foto, tipo de conta...) -- sem dado
@@ -50,13 +31,13 @@ service cloud.firestore {
       // campo vinculoConfirmado, e so se o e-mail CONFIRMADO do login for o
       // da imobiliaria a que esse corretor diz pertencer
       allow update: if request.auth != null
-        && request.auth.token.email_verified == true
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['vinculoConfirmado'])
-        && request.resource.data.vinculoConfirmado == true
-        && resource.data.imobiliariaId is string
-        && resource.data.imobiliariaId != ''
-        && get(/databases/$(database)/documents/imobiliarias/$(resource.data.imobiliariaId)).data.emailBusca
-             == request.auth.token.email.lower();
+      && request.auth.token.email_verified == true
+      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['vinculoConfirmado'])
+      && request.resource.data.vinculoConfirmado == true
+      && resource.data.imobiliariaId is string
+      && resource.data.imobiliariaId != ''
+      && get(/databases/$(database)/documents/imobiliarias/$(resource.data.imobiliariaId)).data.emailBusca
+      == request.auth.token.email.lower();
     }
 
     // imobiliarias -- publicas pra leitura/busca e pro pin no mapa
@@ -66,14 +47,14 @@ service cloud.firestore {
       // qualquer corretor logado cadastra a imobiliaria dele, mas ela nasce
       // SEMPRE nao confirmada -- confirmar e trabalho do dono do e-mail
       allow create: if request.auth != null
-        && request.resource.data.emailVerificado == false;
+      && request.resource.data.emailVerificado == false;
 
       allow update: if request.auth != null && (
         // so quem entra com o e-mail (confirmado) da imobiliaria a confirma.
         // Antes qualquer logado podia marcar emailVerificado em qualquer uma
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['emailVerificado'])
-          && request.auth.token.email_verified == true
-          && request.auth.token.email.lower() == resource.data.emailBusca)
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.lower() == resource.data.emailBusca)
         ||
         // completar endereco e coordenada de cadastro antigo (pin no mapa)
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['endereco', 'latitude', 'longitude'])
@@ -87,7 +68,7 @@ service cloud.firestore {
 
     function perfilCompleto() {
       return request.auth != null &&
-        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.perfilCompleto == true;
+      get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.perfilCompleto == true;
     }
 
     // anuncios (moradias/eventos) -- qualquer logado le, mas so quem completou
@@ -95,9 +76,9 @@ service cloud.firestore {
     match /imoveis/{imovelId} {
       allow read: if request.auth != null;
       allow create: if perfilCompleto()
-                    && request.resource.data.donoUid == request.auth.uid;
+      && request.resource.data.donoUid == request.auth.uid;
       allow update, delete: if request.auth != null
-                             && resource.data.donoUid == request.auth.uid;
+      && resource.data.donoUid == request.auth.uid;
     }
 
     // chat -- qualquer logado pode ler, mas so quem completou o perfil manda mensagem
