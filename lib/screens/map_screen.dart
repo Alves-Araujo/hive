@@ -47,7 +47,30 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   final TextEditingController _buscaController = TextEditingController();
   final FocusNode _buscaFocusNode = FocusNode();
   Timer? _debounceSugestoes;
-  List<SugestaoBusca> _sugestoes = [];
+  // as sugestoes vem de duas fontes com tempos MUITO diferentes: a local e
+  // instantanea (filtro em memoria), a online leva de 200 ms a 3 s. Guardar
+  // as duas separadas e o que permite a lista crescer sem nunca piscar --
+  // quando as duas dividiam a mesma lista, cada tecla apagava o que a
+  // internet tinha acabado de trazer, e a pessoa via o resultado sumir
+  List<SugestaoBusca> _sugestoesLocais = [];
+  List<SugestaoBusca> _sugestoesOnline = [];
+  bool _buscandoOnline = false;
+
+  // lista mostrada: locais primeiro (sao as mais provaveis e ja estao certas),
+  // depois as online que ainda casam com o que esta escrito agora
+  List<SugestaoBusca> get _sugestoes {
+    final palavras = BuscaService.instance.palavras(_buscaController.text);
+    if (palavras.isEmpty) return const [];
+
+    final vistos = <String>{};
+    final juntas = <SugestaoBusca>[];
+    for (final s in [..._sugestoesLocais, ..._sugestoesOnline]) {
+      if (!vistos.add(normalizarNome(s.texto))) continue;
+      juntas.add(s);
+      if (juntas.length >= 8) break;
+    }
+    return juntas;
+  }
 
   String _modoMapaAtual = 'Normal';
 
@@ -64,12 +87,8 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   // pins desenhados uma vez e reusados. Ficam nulos ate _prepararPins()
   // terminar; enquanto isso os markers saem com o icone padrao, o que evita
   // a tela abrir sem marcador nenhum
-  BitmapDescriptor? _pinMoradia;
-  BitmapDescriptor? _pinMoradiaOrigem;
-  BitmapDescriptor? _pinMoradiaDestino;
-  BitmapDescriptor? _pinEvento;
-  BitmapDescriptor? _pinEventoOrigem;
-  BitmapDescriptor? _pinEventoDestino;
+  // um trio (normal, origem, destino) por tipo de anuncio
+  Map<TipoPin, (BitmapDescriptor, BitmapDescriptor, BitmapDescriptor)> _pinsAnuncio = {};
   BitmapDescriptor? _pinInatel;
   BitmapDescriptor? _pinInatelOrigem;
   BitmapDescriptor? _pinInatelDestino;
@@ -278,12 +297,29 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       // atraso de graça. O debounce fica so pra parte online, que custa uma
       // chamada por consulta
       final termoAgora = _buscaController.text;
+      final palavras = BuscaService.instance.palavras(termoAgora);
       setState(() {
-        _sugestoes =
+        _sugestoesLocais =
             BuscaService.instance.buscarSugestoes(termoAgora, _imoveisDoBanco);
+
+        // o que a internet ja trouxe CONTINUA na tela enquanto ainda fizer
+        // sentido pro que esta escrito. Antes a lista inteira era zerada a
+        // cada tecla, entao o resultado online sumia e so voltava depois de
+        // outra ida a rede -- dava a impressao de busca que "nao acha"
+        _sugestoesOnline = palavras.isEmpty
+            ? []
+            : _sugestoesOnline
+                .where((s) => BuscaService.instance
+                    .combina('${s.texto} ${s.detalhe}', palavras))
+                .toList();
       });
 
       _debounceSugestoes?.cancel();
+      if (palavras.isEmpty) {
+        setState(() => _buscandoOnline = false);
+        return;
+      }
+
       _debounceSugestoes = Timer(const Duration(milliseconds: 250), () async {
         if (!mounted) return;
         final termo = _buscaController.text;
@@ -292,23 +328,25 @@ class _CentroDoMapaState extends State<CentroDoMapa>
         // na lista fixa, nao busca online pra essa mesma consulta -- evita que
         // um bairro/regiao homonimo do Nominatim apareca do lado do pin certo
         // e a pessoa acabe clicando no lugar errado
-        final achouInstituicaoConhecida = _sugestoes.any((s) => s.tipo == TipoSugestao.faculdade);
+        final achouInstituicaoConhecida =
+            _sugestoesLocais.any((s) => s.tipo == TipoSugestao.faculdade);
         if (achouInstituicaoConhecida) return;
 
-        // ruas, bairros e cidades de verdade vem depois, via busca online --
-        // soma na lista sem duplicar, e so aplica se o texto nao mudou nesse meio tempo
+        setState(() => _buscandoOnline = true);
+
+        // ruas, bairros e cidades de verdade vem depois, via busca online.
         // referencia de proximidade: onde a pessoa esta; sem permissao de
         // localizacao, a faculdade -- que e o centro de gravidade do app
         final locaisOnline = await BuscaService.instance.buscarLocaisOnline(
           termo,
           perto: LocalizacaoService.instance.posicao.value ?? posicaoInatel,
         );
-        if (!mounted || _buscaController.text != termo || locaisOnline.isEmpty) return;
+        if (!mounted) return;
+        // texto mudou no meio do caminho: a resposta e de outra pergunta
+        if (_buscaController.text != termo) return;
         setState(() {
-          final jaTem = _sugestoes.map((s) => normalizarNome(s.texto)).toSet();
-          for (final local in locaisOnline) {
-            if (jaTem.add(normalizarNome(local.texto))) _sugestoes.add(local);
-          }
+          _buscandoOnline = false;
+          _sugestoesOnline = locaisOnline;
         });
       });
     });
@@ -329,13 +367,15 @@ class _CentroDoMapaState extends State<CentroDoMapa>
 
   Future<void> _prepararPins() async {
     final double densidade = MediaQuery.of(context).devicePixelRatio;
-    final moradia = await PinsMapa.obter(TipoPin.moradia, densidade);
-    final moradiaO = await PinsMapa.obter(TipoPin.moradia, densidade, isOrigem: true);
-    final moradiaD = await PinsMapa.obter(TipoPin.moradia, densidade, isDestino: true);
-    
-    final evento = await PinsMapa.obter(TipoPin.evento, densidade);
-    final eventoO = await PinsMapa.obter(TipoPin.evento, densidade, isOrigem: true);
-    final eventoD = await PinsMapa.obter(TipoPin.evento, densidade, isDestino: true);
+    final pinsAnuncio = <TipoPin, (BitmapDescriptor, BitmapDescriptor, BitmapDescriptor)>{};
+    for (final tipo in TipoPin.values) {
+      if (tipo == TipoPin.faculdade || tipo == TipoPin.imobiliaria) continue;
+      pinsAnuncio[tipo] = (
+        await PinsMapa.obter(tipo, densidade),
+        await PinsMapa.obter(tipo, densidade, isOrigem: true),
+        await PinsMapa.obter(tipo, densidade, isDestino: true),
+      );
+    }
 
     final inatel = await PinsMapa.obter(TipoPin.faculdade, densidade);
     final inatelO = await PinsMapa.obter(TipoPin.faculdade, densidade, isOrigem: true);
@@ -345,14 +385,8 @@ class _CentroDoMapaState extends State<CentroDoMapa>
 
     if (!mounted) return;
     setState(() {
-      _pinMoradia = moradia;
-      _pinMoradiaOrigem = moradiaO;
-      _pinMoradiaDestino = moradiaD;
-      
-      _pinEvento = evento;
-      _pinEventoOrigem = eventoO;
-      _pinEventoDestino = eventoD;
-      
+      _pinsAnuncio = pinsAnuncio;
+
       _pinInatel = inatel;
       _pinInatelOrigem = inatelO;
       _pinInatelDestino = inatelD;
@@ -610,7 +644,10 @@ class _CentroDoMapaState extends State<CentroDoMapa>
         temGeometria ? sugestao.tipoGeometria : TipoGeometria.ponto;
 
     setState(() {
-      _sugestoes = [];
+      // fecha a lista: escolheu, nao precisa mais das opcoes
+      _sugestoesLocais = [];
+      _sugestoesOnline = [];
+      _buscandoOnline = false;
       _limparDestaqueBusca();
       _localSelecionado = sugestao;
 
@@ -732,13 +769,14 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     setState(() {
       _marcadores = imovelFiltrados.map((item) {
         final bool isEvento = item.tipo == TipoListing.evento;
-        
-        BitmapDescriptor? iconeBase = isEvento ? _pinEvento : _pinMoradia;
+        final pins = _pinsAnuncio[tipoPinDoImovel(item)];
+
+        BitmapDescriptor? iconeBase = pins?.$1;
         if (rota != null) {
           if (item.posicao == rota.origem) {
-            iconeBase = isEvento ? _pinEventoOrigem : _pinMoradiaOrigem;
+            iconeBase = pins?.$2;
           } else if (item.posicao == rota.destino) {
-            iconeBase = isEvento ? _pinEventoDestino : _pinMoradiaDestino;
+            iconeBase = pins?.$3;
           }
         }
 
@@ -1327,6 +1365,57 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     );
   }
 
+  // busca terminou e nao achou nada -- nem local, nem online
+  bool get _semResultado =>
+      _buscaComTexto && !_buscandoOnline && _sugestoes.isEmpty;
+
+  // ultima linha da lista: diz o que a busca esta fazendo. Sem ela, quem
+  // digita algo que ainda nao casou ve o painel simplesmente sumir e conclui
+  // que a busca nao funciona -- era a queixa de "digito e nao aparece"
+  Widget? _rodapeBusca(bool isDark) {
+    if (_buscandoOnline) {
+      return ListTile(
+        dense: true,
+        leading: SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: corPrimaria.withAlpha(150),
+          ),
+        ),
+        title: Text(
+          'Procurando mais lugares...',
+          style: AppTextStyles.caption.copyWith(
+            color: isDark ? Colors.white38 : Colors.black45,
+          ),
+        ),
+      );
+    }
+    if (_semResultado) {
+      return ListTile(
+        dense: true,
+        leading: Icon(Icons.search_off_rounded,
+            color: isDark ? Colors.white38 : Colors.black38),
+        title: Text(
+          'Nada encontrado para "${_buscaController.text.trim()}"',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppTextStyles.caption.copyWith(
+            color: isDark ? Colors.white54 : Colors.black54,
+          ),
+        ),
+        subtitle: Text(
+          'Tente o nome da rua, do bairro ou da cidade',
+          style: AppTextStyles.caption.copyWith(
+            color: isDark ? Colors.white30 : Colors.black38,
+          ),
+        ),
+      );
+    }
+    return null;
+  }
+
   // o card do local sai de cena enquanto existe rota na tela (o card de rota
   // no topo ja mostra destino/distancia, e os dois juntos poluiriam) -- se o
   // usuario fechar a rota ele volta, dando pra tracar de novo sem rebuscar
@@ -1586,7 +1675,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md + 2),
         child: Row(
           children: [
-            Icon(Icons.search_rounded, color: isDark ? Colors.white54 : const Color(0xFF7C8985), size: 20),
+            Icon(Icons.search_rounded, color: isDark ? Colors.white54 : Colors.black38, size: 20),
             const SizedBox(width: AppSpacing.md),
             Expanded(
               child: Text(
@@ -2522,7 +2611,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                                 fontWeight: FontWeight.w500,
                               ),
                               border: InputBorder.none,
-                              prefixIcon: Icon(Icons.search_rounded, color: isDark ? Colors.white54 : const Color(0xFF7C8985), size: 20),
+                              prefixIcon: Icon(Icons.search_rounded, color: isDark ? Colors.white54 : Colors.black38, size: 20),
                               // o botao de filtros saiu de dentro do campo e
                               // foi pro controle da direita, junto da
                               // engrenagem -- so o "limpar" continua aqui,
@@ -2548,7 +2637,12 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                   // (feature parada por enquanto). Os metodos continuam
                   // abaixo, marcados como nao usados -- e so religar aqui
 
-                  if (_sugestoes.isNotEmpty && _buscaFocusNode.hasFocus)
+                  // o painel aparece assim que ha o que dizer -- inclusive
+                  // "estou procurando" e "nao achei". Sumir sem explicacao
+                  // enquanto a busca online roda parecia busca quebrada
+                  if (_buscaFocusNode.hasFocus &&
+                      _buscaComTexto &&
+                      (_sugestoes.isNotEmpty || _buscandoOnline || _semResultado))
                     Container(
                       margin: const EdgeInsets.only(top: 8),
                       constraints: const BoxConstraints(maxHeight: 260),
@@ -2562,12 +2656,17 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                       child: ListView.separated(
                         shrinkWrap: true,
                         padding: const EdgeInsets.symmetric(vertical: 8),
-                        itemCount: _sugestoes.length,
+                        // a ultima linha e o rodape de estado (procurando /
+                        // nao achei), por isso o +1
+                        itemCount: _sugestoes.length + (_rodapeBusca(isDark) == null ? 0 : 1),
                         separatorBuilder: (_, _) => Divider(
                           height: 1, indent: 56,
                           color: isDark ? Colors.white.withAlpha(10) : Colors.grey.withAlpha(20),
                         ),
                         itemBuilder: (context, index) {
+                          if (index >= _sugestoes.length) {
+                            return _rodapeBusca(isDark)!;
+                          }
                           final sugestao = _sugestoes[index];
                           final IconData icone = switch (sugestao.tipo) {
                             TipoSugestao.cidade => Icons.location_city_rounded,

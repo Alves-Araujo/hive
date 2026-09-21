@@ -124,7 +124,7 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? corSuperficieEscura : const Color(0xFFF6F5FF),
+      backgroundColor: isDark ? corSuperficieEscura : superficieClara,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,

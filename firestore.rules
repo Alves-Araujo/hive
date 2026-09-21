@@ -17,18 +17,48 @@ service cloud.firestore {
     }
 
     // versao publica do perfil (nome, foto, tipo de conta...) -- sem dado
-    // sensivel, entao qualquer logado pode ler (busca, chat, vitrine...).
-    // escrita liberada pra qualquer logado tambem, pois a confirmacao de
-    // vinculo com a imobiliaria e feita por uma pessoa diferente do dono
+    // sensivel, entao qualquer logado pode ler (busca, chat, vitrine...)
     match /perfisPublicos/{uid} {
-      allow read, write: if request.auth != null;
+      allow read: if request.auth != null;
+
+      // o dono grava o proprio (sincronizar o perfil, ultimo acesso)
+      allow create, update: if request.auth != null && request.auth.uid == uid;
+
+      // A confirmacao de vinculo e feita por OUTRA pessoa: quem entra com o
+      // e-mail da imobiliaria confirma os corretores dela. Antes a escrita
+      // era liberada pra qualquer logado em qualquer perfil -- dava pra
+      // trocar nome e foto de quem quisesse. Agora o terceiro so liga o
+      // campo vinculoConfirmado, e so se o e-mail CONFIRMADO do login for o
+      // da imobiliaria a que esse corretor diz pertencer
+      allow update: if request.auth != null
+        && request.auth.token.email_verified == true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['vinculoConfirmado'])
+        && request.resource.data.vinculoConfirmado == true
+        && resource.data.imobiliariaId is string
+        && resource.data.imobiliariaId != ''
+        && get(/databases/$(database)/documents/imobiliarias/$(resource.data.imobiliariaId)).data.emailBusca
+             == request.auth.token.email.lower();
     }
 
-    // imobiliarias -- publicas pra leitura/busca; criacao/edicao (vinculo,
-    // confirmacao) acontece por qualquer logado, sem cloud function
+    // imobiliarias -- publicas pra leitura/busca e pro pin no mapa
     match /imobiliarias/{imobiliariaId} {
       allow read: if request.auth != null;
-      allow create, update: if request.auth != null;
+
+      // qualquer corretor logado cadastra a imobiliaria dele, mas ela nasce
+      // SEMPRE nao confirmada -- confirmar e trabalho do dono do e-mail
+      allow create: if request.auth != null
+        && request.resource.data.emailVerificado == false;
+
+      allow update: if request.auth != null && (
+        // so quem entra com o e-mail (confirmado) da imobiliaria a confirma.
+        // Antes qualquer logado podia marcar emailVerificado em qualquer uma
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['emailVerificado'])
+          && request.auth.token.email_verified == true
+          && request.auth.token.email.lower() == resource.data.emailBusca)
+        ||
+        // completar endereco e coordenada de cadastro antigo (pin no mapa)
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['endereco', 'latitude', 'longitude'])
+      );
 
       match /avaliacoes/{avaliacaoId} {
         allow read: if request.auth != null;

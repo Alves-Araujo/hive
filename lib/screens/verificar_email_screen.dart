@@ -69,6 +69,14 @@ class _VerificarEmailScreenState extends State<VerificarEmailScreen> {
     setState(() => _verificando = false);
 
     if (user != null && user.emailVerified) {
+      // reload() atualiza o usuario AQUI no app, mas o token que o Firestore
+      // manda nas requisicoes continua dizendo "e-mail nao confirmado" ate
+      // ser renovado -- o que sozinho leva ate uma hora. As regras que exigem
+      // e-mail confirmado negavam tudo nesse meio tempo, e a primeira coisa
+      // que a pessoa faz depois de confirmar (salvar o perfil) falhava
+      await user.getIdToken(true);
+      if (!mounted) return;
+
       // reload() nao dispara authStateChanges sozinho, entao reconstruimos a
       // auth gate na mao pra ela reavaliar o estado ja atualizado
       Navigator.of(context).pushAndRemoveUntil(

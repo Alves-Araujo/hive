@@ -325,7 +325,7 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? corFundoEscuro : const Color(0xFFF6F5FF),
+      backgroundColor: isDark ? corFundoEscuro : superficieClara,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,

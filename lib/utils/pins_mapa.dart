@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../main.dart';
+import '../models/imovel.dart';
 
 // pins do mapa desenhados em Canvas, nao carregados de PNG.
 //
@@ -16,7 +17,64 @@ import '../main.dart';
 //
 // O desenho fica em cache por tipo: sao poucos pins diferentes e recriar o
 // bitmap a cada rebuild da lista de marcadores seria desperdicio.
-enum TipoPin { moradia, evento, faculdade, imobiliaria }
+//
+// Cada tipo de anuncio tem cor E icone proprios: de longe a cor separa, de
+// perto o icone confirma. Hotel, mercado e farmacia ainda nao tem cadastro,
+// mas o pin ja existe -- quando o tipo for criado basta gravar o nome em
+// tipoImovel que tipoPinDoImovel() resolve sozinho.
+enum TipoPin {
+  casa,
+  apartamento,
+  kitnet,
+  republica,
+  pensao,
+  hotel,
+  mercado,
+  farmacia,
+  evento,
+  faculdade,
+  imobiliaria,
+}
+
+// escolhe o pin pelo campo "Tipo" do anuncio. Compara sem acento e sem
+// caixa porque o valor vem do banco e anuncio antigo pode ter sido gravado
+// com grafia diferente.
+//
+// Anuncio anterior ao campo tipoImovel nao tem o tipo gravado nele: o tipo
+// ia como tag ("República", "Kitnet"...). Sem olhar as tags, todos esses
+// saiam com o pin de casa. Sem tipo em nenhum dos dois, cai na casa, que era
+// o pin unico de moradia antes
+TipoPin tipoPinDoImovel(Imovel imovel) {
+  if (imovel.tipo == TipoListing.evento) return TipoPin.evento;
+  final porCampo = _tipoPinPorNome(imovel.tipoImovel);
+  if (porCampo != null) return porCampo;
+  for (final tag in imovel.tags) {
+    final porTag = _tipoPinPorNome(tag);
+    if (porTag != null) return porTag;
+  }
+  return TipoPin.casa;
+}
+
+TipoPin? _tipoPinPorNome(String nome) =>
+    switch (_semAcento(nome.trim().toLowerCase())) {
+      'casa' => TipoPin.casa,
+      'apartamento' => TipoPin.apartamento,
+      'kitnet' => TipoPin.kitnet,
+      'republica' => TipoPin.republica,
+      'pensao' => TipoPin.pensao,
+      'hotel' => TipoPin.hotel,
+      'mercado' || 'supermercado' => TipoPin.mercado,
+      'farmacia' || 'drogaria' => TipoPin.farmacia,
+      _ => null,
+    };
+
+String _semAcento(String s) => s
+    .replaceAll(RegExp('[áàâã]'), 'a')
+    .replaceAll(RegExp('[éê]'), 'e')
+    .replaceAll('í', 'i')
+    .replaceAll(RegExp('[óôõ]'), 'o')
+    .replaceAll('ú', 'u')
+    .replaceAll('ç', 'c');
 
 class PinsMapa {
   static final Map<String, BitmapDescriptor> _cache = {};
@@ -32,10 +90,58 @@ class PinsMapa {
   }
 
   static (List<Color>, IconData, double) _estilo(TipoPin tipo) => switch (tipo) {
-        // moradia: azul da marca, o caso mais comum no mapa
-        TipoPin.moradia => (
+        // casa: azul da marca, o caso mais comum no mapa e o padrao pra
+        // anuncio sem tipo
+        TipoPin.casa => (
             const [Color(0xFF1C5A8F), Color(0xFF12294A)],
             Icons.home_rounded,
+            1.0,
+          ),
+        // apartamento: indigo, vizinho do azul da casa -- os dois sao
+        // moradia "comum", so muda o predio no lugar da casa
+        TipoPin.apartamento => (
+            const [Color(0xFF34458F), Color(0xFF171F4A)],
+            Icons.apartment_rounded,
+            1.0,
+          ),
+        // kitnet: cinza-azulado, mesma familia fria das moradias
+        TipoPin.kitnet => (
+            const [Color(0xFF4A5F6B), Color(0xFF1D282E)],
+            Icons.door_back_door_rounded,
+            1.0,
+          ),
+        // republica: vinho. Ja foi laranja, mas chamava atencao demais perto
+        // dos tons escuros do resto do mapa -- toda a paleta fica fechada e
+        // quem diferencia e a matiz, nao o brilho
+        TipoPin.republica => (
+            const [Color(0xFF8A2D4B), Color(0xFF3B0F1F)],
+            Icons.groups_rounded,
+            1.0,
+          ),
+        // pensao: marrom, quarto com refeicao -- a cama diz "quarto", nao casa
+        TipoPin.pensao => (
+            const [Color(0xFF6E4E3C), Color(0xFF2E1E15)],
+            Icons.bed_rounded,
+            1.0,
+          ),
+        // hotel: dourado, estadia curta
+        TipoPin.hotel => (
+            const [Color(0xFF8F7418), Color(0xFF3D3000)],
+            Icons.hotel_rounded,
+            1.0,
+          ),
+        // mercado: verde-oliva. Nao usa o verde puro porque esse e o pin de
+        // origem da rota
+        TipoPin.mercado => (
+            const [Color(0xFF52752B), Color(0xFF223512)],
+            Icons.shopping_cart_rounded,
+            1.0,
+          ),
+        // farmacia: vermelho fechado, puxando a cor das redes de farmacia. Bem
+        // mais escuro que o vermelho vivo do pin de destino
+        TipoPin.farmacia => (
+            const [Color(0xFF9E3030), Color(0xFF450F0F)],
+            Icons.local_pharmacy_rounded,
             1.0,
           ),
         // evento: roxo escuro. Distingue de moradia sem berrar como o
@@ -46,26 +152,44 @@ class PinsMapa {
             Icons.celebration_rounded,
             1.0,
           ),
-        // faculdade: verde-azulado pra NAO se confundir com anuncio nenhum --
-        // e ponto de referencia fixo, nao coisa que o usuario filtra. Um
-        // pouco maior pelo mesmo motivo
+        // faculdade: azul vivo, a cor do Inatel. Toda a busca orbita a
+        // faculdade, entao ela e o ponto de destaque: os anuncios ficam todos
+        // em tons fechados justamente pra ela saltar. Casa e apartamento
+        // tambem sao azuis, entao o que separa aqui e o brilho -- este azul
+        // (o corPrimaria2 do app) e bem mais claro que o deles. Um pouco
+        // maior pelo mesmo motivo
         TipoPin.faculdade => (
-            const [Color(0xFF0E7C7B), Color(0xFF07403F)],
+            const [Color(0xFF007BFF), Color(0xFF00509E)],
             Icons.school_rounded,
             1.15,
           ),
-        // imobiliaria: ambar escuro. Nao e anuncio (nao entra nos filtros de
-        // preco/tag) nem ponto de referencia fixo como a faculdade -- e uma
-        // empresa, e precisa de uma cor propria pra nao ser lida como
-        // moradia. O predio no lugar da casa reforça isso de longe
+        // imobiliaria: verde-azulado escuro, a cor que era da faculdade. Nao
+        // e anuncio (nao entra nos filtros de preco/tag) -- e uma empresa, e
+        // precisa de uma cor propria pra nao ser lida como moradia. O icone
+        // de corretor (casa com chave) nao repete o predio, que e o pin de
+        // apartamento
         TipoPin.imobiliaria => (
-            const [Color(0xFFB26A00), Color(0xFF5C3600)],
-            Icons.apartment_rounded,
+            const [Color(0xFF0E7C7B), Color(0xFF07403F)],
+            Icons.real_estate_agent_rounded,
             1.05,
           ),
       };
 
-  static Future<BitmapDescriptor> _desenhar(TipoPin tipo, double densidade, {bool isOrigem = false, bool isDestino = false}) async {
+  static Future<BitmapDescriptor> _desenhar(TipoPin tipo, double densidade,
+      {bool isOrigem = false, bool isDestino = false}) async {
+    final imagem = await desenharImagem(tipo, densidade,
+        isOrigem: isOrigem, isDestino: isDestino);
+    final bytes = await imagem.toByteData(format: ui.ImageByteFormat.png);
+    return BitmapDescriptor.bytes(
+      bytes!.buffer.asUint8List(),
+      imagePixelRatio: densidade,
+    );
+  }
+
+  // o desenho cru, antes de virar marcador. Separado pra dar pra conferir o
+  // pin sem precisar de um mapa na tela -- ver test/pins_mapa_test.dart
+  static Future<ui.Image> desenharImagem(TipoPin tipo, double densidade,
+      {bool isOrigem = false, bool isDestino = false}) async {
     var (cores, icone, escala) = _estilo(tipo);
 
     if (isOrigem) {
@@ -156,16 +280,10 @@ class PinsMapa {
     tp.layout();
     tp.paint(canvas, Offset(centro.dx - tp.width / 2, centro.dy - tp.height / 2));
 
-    final imagem = await recorder.endRecording().toImage(
+    return recorder.endRecording().toImage(
           (larguraL * d).round(),
           (alturaL * d).round(),
         );
-    final bytes = await imagem.toByteData(format: ui.ImageByteFormat.png);
-
-    return BitmapDescriptor.bytes(
-      bytes!.buffer.asUint8List(),
-      imagePixelRatio: d,
-    );
   }
 }
 

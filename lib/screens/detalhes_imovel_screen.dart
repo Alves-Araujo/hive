@@ -221,7 +221,7 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
     final bool isEvento = imovel.tipo == TipoListing.evento;
 
     return Scaffold(
-      backgroundColor: isDark ? corSuperficieEscura : const Color(0xFFF8F7FF),
+      backgroundColor: isDark ? corSuperficieEscura : superficieClara,
       // cabecalho em imagem cheia: o body passa por tras da status bar pra
       // foto sangrar ate o topo, igual app de viagem/imovel moderno
       extendBodyBehindAppBar: true,
@@ -257,7 +257,7 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
                   offset: const Offset(0, -26),
                   child: Container(
                     decoration: BoxDecoration(
-                      color: isDark ? corSuperficieEscura : const Color(0xFFF8F7FF),
+                      color: isDark ? corSuperficieEscura : superficieClara,
                       borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
                     ),
                     // o topo paga os 26px que a folha subiu por cima da foto,
@@ -395,7 +395,13 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
           decoration: BoxDecoration(
             gradient: isEvento ? gradienteEvento : gradientePrincipal,
             borderRadius: BorderRadius.circular(99.0),
-            boxShadow: AppShadows.marca(forca: 0.8),
+            // SEM sombra aqui, de proposito. A sombra da marca tem 20 de
+            // desfoque e 8 de deslocamento: em volta de um circulo de 44 ela
+            // precisa de ~64x72, e o espaco do `leading` da AppBar tem 64x56
+            // -- o excesso era CORTADO em linha reta, e o borrao azul virava
+            // um quadrado com degradê em volta da bolinha. O contorno claro
+            // abaixo resolve o contraste sem nada pra ser cortado
+            border: Border.all(color: Colors.white.withAlpha(56), width: 1),
           ),
           child: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 20),
         ),

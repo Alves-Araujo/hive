@@ -31,9 +31,19 @@ class UsuarioService {
       'perfilCompleto': false,
       'dataCriacao': FieldValue.serverTimestamp(),
     });
-    await PerfilPublicoService.instance.sincronizar(
-      Usuario(uid: uid, nome: nome, email: email),
-    );
+
+    // A versao publica do perfil pode ser negada aqui: em producao as regras
+    // so deixam escrever em "perfisPublicos" depois que o e-mail e
+    // confirmado, e o cadastro roda ANTES disso. Nao e perda nenhuma -- o
+    // perfil publico e regravado ao salvar "Concluir perfil", que so abre
+    // pra quem ja confirmou. Barrar aqui fazia o cadastro inteiro falhar
+    try {
+      await PerfilPublicoService.instance.sincronizar(
+        Usuario(uid: uid, nome: nome, email: email),
+      );
+    } on FirebaseException catch (e) {
+      if (e.code != 'permission-denied') rethrow;
+    }
   }
 
   // true se ja existe outro usuario com esse nome (comparacao normalizada) --

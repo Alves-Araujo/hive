@@ -27,6 +27,9 @@ class AnimatedGradientButton extends StatefulWidget {
 class _AnimatedGradientButtonState extends State<AnimatedGradientButton>
     with SingleTickerProviderStateMixin {
   late AnimationController _shimmerController;
+  // a faixa cruza o botao na primeira parte do ciclo e fica parada fora dele
+  // no resto -- sem a pausa, um brilho passando sem parar cansa a vista
+  late final Animation<double> _varredura;
   double _scale = 1.0;
 
   @override
@@ -34,8 +37,14 @@ class _AnimatedGradientButtonState extends State<AnimatedGradientButton>
     super.initState();
     _shimmerController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2400),
+      duration: const Duration(milliseconds: 3200),
     )..repeat();
+    _varredura = Tween<double>(begin: -1, end: 1).animate(
+      CurvedAnimation(
+        parent: _shimmerController,
+        curve: const Interval(0, 0.45, curve: Curves.easeInOut),
+      ),
+    );
   }
 
   @override
@@ -59,34 +68,52 @@ class _AnimatedGradientButtonState extends State<AnimatedGradientButton>
         scale: _scale,
         duration: const Duration(milliseconds: 120),
         curve: Curves.easeOut,
-        child: AnimatedBuilder(
-          animation: _shimmerController,
-          builder: (context, child) {
-            final shimmerValue = _shimmerController.value;
-            return Container(
-              height: widget.height,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(widget.borderRadius),
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  // mesmo azul escuro do gradientePrincipal, usado no botao de
-                  // rota e na pilula da barra. O roxo #7C3AED que estava aqui
-                  // nao existe em mais lugar nenhum da identidade
-                  colors: const [
-                    Color(0xFF12294A),
-                    Color(0xFF17456F),
-                    Color(0xFF1C5A8F),
-                  ],
-                  stops: [
-                    0.0,
-                    0.5 + (shimmerValue * 0.3),
-                    1.0,
-                  ],
+        child: Container(
+          height: widget.height,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(widget.borderRadius),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              // as cores VEM do gradientePrincipal, nao sao uma copia
+              // delas: eram os mesmos tres valores escritos de novo aqui,
+              // e um ajuste de identidade deixaria este botao pra tras
+              colors: gradientePrincipal.colors,
+            ),
+            boxShadow: AppShadows.marca(forca: 0.9),
+          ),
+          child: Stack(
+            children: [
+              // brilho: uma faixa clara que atravessa o botao e SAI do outro
+              // lado antes do ciclo recomecar. Antes o shimmer mexia no stop
+              // do meio do gradiente de 0.5 a 0.8 e, no repeat(), voltava pra
+              // 0.5 de uma vez -- um salto visivel a cada 2,4s, com cara de
+              // video cortado. Agora o reinicio acontece com a faixa fora do
+              // botao, entao nao da pra ver
+              Positioned.fill(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(widget.borderRadius),
+                  child: AnimatedBuilder(
+                    animation: _shimmerController,
+                    builder: (context, _) => DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                          colors: [
+                            Colors.white.withAlpha(0),
+                            Colors.white.withAlpha(38),
+                            Colors.white.withAlpha(0),
+                          ],
+                          stops: const [0.35, 0.5, 0.65],
+                          transform: _DeslizarGradiente(_varredura.value),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-                boxShadow: AppShadows.marca(forca: 0.9),
               ),
-              child: Center(
+              Center(
                 child: widget.isLoading
                     ? const SizedBox(
                         height: 22,
@@ -115,10 +142,21 @@ class _AnimatedGradientButtonState extends State<AnimatedGradientButton>
                         ],
                       ),
               ),
-            );
-          },
+            ],
+          ),
         ),
       ),
     );
   }
+}
+
+// desloca o gradiente na horizontal em fracoes da largura do botao: -1 poe
+// a faixa inteira fora pela esquerda, 1 fora pela direita
+class _DeslizarGradiente extends GradientTransform {
+  final double fracao;
+  const _DeslizarGradiente(this.fracao);
+
+  @override
+  Matrix4? transform(Rect bounds, {TextDirection? textDirection}) =>
+      Matrix4.translationValues(bounds.width * fracao, 0, 0);
 }

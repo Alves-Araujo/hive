@@ -266,7 +266,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     final double larguraMaxima = MediaQuery.of(context).size.width * 0.7;
 
     return Scaffold(
-      backgroundColor: isDark ? corFundoEscuro : const Color(0xFFF4F6FA),
+      backgroundColor: isDark ? corFundoEscuro : superficieClara,
       appBar: AppBar(
         backgroundColor: isDark ? superficieEscura : superficieClara,
         surfaceTintColor: Colors.transparent,

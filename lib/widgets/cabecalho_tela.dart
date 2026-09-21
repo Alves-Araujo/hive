@@ -150,7 +150,7 @@ class CampoBuscaPadrao extends StatelessWidget {
           border: InputBorder.none,
           prefixIcon: Icon(
             Icons.search_rounded,
-            color: isDark ? Colors.white54 : const Color(0xFF7C8985),
+            color: isDark ? Colors.white54 : Colors.black38,
             size: 20,
           ),
           suffixIcon: temTexto

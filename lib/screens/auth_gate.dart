@@ -11,6 +11,16 @@ import 'verificar_email_screen.dart';
 // cria um minimo na hora -- tipo de conta e o resto ficam pra tela de
 // "concluir perfil", entao nao precisa mais de uma tela separada pra isso
 Future<Usuario> _perfilOuCriar(User user) async {
+  // O e-mail pode ter sido confirmado com o app fechado (link aberto no
+  // navegador) -- ai o usuario ja volta "confirmado", mas o token guardado no
+  // aparelho ainda diz o contrario, e o Firestore nega o que as regras
+  // reservam pra quem confirmou. Ler a claim e local e barato; so vai na
+  // rede quando ela esta mesmo desatualizada
+  final token = await user.getIdTokenResult();
+  if (token.claims?['email_verified'] != true) {
+    await user.getIdToken(true);
+  }
+
   final existente = await UsuarioService.instance.buscarPorUid(user.uid);
   if (existente != null) return existente;
 

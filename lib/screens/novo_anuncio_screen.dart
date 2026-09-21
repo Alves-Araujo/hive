@@ -307,7 +307,7 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? corFundoEscuro : const Color(0xFFF4F6FA),
+      backgroundColor: isDark ? corFundoEscuro : superficieClara,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,

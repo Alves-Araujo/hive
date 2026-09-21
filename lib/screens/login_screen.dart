@@ -175,8 +175,8 @@ class _TelaLoginState extends State<TelaLogin> with TickerProviderStateMixin {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: isDark
-                    ? [corFundoEscuro, const Color(0xFF12101F), const Color(0xFF0D0B18)]
-                    : [corFundoClaro, const Color(0xFFF0EDFF), const Color(0xFFE8E4FF)],
+                    ? [corFundoEscuro, const Color(0xFF13202C), const Color(0xFF0A1420)]
+                    : [corFundoClaro, const Color(0xFFEAF1F9), const Color(0xFFDDE8F4)],
               ),
             ),
           ),

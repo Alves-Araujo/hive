@@ -132,19 +132,47 @@ class _TelaCadastroState extends State<TelaCadastro>
     setState(() => _carregando = true);
 
     try {
-      if (await UsuarioService.instance.nomeJaExiste(nome)) {
-        _mostrarErro('Já existe uma conta cadastrada com esse nome.');
-        return;
-      }
-
-      // cria a conta no authentication
+      // cria a conta no authentication PRIMEIRO, e so depois confere o nome.
+      //
+      // A ordem importa: a checagem de nome repetido le "perfisPublicos", e
+      // as regras do Firestore so liberam essa colecao pra quem esta logado.
+      // Checando antes de criar a conta, a pessoa ainda era anonima, a
+      // leitura era NEGADA e caia no catch generico -- ninguem conseguia se
+      // cadastrar por e-mail, so aparecia "Ocorreu um erro inesperado".
+      // Abrir a regra pra anonimos resolveria tambem, mas exporia o perfil de
+      // todo mundo pra qualquer um na internet
       final credencial = await AuthService.instance.cadastrarComEmailSenha(email, senha);
+      final novoUsuario = credencial.user;
 
-      // salva o resto dos dados no firestore usando o uid -- tipo de conta e
-      // documentos ficam pra tela de "concluir perfil"
-      if (credencial.user != null) {
+      if (novoUsuario != null) {
+        bool nomeRepetido = false;
+        try {
+          nomeRepetido = await UsuarioService.instance.nomeJaExiste(nome);
+        } on FirebaseException catch (e) {
+          // As regras do Firestore EM PRODUCAO negam essa leitura pra quem
+          // ainda nao confirmou o e-mail -- e ninguem confirmou nada no
+          // instante do cadastro. Nao e motivo pra barrar: o nome e
+          // conferido de novo em "Concluir perfil", que so abre depois da
+          // confirmacao. Qualquer OUTRO erro continua desfazendo a conta
+          if (e.code != 'permission-denied') {
+            await novoUsuario.delete();
+            rethrow;
+          }
+          debugPrint('Checagem de nome adiada pra Concluir perfil: ${e.code}');
+        }
+
+        if (nomeRepetido) {
+          // desfaz a conta recem-criada, senao o e-mail fica "em uso" e a
+          // pessoa nao consegue tentar de novo com outro nome
+          await novoUsuario.delete();
+          _mostrarErro('Já existe uma conta cadastrada com esse nome.');
+          return;
+        }
+
+        // salva o resto dos dados no firestore usando o uid -- tipo de conta
+        // e documentos ficam pra tela de "concluir perfil"
         await UsuarioService.instance.criarPerfil(
-          uid: credencial.user!.uid,
+          uid: novoUsuario.uid,
           nome: nome,
           email: email,
         );
@@ -168,6 +196,9 @@ class _TelaCadastroState extends State<TelaCadastro>
       }
       _mostrarErro(msgErro);
     } catch (e) {
+      // a causa vai pro log: foi esse catch mudo que escondeu por um tempo
+      // que o cadastro inteiro estava quebrado por permissao do Firestore
+      debugPrint('Erro no cadastro: $e');
       _mostrarErro('Ocorreu um erro inesperado.');
     } finally {
       if (mounted) {
@@ -233,8 +264,8 @@ class _TelaCadastroState extends State<TelaCadastro>
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: isDark
-                ? [corFundoEscuro, const Color(0xFF12101F), const Color(0xFF0D0B18)]
-                : [corFundoClaro, const Color(0xFFF0EDFF), const Color(0xFFE8E4FF)],
+                ? [corFundoEscuro, const Color(0xFF13202C), const Color(0xFF0A1420)]
+                : [corFundoClaro, const Color(0xFFEAF1F9), const Color(0xFFDDE8F4)],
           ),
         ),
         child: SafeArea(
@@ -323,7 +354,7 @@ class _TelaCadastroState extends State<TelaCadastro>
                                     color: corPrimaria,
                                     shape: BoxShape.circle,
                                     border: Border.all(
-                                      color: isDark ? const Color(0xFF12101F) : const Color(0xFFF0EDFF),
+                                      color: isDark ? const Color(0xFF13202C) : const Color(0xFFEAF1F9),
                                       width: 3,
                                     ),
                                   ),

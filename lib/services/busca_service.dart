@@ -125,10 +125,76 @@ class BuscaService {
   // Rita do Sapucaí", e "republica centro" nao achava "República Estudantil
   // Central" no bairro Centro. Agora basta cada palavra aparecer em algum
   // lugar, em qualquer ordem, sem acento e sem ligar pra maiuscula
-  List<String> _palavras(String query) => normalizarNome(query)
+  List<String> palavras(String query) => normalizarNome(query)
       .split(' ')
       .where((p) => p.isNotEmpty)
       .toList();
+
+  // o alvo casa com tudo que foi digitado? Usado tambem pra manter na tela
+  // um resultado online enquanto a pessoa continua digitando
+  bool combina(String alvo, List<String> termos) =>
+      _pontuar(alvo, termos) != null;
+
+  // dois textos diferem por no maximo UM erro de digitacao: letra trocada,
+  // faltando, sobrando, ou duas letras vizinhas invertidas.
+  //
+  // A inversao ("sapucia" no lugar de "sapucai") precisa de tratamento
+  // proprio: pra Levenshtein puro ela vale DUAS edicoes e passaria batido,
+  // mesmo sendo o erro que mais se comete digitando rapido. Com teto 1 uma
+  // varredura simultanea resolve, sem montar matriz nenhuma
+  bool _erroDeUmaLetra(String a, String b) {
+    if (a == b) return true;
+    if ((a.length - b.length).abs() > 1) return false;
+
+    var i = 0, j = 0, erros = 0;
+    while (i < a.length && j < b.length) {
+      if (a[i] == b[j]) {
+        i++;
+        j++;
+        continue;
+      }
+      if (++erros > 1) return false;
+
+      if (a.length > b.length) {
+        i++; // sobrou letra em "a"
+      } else if (b.length > a.length) {
+        j++; // faltou letra em "a"
+      } else if (i + 1 < a.length &&
+          j + 1 < b.length &&
+          a[i] == b[j + 1] &&
+          a[i + 1] == b[j]) {
+        i += 2; // duas vizinhas invertidas: consome as duas de uma vez
+        j += 2;
+      } else {
+        i++;
+        j++; // letra trocada
+      }
+    }
+    // o que sobrou no fim de um dos lados conta como a edicao restante
+    return erros + (a.length - i) + (b.length - j) <= 1;
+  }
+
+  // pontua UM termo contra o alvo. Null quando nem de longe casa.
+  //
+  // A ordem das tentativas e a ordem de confianca: comeco do nome vale mais
+  // que comeco de uma palavra do meio, que vale mais que aparecer solto no
+  // meio, que vale mais que ter sido digitado errado
+  int? _pontuarTermo(String texto, List<String> palavrasAlvo, String termo) {
+    if (texto.startsWith(termo)) return 0;
+    for (final palavra in palavrasAlvo) {
+      if (palavra.startsWith(termo)) return 3;
+    }
+    if (texto.contains(termo)) return 8;
+
+    // erro de digitacao so vale pra palavra de tamanho razoavel: com 3
+    // letras, uma edicao ja transforma qualquer coisa em qualquer coisa
+    if (termo.length >= 4) {
+      for (final palavra in palavrasAlvo) {
+        if (_erroDeUmaLetra(palavra, termo)) return 16;
+      }
+    }
+    return null;
+  }
 
   // relevancia: quanto MENOR, mais em cima na lista. Null = nao casa.
   //
@@ -136,19 +202,20 @@ class BuscaService {
   // do meio, que por sua vez vale mais do que casar dentro de uma palavra --
   // e o que faz "cen" mostrar "Centro" antes de "Vila Adélia, perto do
   // centro". Sem isso a ordem era so a de insercao no laço
-  int? _pontuar(String alvo, List<String> palavras) {
+  int? _pontuar(String alvo, List<String> termos) {
     final texto = normalizarNome(alvo);
+    // quebra tambem em virgula, hifen e barra: "Inatel - Instituto Nacional"
+    // tem que casar com quem digita "instituto"
+    final palavrasAlvo = texto
+        .split(RegExp(r'[^0-9a-z]+'))
+        .where((p) => p.isNotEmpty)
+        .toList();
+
     var pontos = 0;
-    for (final palavra in palavras) {
-      final posicao = texto.indexOf(palavra);
-      if (posicao < 0) return null;
-      if (posicao == 0) {
-        pontos += 0;
-      } else if (texto[posicao - 1] == ' ') {
-        pontos += 3;
-      } else {
-        pontos += 8;
-      }
+    for (final termo in termos) {
+      final ponto = _pontuarTermo(texto, palavrasAlvo, termo);
+      if (ponto == null) return null;
+      pontos += ponto;
     }
     // desempate: entre dois que casam igual, o nome mais curto e o mais
     // especifico ("Centro" antes de "Centro Comercial de Santa Rita")
@@ -156,7 +223,7 @@ class BuscaService {
   }
 
   List<SugestaoBusca> buscarSugestoes(String query, List<Imovel> imoveis) {
-    final palavras = _palavras(query);
+    final palavras = this.palavras(query);
     if (palavras.isEmpty) return [];
 
     final ranqueadas = <({int pontos, SugestaoBusca sugestao})>[];

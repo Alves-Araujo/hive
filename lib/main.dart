@@ -44,10 +44,25 @@ const String zegoAppSign = '158812f25b867a6135e44b4fe1c3ea5eda22dcbd7bd1b7cd4a07
 const corPrimaria = Color(0xFF00509E);
 const corPrimaria2 = Color(0xFF007BFF);
 const corDestaque = Color(0xFF00C6FF);
-const corFundoClaro = Color(0xFFFAFAFE);
-const corFundoEscuro = Color(0xFF0A0A10);
-const corCardEscuro = Color(0xFF16161F);
-const corSuperficieEscura = Color(0xFF1E1E2A);
+
+// Fundos e superficies -- UMA familia so, azulada, a mesma do mapa.
+//
+// Estes quatro nomes vem da primeira versao do app e eram roxo-pretos
+// (#0A0A10, #16161F, #1E1E2A) e um branco lilas (#FAFAFE). Quando o mapa
+// ganhou a paleta azul, o app passou a ter DUAS paletas escuras ao mesmo
+// tempo: a tela de anuncio abria roxo-preta, o mapa azul-escuro, e a
+// diferenca aparecia na troca de aba. Em vez de caçar as dezenas de usos um
+// por um, os nomes antigos foram remendados pra dentro da familia azul --
+// quem ja usava continua funcionando, agora na cor certa.
+//
+// A escada, do mais escuro pro mais claro: fundo de pagina, superficie
+// padrao (= superficieEscura), superficie elevada (card sobre a pagina).
+const corFundoEscuro = Color(0xFF0E1621);
+const corCardEscuro = Color(0xFF16222E);
+const corSuperficieEscura = Color(0xFF1B2A38);
+
+// mesma ideia no claro: fundo de pagina um degrau acima da superficie
+const corFundoClaro = Color(0xFFF7FAFD);
 
 // superficies do vidro -- deliberadamente NAO sao branco puro nem cinza
 // neutro: sobre o mapa (tons off-white/bege no claro, azulado no escuro) uma
@@ -87,8 +102,14 @@ const gradienteSecundario = LinearGradient(
   end: Alignment.bottomRight,
 );
 
+// identidade dos EVENTOS -- as mesmas duas cores do pin de evento no mapa
+// (ver TipoPin.evento em utils/pins_mapa.dart).
+//
+// Era ambar->vermelho enquanto o pin ja tinha virado roxo: o evento aparecia
+// roxo no mapa e abria laranja na ficha, como se fossem dois assuntos. Se um
+// dia a cor do evento mudar, tem que mudar NOS DOIS lugares.
 const gradienteEvento = LinearGradient(
-  colors: [Color(0xFFF59E0B), Color(0xFFEF4444)],
+  colors: [Color(0xFF6D3FA8), Color(0xFF2F1A52)],
   begin: Alignment.topLeft,
   end: Alignment.bottomRight,
 );
