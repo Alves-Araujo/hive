@@ -126,7 +126,14 @@ class _TelaLoginState extends State<TelaLogin> with TickerProviderStateMixin {
       await AuthService.instance.entrarComGoogle();
     } on GoogleSignInException catch (e) {
       _mostrarErro('Erro ao entrar com Google: ${e.description ?? e.code}');
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'account-exists-with-different-credential') {
+        _mostrarErro('Esse e-mail já tem conta com senha. Entre com e-mail e senha.');
+      } else {
+        _mostrarErro('Erro ao entrar com Google: ${e.message ?? e.code}');
+      }
     } catch (e) {
+      debugPrint('erro no login com google: $e');
       _mostrarErro('Ocorreu um erro inesperado.');
     } finally {
       if (mounted) setState(() => _carregandoGoogle = false);
@@ -202,23 +209,16 @@ class _TelaLoginState extends State<TelaLogin> with TickerProviderStateMixin {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     const Spacer(flex: 1),
+                    // o texto "Hive" da logo e azul-marinho e some no fundo escuro,
+                    // entao o modo escuro usa a variante com o texto claro
                     _animarElemento(0, Center(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(40),
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(40),
-                          child: Image.asset(
-                            'assets/images/logo.jpg',
-                            width: 240,
-                            height: 240,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
+                      child: Image.asset(
+                        isDark ? 'assets/images/logo_escuro.png' : 'assets/images/logo_claro.png',
+                        width: 190,
+                        fit: BoxFit.contain,
                       ),
                     )),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 28),
                     _animarElemento(1, Column(
                       children: [
                         Text(

@@ -9,6 +9,7 @@ import '../utils/texto.dart';
 import '../main.dart';
 import '../models/perfil_publico.dart';
 import '../models/usuario.dart';
+import '../services/notificacao_service.dart';
 import '../services/perfil_publico_service.dart';
 import '../services/storage_service.dart';
 import '../services/usuario_service.dart';
@@ -43,6 +44,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   final Map<String, PerfilPublico> _perfisCache = {};
   final Set<String> _buscandoPerfil = {};
 
+  // todo mundo que ja escreveu aqui (preenchido pelo stream de mensagens)
+  final Set<String> _participantes = {};
+
   Usuario? _meuPerfil;
   PerfilPublico? _contato;
 
@@ -53,6 +57,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   @override
   void initState() {
     super.initState();
+    NotificacaoService.instance.chatAberto = widget.imovelId;
     _carregarMeuPerfil();
     _carregarContato();
 
@@ -102,6 +107,37 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       'remetenteUid': user?.uid ?? '',
       'timestamp': FieldValue.serverTimestamp(),
     });
+    _avisarDestinatarios(dados, user?.uid ?? '');
+  }
+
+  // Quem recebe o aviso depende do tipo de chat:
+  // - direto (perfil -> perfil): a outra pessoa, que e o donoUid daqui
+  // - de anuncio: se quem escreve e interessado, o dono do anuncio; se e o
+  //   dono respondendo, todo mundo que ja escreveu nessa conversa
+  void _avisarDestinatarios(Map<String, dynamic> dados, String meuUid) {
+    final ehDireto = widget.imovelId.startsWith('direto_');
+    final Iterable<String> destinatarios;
+    if (ehDireto || meuUid != widget.donoUid) {
+      destinatarios = [widget.donoUid];
+    } else {
+      destinatarios = _participantes;
+    }
+
+    final String previa = switch (dados['tipo']) {
+      'imagem' => 'Enviou uma foto',
+      'audio' => 'Enviou um áudio',
+      _ => dados['texto'] as String? ?? '',
+    };
+
+    NotificacaoService.instance.avisarNovaMensagem(
+      destinatarios: destinatarios,
+      remetenteNome: (_meuPerfil?.nome.isNotEmpty ?? false) ? _meuPerfil!.nome : 'Usuário Hive',
+      previa: previa.length > 120 ? '${previa.substring(0, 120)}...' : previa,
+      chatId: widget.imovelId,
+      // quem recebe abre a conversa com: no direto, eu; no de anuncio, o dono
+      contatoUid: ehDireto ? meuUid : widget.donoUid,
+      imovelTitulo: widget.imovelTitulo,
+    );
   }
 
   void _enviarMensagemTexto() async {
@@ -253,6 +289,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   @override
   void dispose() {
+    if (NotificacaoService.instance.chatAberto == widget.imovelId) {
+      NotificacaoService.instance.chatAberto = null;
+    }
     _mensagemController.dispose();
     _recorder.dispose();
     _player.dispose();
@@ -339,6 +378,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 }
 
                 final mensagens = snapshot.data!.docs;
+                // guardado pra saber quem avisar quando o dono responder
+                for (final doc in mensagens) {
+                  final uid = (doc.data() as Map<String, dynamic>)['remetenteUid'] as String? ?? '';
+                  if (uid.isNotEmpty) _participantes.add(uid);
+                }
 
                 return ListView.builder(
                   reverse: true,

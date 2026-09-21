@@ -7,6 +7,7 @@ import '../models/imovel.dart';
 import '../utils/moeda.dart';
 import '../models/usuario.dart';
 import '../widgets/card_imovel_vertical.dart';
+import 'notificacoes_screen.dart';
 
 class TelaResumo extends StatefulWidget {
   final Usuario perfil;
@@ -133,6 +134,8 @@ class _TelaResumoState extends State<TelaResumo> with SingleTickerProviderStateM
                       ],
                     ),
                   ),
+                  const SizedBox(width: AppSpacing.md),
+                  const BotaoNotificacoes(),
                 ],
               ),
               const SizedBox(height: AppSpacing.xl),

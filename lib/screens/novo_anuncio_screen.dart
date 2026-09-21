@@ -9,6 +9,7 @@ import 'package:geocoding/geocoding.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../models/imovel.dart';
 import '../services/imgbb_service.dart';
+import '../services/notificacao_service.dart';
 import '../widgets/animated_gradient_button.dart';
 import '../main.dart';
 import '../widgets/campo_formulario.dart';
@@ -288,6 +289,8 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
       );
 
       await docRef.set(novoImovel.toMap());
+      // sem await: o anuncio ja foi publicado, o aviso nao segura a tela
+      NotificacaoService.instance.avisarNovoAnuncio(novoImovel);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

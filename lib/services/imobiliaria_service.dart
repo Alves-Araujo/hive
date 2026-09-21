@@ -5,6 +5,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart' show LatLng;
 import '../models/imobiliaria.dart';
 import '../models/perfil_publico.dart';
 import '../utils/moderacao.dart';
+import 'notificacao_service.dart';
 
 class ImobiliariaService {
   ImobiliariaService._();
@@ -63,6 +64,7 @@ class ImobiliariaService {
       posicao: await _geocodificar(endereco),
     );
     final doc = await _colecao.add(novaImobiliaria.toMap());
+    NotificacaoService.instance.avisarNovaImobiliaria(id: doc.id, nome: nome, endereco: endereco);
     return doc.id;
   }
 

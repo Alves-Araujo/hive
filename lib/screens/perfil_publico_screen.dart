@@ -8,6 +8,7 @@ import '../models/imovel.dart';
 import '../models/perfil_publico.dart';
 import '../services/avaliacao_service.dart';
 import '../services/imobiliaria_service.dart';
+import '../services/notificacao_service.dart';
 import '../services/usuario_service.dart';
 import '../utils/chamada.dart';
 import '../widgets/animated_gradient_button.dart';
@@ -98,18 +99,29 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
     setState(() => _enviandoAvaliacao = true);
     try {
       final meuPerfil = await UsuarioService.instance.buscarPorUid(user.uid);
+      final meuNome = (meuPerfil?.nome.isNotEmpty ?? false) ? meuPerfil!.nome : 'Usuário Hive';
+      final comentario = _comentarioController.text.trim();
       await AvaliacaoService.instance.enviarAvaliacao(
         colecaoPai: _colecaoPai,
         avaliadoId: _id,
         avaliacao: Avaliacao(
           id: '',
           avaliadorUid: user.uid,
-          avaliadorNome: (meuPerfil?.nome.isNotEmpty ?? false) ? meuPerfil!.nome : 'Usuário Hive',
+          avaliadorNome: meuNome,
           avaliadorFotoUrl: meuPerfil?.fotoUrl ?? '',
           nota: _notaSelecionada,
-          comentario: _comentarioController.text.trim(),
+          comentario: comentario,
         ),
       );
+      // imobiliaria nao tem um dono unico pra receber o aviso -- so pessoa
+      if (!_ehImobiliaria) {
+        NotificacaoService.instance.avisarNovaAvaliacao(
+          avaliadoUid: _id,
+          avaliadorNome: meuNome,
+          nota: _notaSelecionada,
+          comentario: comentario,
+        );
+      }
       if (mounted) {
         _comentarioController.clear();
         setState(() => _notaSelecionada = 0);

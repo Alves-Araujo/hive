@@ -40,5 +40,6 @@ flutter:
 
   # Aqui está a configuração da sua logo com o espaçamento correto
   assets:
-    - assets/images/logo.jpg
+    - assets/images/logo_claro.png
+    - assets/images/logo_escuro.png
     - assets/map_styles/

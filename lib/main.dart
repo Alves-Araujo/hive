@@ -7,12 +7,15 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 
+import 'models/notificacao.dart';
 import 'models/usuario.dart';
 import 'screens/auth_gate.dart';
 import 'screens/map_screen.dart';
+import 'screens/notificacoes_screen.dart';
 import 'screens/painel_screen.dart';
 import 'screens/resumo_screen.dart';
 import 'screens/chat_list_screen.dart';
+import 'services/notificacao_service.dart';
 import 'services/rota_service.dart';
 
 // true enquanto o modo "Ir" esta ativo. A barra de navegacao inferior some
@@ -422,13 +425,69 @@ class _TelaPrincipalState extends State<TelaPrincipal>
       }
     };
     rotaCarregandoGlobal.addListener(_rotaPendenteListener);
+
+    NotificacaoService.instance.iniciar(widget.perfil.uid);
+    NotificacaoService.instance.ultimaRecebida.addListener(_mostrarAvisoRecebido);
   }
 
   @override
   void dispose() {
     rotaCarregandoGlobal.removeListener(_rotaPendenteListener);
+    NotificacaoService.instance.ultimaRecebida.removeListener(_mostrarAvisoRecebido);
+    NotificacaoService.instance.parar();
     _navAnimController.dispose();
     super.dispose();
+  }
+
+  // aviso flutuante pra notificacao que chega com o app aberto -- aparece
+  // por cima de qualquer tela, porque o ScaffoldMessenger e o do app todo
+  void _mostrarAvisoRecebido() {
+    final n = NotificacaoService.instance.ultimaRecebida.value;
+    if (n == null || !mounted || navegandoGlobal.value) return;
+    if (n.tipo == TipoNotificacao.novaMensagem && n.alvoId == NotificacaoService.instance.chatAberto) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: const Color(0xFF14304F),
+        duration: const Duration(seconds: 5),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
+        content: Row(
+          children: [
+            Icon(iconeNotificacao(n.tipo), color: Colors.white, size: 20),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    n.titulo,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                  ),
+                  if (n.corpo.isNotEmpty)
+                    Text(
+                      n.corpo,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: Colors.white.withAlpha(190), fontSize: 13),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        action: SnackBarAction(
+          label: 'Ver',
+          textColor: corDestaque,
+          onPressed: () => abrirNotificacao(context, n),
+        ),
+      ),
+    );
   }
 
   @override
@@ -588,16 +647,43 @@ class _TelaPrincipalState extends State<TelaPrincipal>
                       ]
                     : null,
               ),
-              child: Center(
-                child: AnimatedSwitcher(
-                  duration: AppMotion.rapida,
-                  child: Icon(
-                    isSelected ? activeIcon : icon,
-                    key: ValueKey(isSelected),
-                    color: isSelected ? Colors.white : corInativa,
-                    size: 21,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  AnimatedSwitcher(
+                    duration: AppMotion.rapida,
+                    child: Icon(
+                      isSelected ? activeIcon : icon,
+                      key: ValueKey(isSelected),
+                      color: isSelected ? Colors.white : corInativa,
+                      size: 21,
+                    ),
                   ),
-                ),
+                  // o sininho fica no cabecalho do Resumo -- o ponto na aba
+                  // avisa quem esta no mapa ou no chat que tem novidade la
+                  if (index == 1)
+                    Positioned(
+                      top: 5,
+                      right: 14,
+                      child: ValueListenableBuilder<int>(
+                        valueListenable: NotificacaoService.instance.naoLidas,
+                        builder: (_, naoLidas, _) => naoLidas == 0
+                            ? const SizedBox.shrink()
+                            : Container(
+                                width: 9,
+                                height: 9,
+                                decoration: BoxDecoration(
+                                  color: corErro,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: isSelected ? corPilula : (isDark ? superficieEscura : superficieClara),
+                                    width: 1.5,
+                                  ),
+                                ),
+                              ),
+                      ),
+                    ),
+                ],
               ),
             ),
             const SizedBox(height: AppSpacing.xs + 2),

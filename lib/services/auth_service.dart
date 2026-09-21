@@ -17,7 +17,7 @@ class AuthService {
     await GoogleSignIn.instance.initialize(
       // "Web client ID" gerado pelo Firebase Console quando voce habilita o provedor Google
       // (Authentication > Sign-in method > Google > Web SDK configuration)
-      serverClientId: '890336956924-lnokgj8k18f9abqk1g9sms5jujbkg6lu.apps.googleusercontent.com.apps.googleusercontent.com',
+      serverClientId: '890336956924-lnokgj8k18f9abqk1g9sms5jujbkg6lu.apps.googleusercontent.com',
     );
     _googleSignInPronto = true;
   }
