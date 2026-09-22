@@ -10,6 +10,11 @@ class AnimatedGradientButton extends StatefulWidget {
   final double height;
   final double borderRadius;
 
+  // trocar as cores e excecao, nao configuracao: serve pra tela que TEM
+  // identidade propria (a ficha de evento, que e roxa inteira). Quem nao
+  // passa nada continua com o gradiente da marca
+  final List<Color>? cores;
+
   const AnimatedGradientButton({
     super.key,
     required this.label,
@@ -18,6 +23,7 @@ class AnimatedGradientButton extends StatefulWidget {
     this.icon,
     this.height = 56,
     this.borderRadius = AppRadius.md,
+    this.cores,
   });
 
   @override
@@ -78,7 +84,7 @@ class _AnimatedGradientButtonState extends State<AnimatedGradientButton>
               // as cores VEM do gradientePrincipal, nao sao uma copia
               // delas: eram os mesmos tres valores escritos de novo aqui,
               // e um ajuste de identidade deixaria este botao pra tras
-              colors: gradientePrincipal.colors,
+              colors: widget.cores ?? gradientePrincipal.colors,
             ),
             boxShadow: AppShadows.marca(forca: 0.9),
           ),

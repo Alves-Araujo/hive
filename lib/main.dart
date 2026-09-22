@@ -119,6 +119,25 @@ const gradienteEvento = LinearGradient(
   end: Alignment.bottomRight,
 );
 
+// o roxo "cheio" do evento, pro que e detalhe e nao superficie (icone de
+// endereco, pilula de tag): nesses lugares o azul da marca aparecia no meio
+// da ficha roxa como se fosse outro assunto
+const corEvento = Color(0xFF6D3FA8);
+
+// Superficies da ficha de EVENTO -- a mesma escada da familia azul
+// (corFundoEscuro / corCardEscuro), so que na familia roxa. A ficha de evento
+// abria azul-escura enquanto o pin, o cabecalho e o botao ja eram roxos: o
+// fundo era a unica peca da tela falando outra lingua.
+//
+// Vale SO pra tela de detalhes de evento. O resto do app continua azul --
+// evento e uma categoria dentro dele, nao um tema paralelo
+const corSuperficieEventoEscura = Color(0xFF241733);
+const corSuperficieEventoClara = Color(0xFFF3EEFA);
+
+// um degrau acima de cada uma: card apoiado sobre a folha roxa
+const corCardEventoEscura = Color(0xFF2F2145);
+const corCardEventoClara = Color(0xFFE9DFF7);
+
 // estilos de texto padronizados pra manter consistencia
 class AppTextStyles {
   static const heading1 = TextStyle(

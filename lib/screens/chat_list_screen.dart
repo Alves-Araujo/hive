@@ -33,11 +33,29 @@ class _TelaListaChatsState extends State<TelaListaChats> {
   final Map<String, PerfilPublico> _contatos = {};
   final Set<String> _buscandoContato = {};
 
+  // O stream fica AQUI, e nao no build. Criado no build, cada setState (uma
+  // tecla na busca, um perfil que chegou) devolvia um stream novo pro
+  // StreamBuilder: ele cancelava a escuta e recomeçava do zero, voltando a
+  // "waiting" -- a lista piscava e mensagem nova so aparecia depois que a
+  // leitura refeita voltasse do servidor. Assinando uma vez, o listener fica
+  // vivo e as conversas chegam sozinhas
+  Stream<List<Chat>>? _conversas;
+  String _uidDoStream = '';
+
   @override
   void initState() {
     super.initState();
     _buscaController.addListener(_aoDigitar);
     _buscaFocusNode.addListener(() => setState(() {}));
+  }
+
+  // troca de conta reassina; o mesmo uid reaproveita a escuta que ja esta de pe
+  Stream<List<Chat>> _streamDeConversas(String meuUid) {
+    if (_conversas == null || _uidDoStream != meuUid) {
+      _uidDoStream = meuUid;
+      _conversas = ChatService.instance.conversasDe(meuUid);
+    }
+    return _conversas!;
   }
 
   void _aoDigitar() {
@@ -139,9 +157,14 @@ class _TelaListaChatsState extends State<TelaListaChats> {
     if (meuUid.isEmpty) return _vazio(isDark, 'Entre na sua conta para ver suas conversas.');
 
     return StreamBuilder<List<Chat>>(
-      stream: ChatService.instance.conversasDe(meuUid),
+      stream: _streamDeConversas(meuUid),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (snapshot.hasError) {
+          return _vazio(isDark, 'Não deu pra carregar suas conversas agora.');
+        }
+        // so roda na primeira carga: depois que a lista chegou uma vez, ela
+        // continua na tela enquanto o firestore manda as atualizacoes
+        if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator(color: corPrimaria));
         }
 
@@ -264,7 +287,9 @@ class _ItemConversa extends StatelessWidget {
         ],
       ),
       trailing: Text(
-        formatarTempoRelativo(chat.atualizadoEm),
+        // conversa velha, sem horario gravado, nao mente "agora" -- so fica
+        // sem etiqueta, que e onde ela esta na ordem tambem (no fim)
+        chat.atualizadoEm == null && !chat.pendente ? '' : formatarTempoRelativo(chat.atualizadoEm),
         style: TextStyle(fontSize: 12, color: isDark ? Colors.white38 : Colors.grey),
       ),
       onTap: () {

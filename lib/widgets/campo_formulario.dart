@@ -18,6 +18,11 @@ InputDecoration decoracaoCampo({
   IconData? icone,
   Widget? sufixo,
 
+  // texto fixo colado antes do que a pessoa digita ("R$ " nos campos de
+  // dinheiro). So aparece com o campo em foco ou ja preenchido, que e o
+  // comportamento do proprio InputDecorator
+  String? prefixoTexto,
+
   // campo de uma linha usa pilula; campo de varias linhas fica estranho em
   // pilula, entao aceita raio menor
   double raio = AppRadius.md + 6,
@@ -42,6 +47,11 @@ InputDecoration decoracaoCampo({
         ? null
         : Icon(icone, color: isDark ? Colors.white54 : corPrimaria.withAlpha(170), size: 21),
     suffixIcon: sufixo,
+    prefixText: prefixoTexto,
+    prefixStyle: TextStyle(
+      color: isDark ? Colors.white70 : Colors.black87,
+      fontWeight: FontWeight.w600,
+    ),
     border: borda(Colors.transparent, 0),
     enabledBorder: borda(
       isDark ? Colors.white.withAlpha(20) : corPrimaria.withAlpha(24),

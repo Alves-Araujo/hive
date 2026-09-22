@@ -26,23 +26,26 @@ import '../utils/pins_mapa.dart';
 // isso era ruido no meio de mercado, farmacia e hospital, que pesam de
 // verdade na escolha. No mapa o pin continua, pra quem vem visitar
 enum CategoriaLugar {
-  mercado('Mercado', 'do mercado', Icons.shopping_cart_rounded, TipoPin.mercado,
+  mercado('Mercado', 'Mercados', 'do mercado', Icons.shopping_cart_rounded, TipoPin.mercado,
       ['supermarket', 'grocery_store', 'convenience_store'], [], 800, true),
-  farmacia('Farmácia', 'da farmácia', Icons.local_pharmacy_rounded, TipoPin.farmacia,
+  farmacia('Farmácia', 'Farmácias', 'da farmácia', Icons.local_pharmacy_rounded, TipoPin.farmacia,
       // 1 km e nao 800 m: exigindo farmacia de verdade COM foto, a mais perto
       // da republica do Centro ficou a 945 m -- com 800 nenhuma aparecia
       ['pharmacy', 'drugstore'], ['farma', 'drog'], 1000, true),
-  posto('Posto de combustível', 'do posto', Icons.local_gas_station_rounded, TipoPin.posto,
+  posto('Posto de combustível', 'Postos', 'do posto', Icons.local_gas_station_rounded, TipoPin.posto,
       ['gas_station'], [], 1000, true),
-  hotel('Hotel', 'do hotel', Icons.hotel_rounded, TipoPin.hotel,
+  hotel('Hotel', 'Hotéis', 'do hotel', Icons.hotel_rounded, TipoPin.hotel,
       ['hotel'], ['hotel'], 1500, false),
-  hospital('Hospital', 'do hospital', Icons.local_hospital_rounded, TipoPin.hospital,
+  hospital('Hospital', 'Hospitais', 'do hospital', Icons.local_hospital_rounded, TipoPin.hospital,
       ['hospital', 'general_hospital'], ['hospital'], 1500, true);
 
-  const CategoriaLugar(this.rotulo, this.sufixo, this.icone, this.pin, this.tiposGoogle,
-      this.nomeContem, this.raio, this.naFichaDoAnuncio);
+  const CategoriaLugar(this.rotulo, this.rotuloPlural, this.sufixo, this.icone, this.pin,
+      this.tiposGoogle, this.nomeContem, this.raio, this.naFichaDoAnuncio);
 
   final String rotulo; // "Farmácia" -- titulo do painel
+  // "Farmácias" -- o chip do filtro de categoria fala de um conjunto de pins,
+  // nao de um estabelecimento so
+  final String rotuloPlural;
   final String sufixo; // "da farmácia" -- etiqueta "320 m da farmácia"
   final IconData icone;
   final TipoPin pin;

@@ -267,7 +267,11 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     temaGlobal.addListener(_temaListener);
 
     _filtroListener = () {
-      if (mounted) _atualizarMarcadoresFiltrados();
+      if (!mounted) return;
+      // a categoria manda nos pins de estabelecimento tambem, que ficam fora
+      // de _marcadores -- por isso os dois conjuntos sao remontados aqui
+      setState(_atualizarMarcadoresLugares);
+      _atualizarMarcadoresFiltrados();
     };
     _filtroState.addListener(_filtroListener);
 
@@ -486,9 +490,15 @@ class _CentroDoMapaState extends State<CentroDoMapa>
 
   void _atualizarMarcadoresLugares() {
     final rota = rotaAtivaGlobal.value;
+    final categorias = _filtroState.categoriasSelecionadas;
     // a chave e o place id, entao um fixo que TAMBEM seja o mais perto de
     // algum anuncio nao vira dois pins
-    _marcadoresLugares = {..._lugaresFixos, ..._lugares}.values.map((lugar) {
+    _marcadoresLugares = {..._lugaresFixos, ..._lugares}
+        .values
+        // sem categoria escolhida o mapa mostra tudo; com alguma, so os pins
+        // daquele tipo ficam (escolher "Eventos" tira todos os pins daqui)
+        .where((lugar) => categorias.isEmpty || categorias.contains(lugar.categoria.name))
+        .map((lugar) {
       final pins = _pinsAnuncio[lugar.categoria.pin];
       BitmapDescriptor? icone = pins?.$1;
       if (rota != null && lugar.posicao == rota.destino) icone = pins?.$3;
@@ -905,7 +915,16 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     required List<String> tags,
     required List<String> contas,
     required List<String> localidades,
+    required List<String> categorias,
   }) {
+    // com categoria escolhida o mapa mostra SO aquilo: anuncio so continua se
+    // for evento e "Eventos" estiver marcado. Escolher "Mercados" sozinho
+    // deixa no mapa os pins de mercado e mais nada -- que e o que a pessoa
+    // pediu ao marcar so aquela categoria
+    if (categorias.isNotEmpty) {
+      final bool ehEvento = item.tipo == TipoListing.evento;
+      if (!ehEvento || !categorias.contains(categoriaEvento)) return false;
+    }
     // evento nao tem preco de aluguel, entao pula so o filtro de preco
     if (item.tipo != TipoListing.evento) {
       if (precoMinimo != null && item.preco < precoMinimo) return false;
@@ -917,6 +936,17 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     return true;
   }
 
+  // quantos pins de estabelecimento sobrariam com essas categorias -- o
+  // companheiro de _quantosAtendem pro botao da folha, ja que um filtro so de
+  // categoria pode nao deixar anuncio nenhum e ainda assim mostrar muita coisa
+  int _quantosLugares(List<String> categorias) {
+    if (categorias.isEmpty) return 0;
+    return {..._lugaresFixos, ..._lugares}
+        .values
+        .where((l) => categorias.contains(l.categoria.name))
+        .length;
+  }
+
   // quantos imoveis sobrariam com essa escolha -- alimenta o numero do botao
   // da folha de filtros
   int _quantosAtendem({
@@ -925,6 +955,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     required List<String> tags,
     required List<String> contas,
     required List<String> localidades,
+    required List<String> categorias,
   }) =>
       _imoveisDoBanco
           .where((item) =>
@@ -936,6 +967,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                 tags: tags,
                 contas: contas,
                 localidades: localidades,
+                categorias: categorias,
               ))
           .length;
 
@@ -950,6 +982,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
               tags: _filtroState.tagsSelecionadas,
               contas: _filtroState.contasSelecionadas,
               localidades: _filtroState.localidadesSelecionadas,
+              categorias: _filtroState.categoriasSelecionadas,
             ))
         .toList();
 
@@ -2043,6 +2076,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     final List<String> tagsTemp = List.from(_filtroState.tagsSelecionadas);
     final List<String> contasTemp = List.from(_filtroState.contasSelecionadas);
     final List<String> localidadesTemp = List.from(_filtroState.localidadesSelecionadas);
+    final List<String> categoriasTemp = List.from(_filtroState.categoriasSelecionadas);
 
     showModalBottomSheet(
       context: context,
@@ -2069,14 +2103,19 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                 (maximo != null ? 1 : 0) +
                 tagsTemp.length +
                 contasTemp.length +
-                localidadesTemp.length;
+                localidadesTemp.length +
+                categoriasTemp.length;
             final int resultados = _quantosAtendem(
               precoMinimo: minimo,
               precoMaximo: maximo,
               tags: tagsTemp,
               contas: contasTemp,
               localidades: localidadesTemp,
+              categorias: categoriasTemp,
             );
+            // filtrar so por "Farmácias" deixa zero anuncio e ainda assim
+            // enche o mapa de pins -- o botao tem que contar os dois
+            final int pontosDeInteresse = _quantosLugares(categoriasTemp);
 
             return Container(
               margin: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
@@ -2164,6 +2203,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                                         tagsTemp.clear();
                                         contasTemp.clear();
                                         localidadesTemp.clear();
+                                        categoriasTemp.clear();
                                       }),
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
@@ -2191,6 +2231,39 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                             ),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: AppSpacing.xl),
+
+                      // --- categorias ---
+                      // vem antes do preco por ser o corte mais grosso: decide
+                      // O QUE aparece no mapa antes de refinar quanto custa
+                      _rotuloSecao('Categorias', Icons.category_rounded, isDark),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        'Sem escolher nenhuma, o mapa mostra tudo.',
+                        style: AppTextStyles.caption.copyWith(
+                          color: isDark ? Colors.white38 : Colors.grey,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      Wrap(
+                        spacing: AppSpacing.sm,
+                        runSpacing: AppSpacing.sm,
+                        children: opcoesCategoria
+                            .map((opcao) => _chipFiltro(
+                                  rotulo: opcao.rotulo,
+                                  icone: opcao.icone,
+                                  selecionado: categoriasTemp.contains(opcao.id),
+                                  isDark: isDark,
+                                  onTap: () => setModalState(() {
+                                    if (categoriasTemp.contains(opcao.id)) {
+                                      categoriasTemp.remove(opcao.id);
+                                    } else {
+                                      categoriasTemp.add(opcao.id);
+                                    }
+                                  }),
+                                ))
+                            .toList(),
                       ),
                       const SizedBox(height: AppSpacing.xl),
 
@@ -2394,10 +2467,10 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                       // imoveis sobram -- filtro que zera o mapa era
                       // descoberto so depois de fechar a folha
                       AnimatedGradientButton(
-                        label: resultados == 0
-                            ? 'Nenhum imóvel com esses filtros'
-                            : 'Ver $resultados ${resultados == 1 ? 'imóvel' : 'imóveis'}',
-                        icon: resultados == 0 ? Icons.search_off_rounded : Icons.search_rounded,
+                        label: _rotuloDoBotaoDeFiltro(resultados, pontosDeInteresse),
+                        icon: resultados == 0 && pontosDeInteresse == 0
+                            ? Icons.search_off_rounded
+                            : Icons.search_rounded,
                         onTap: () {
                           _filtroState.aplicarEstado(
                             precoMinimo: minimo,
@@ -2405,6 +2478,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                             tags: tagsTemp,
                             contas: contasTemp,
                             localidades: localidadesTemp,
+                            categorias: categoriasTemp,
                           );
 
                           Navigator.pop(context);
@@ -2438,6 +2512,15 @@ class _CentroDoMapaState extends State<CentroDoMapa>
         );
       },
     );
+  }
+
+  // o que o botao da folha promete. Um filtro so de categoria (so "Postos",
+  // por exemplo) nao deixa anuncio nenhum, mas tambem nao deixa o mapa vazio:
+  // nesse caso o botao conta os pontos, e nao os imoveis
+  String _rotuloDoBotaoDeFiltro(int imoveis, int pontos) {
+    if (imoveis > 0) return 'Ver $imoveis ${imoveis == 1 ? 'imóvel' : 'imóveis'}';
+    if (pontos > 0) return 'Ver $pontos ${pontos == 1 ? 'local' : 'locais'} no mapa';
+    return 'Nenhum resultado com esses filtros';
   }
 
   // titulo de secao: icone em selo + texto. O selo e o que tira a folha do

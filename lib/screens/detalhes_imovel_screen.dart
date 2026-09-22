@@ -63,6 +63,24 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
 
   String get _meuUid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
+  bool get _ehEvento => widget.imovel.tipo == TipoListing.evento;
+
+  // fundo da ficha: roxo no evento, azul no resto. Passa por aqui TODO fundo
+  // da tela -- folha, barra de acoes, cabecalho colapsado -- pra nao sobrar
+  // uma peca azul no meio da tela roxa, que foi como a cor entrou aqui
+  Color _corSuperficie(bool isDark) => _ehEvento
+      ? (isDark ? corSuperficieEventoEscura : corSuperficieEventoClara)
+      : (isDark ? corSuperficieEscura : superficieClara);
+
+  // um degrau acima da superficie: o que repousa sobre a folha (cartao do
+  // anunciante, ficha, previa)
+  Color _corCartao(bool isDark) => _ehEvento
+      ? (isDark ? corCardEventoEscura : corCardEventoClara)
+      : (isDark ? corSuperficieEscura : Colors.white);
+
+  // cor de acento dos detalhes (icones, pilulas): roxa no evento
+  Color get _corAcento => _ehEvento ? corEvento : corPrimaria;
+
   // Uma conversa por interessado: o id junta o anuncio e as duas pessoas.
   // Antes o id era so o imovelId, entao todo mundo que escrevia naquele
   // anuncio caia na mesma sala e lia o que os outros mandaram
@@ -132,7 +150,7 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
     final sugestaoEscolhida = await showModalBottomSheet<SugestaoBusca>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: isDark ? superficieEscura : superficieClara,
+      backgroundColor: _corSuperficie(isDark),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       builder: (sheetContext) => _SeletorDeDestino(imoveis: imoveis),
     );
@@ -149,7 +167,7 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     showModalBottomSheet(
       context: context,
-      backgroundColor: isDark ? superficieEscura : superficieClara,
+      backgroundColor: _corSuperficie(isDark),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       builder: (sheetContext) {
         return SafeArea(
@@ -224,7 +242,10 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
           children: [
             Container(
               padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(gradient: gradientePrincipal, borderRadius: BorderRadius.circular(12)),
+              decoration: BoxDecoration(
+                gradient: _ehEvento ? gradienteEvento : gradientePrincipal,
+                borderRadius: BorderRadius.circular(12),
+              ),
               child: Icon(icone, color: Colors.white, size: 20),
             ),
             const SizedBox(width: 14),
@@ -258,7 +279,7 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
     final bool isEvento = imovel.tipo == TipoListing.evento;
 
     return Scaffold(
-      backgroundColor: isDark ? corSuperficieEscura : superficieClara,
+      backgroundColor: _corSuperficie(isDark),
       // cabecalho em imagem cheia: o body passa por tras da status bar pra
       // foto sangrar ate o topo, igual app de viagem/imovel moderno
       extendBodyBehindAppBar: true,
@@ -274,7 +295,7 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
                 pinned: true,
                 stretch: true,
                 elevation: 0,
-                backgroundColor: isDark ? corSuperficieEscura : Colors.white,
+                backgroundColor: _ehEvento ? _corSuperficie(isDark) : (isDark ? corSuperficieEscura : Colors.white),
                 surfaceTintColor: Colors.transparent,
                 leadingWidth: 64,
                 leading: Center(child: _botaoVoltar(isEvento)),
@@ -294,7 +315,7 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
                   offset: const Offset(0, -26),
                   child: Container(
                     decoration: BoxDecoration(
-                      color: isDark ? corSuperficieEscura : superficieClara,
+                      color: _corSuperficie(isDark),
                       borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
                     ),
                     // o topo paga os 26px que a folha subiu por cima da foto,
@@ -329,7 +350,7 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
                         const SizedBox(height: AppSpacing.sm),
                         Row(
                           children: [
-                            Icon(Icons.location_on_rounded, size: 15, color: corPrimaria.withAlpha(180)),
+                            Icon(Icons.location_on_rounded, size: 15, color: _corAcento.withAlpha(180)),
                             const SizedBox(width: AppSpacing.xs + 1),
                             Expanded(
                               child: Text(
@@ -455,14 +476,14 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
             border: Border.all(
               color: isDark
                   ? Colors.white.withAlpha(20)
-                  : corPrimaria.withAlpha(26),
+                  : _corAcento.withAlpha(26),
             ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.map_outlined,
-                  size: 15, color: isDark ? Colors.white54 : corPrimaria),
+                  size: 15, color: isDark ? Colors.white54 : _corAcento),
               const SizedBox(width: AppSpacing.xs + 2),
               Text(
                 'Bairro ${imovel.bairro}',
@@ -672,15 +693,15 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
   }
 
   Widget _pilula(String texto, bool isDark, {IconData? icone, bool tocavel = false}) {
-    final cor = isDark ? Colors.white70 : corPrimaria;
+    final cor = isDark ? Colors.white70 : _corAcento;
     return Container(
       padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.md + 2, vertical: AppSpacing.sm),
       decoration: BoxDecoration(
-        color: isDark ? Colors.white.withAlpha(10) : corPrimaria.withAlpha(12),
+        color: isDark ? Colors.white.withAlpha(10) : _corAcento.withAlpha(12),
         borderRadius: BorderRadius.circular(AppRadius.pill),
         border: Border.all(
-          color: isDark ? Colors.white.withAlpha(14) : corPrimaria.withAlpha(28),
+          color: isDark ? Colors.white.withAlpha(14) : _corAcento.withAlpha(28),
         ),
       ),
       child: Row(
@@ -707,7 +728,7 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
   Widget _barraDeAcoes(Imovel imovel, bool isEvento, bool isDark) {
     return Container(
       decoration: BoxDecoration(
-        color: isDark ? superficieEscura : superficieClara,
+        color: _corSuperficie(isDark),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
         boxShadow: [
           BoxShadow(
@@ -729,6 +750,7 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
                   label: 'Calcular Rota',
                   icon: Icons.alt_route_rounded,
                   isLoading: _buscandoLocalizacao,
+                  cores: isEvento ? gradienteEvento.colors : null,
                   onTap: _abrirModalDeRota,
                 ),
               ),
@@ -1015,7 +1037,7 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
 
         return Container(
           padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(color: isDark ? superficieEscura : superficieClara, borderRadius: BorderRadius.circular(18)),
+          decoration: BoxDecoration(color: _corCartao(isDark), borderRadius: BorderRadius.circular(18)),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

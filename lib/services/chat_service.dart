@@ -16,16 +16,22 @@ class ChatService {
   Stream<QuerySnapshot<Map<String, dynamic>>> mensagensRecentes(String chatId) =>
       mensagensDe(chatId).orderBy('timestamp', descending: true).snapshots();
 
-  // Minhas conversas, pra caixa de entrada. Sem orderBy na consulta de
-  // proposito: array-contains + orderBy exigiria indice composto no firestore,
-  // e sao poucas conversas por pessoa -- ordenar aqui sai de graca.
-  // atualizadoEm vem nulo enquanto o horario do servidor esta pendente
-  // (mensagem recem-enviada), e esse caso conta como "agora", no topo
+  // Minhas conversas, pra caixa de entrada, da mais recente pra mais antiga.
+  //
+  // Sem orderBy na consulta de proposito: array-contains + orderBy exigiria
+  // indice composto no firestore, e sao poucas conversas por pessoa --
+  // ordenar aqui sai de graca. A ordem sai do atualizadoEm que enviarMensagem
+  // grava no pai a cada mensagem (texto, foto ou audio), entao quem acabou de
+  // escrever sobe pro topo sozinho.
+  //
+  // E um listener, nao uma leitura: conversa que ja esta na lista muda de
+  // previa e de lugar na hora, e conversa que nem existia (alguem escrevendo
+  // pela primeira vez) entra sozinha, sem puxar pra atualizar
   Stream<List<Chat>> conversasDe(String uid) {
     return _colecao.where('participantes', arrayContains: uid).snapshots().map((snap) {
       final agora = DateTime.now();
       return snap.docs.map(Chat.fromDoc).toList()
-        ..sort((a, b) => (b.atualizadoEm ?? agora).compareTo(a.atualizadoEm ?? agora));
+        ..sort((a, b) => b.ordenadaPor(agora).compareTo(a.ordenadaPor(agora)));
     });
   }
 

@@ -37,6 +37,12 @@ class Chat {
   final String ultimaMensagem;
   final DateTime? atualizadoEm;
 
+  // a mensagem acabou de sair deste aparelho e o horario do servidor ainda
+  // nao voltou. E o que separa "atualizadoEm nulo porque e agorinha" de
+  // "atualizadoEm nulo porque essa conversa e velha e nunca teve o campo" --
+  // sem isso, conversa antiga sem o campo subia pro topo e ficava la
+  final bool pendente;
+
   Chat({
     required this.id,
     required this.participantes,
@@ -44,7 +50,13 @@ class Chat {
     this.imovelTitulo = '',
     this.ultimaMensagem = '',
     this.atualizadoEm,
+    this.pendente = false,
   });
+
+  // a hora que ordena a caixa de entrada. Mensagem recem-enviada conta como
+  // agora (vai pro topo); conversa sem horario nenhum vai pro fim
+  DateTime ordenadaPor(DateTime agora) =>
+      atualizadoEm ?? (pendente ? agora : DateTime.fromMillisecondsSinceEpoch(0));
 
   // o outro lado da conversa: e quem da nome e foto ao item da lista
   String contatoUid(String meuUid) =>
@@ -59,8 +71,9 @@ class Chat {
       imovelTitulo: normalizarTracosOuVazio(map['imovelTitulo']),
       ultimaMensagem: normalizarTracosOuVazio(map['ultimaMensagem']),
       // nulo enquanto o horario do servidor esta pendente (mensagem
-      // recem-enviada) -- quem ordena trata nulo como "agora"
+      // recem-enviada) -- ver `pendente` e ordenadaPor()
       atualizadoEm: (map['atualizadoEm'] as Timestamp?)?.toDate(),
+      pendente: doc.metadata.hasPendingWrites,
     );
   }
 }

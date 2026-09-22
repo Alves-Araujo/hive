@@ -10,14 +10,20 @@ import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../models/imovel.dart';
 import '../services/imgbb_service.dart';
 import '../services/notificacao_service.dart';
+import '../utils/moeda.dart';
 import '../widgets/animated_gradient_button.dart';
 import '../main.dart';
 import '../widgets/campo_formulario.dart';
 
 const int _limiteTamanhoImagemBytes = 32 * 1024 * 1024; // 32MB por foto
 
+// A MESMA tela publica e edita. Com `imovel` preenchido ela abre com tudo o
+// que ja foi salvo e grava por cima do mesmo documento -- uma segunda tela de
+// edicao seria uma copia deste formulario inteiro (endereco, IPTU, tags,
+// comprovantes) condenada a divergir dele
 class NovoAnuncioScreen extends StatefulWidget {
-  const NovoAnuncioScreen({super.key});
+  final Imovel? imovel;
+  const NovoAnuncioScreen({super.key, this.imovel});
 
   @override
   State<NovoAnuncioScreen> createState() => _NovoAnuncioScreenState();
@@ -64,7 +70,51 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
   final List<XFile> _imagensSelecionadas = [];
   final ImagePicker _picker = ImagePicker();
 
+  // fotos que ja estao no anuncio (URLs do ImgBB) -- so existem na edicao.
+  // Ficam separadas das escolhidas agora porque nao precisam subir de novo
+  final List<String> _fotosJaSalvas = [];
+
+  bool get _editando => widget.imovel != null;
   bool get _ehApartamento => _tipoImovelSelecionado == 'Apartamento';
+
+  // na edicao, um comprovante ja enviado continua valendo se a pessoa nao
+  // escolher outro
+  bool get _temComprovanteResidencia =>
+      _comprovanteResidencia != null ||
+      (widget.imovel?.comprovanteResidenciaUrl.isNotEmpty ?? false);
+  bool get _temComprovanteIptu =>
+      _comprovanteIptu != null || (widget.imovel?.iptuComprovanteUrl.isNotEmpty ?? false);
+
+  @override
+  void initState() {
+    super.initState();
+    final imovel = widget.imovel;
+    if (imovel == null) return;
+
+    _tituloController.text = imovel.titulo;
+    _descricaoController.text = imovel.descricao;
+    _precoController.text = formatarValorEmCampo(imovel.preco);
+    _andarController.text = imovel.andar;
+    _iptuValorController.text = formatarValorEmCampo(imovel.iptuValor);
+
+    _cepController.text = imovel.cep;
+    _logradouroController.text = imovel.logradouro;
+    _numeroController.text = imovel.numero;
+    _complementoController.text = imovel.complemento;
+    _bairroController.text = imovel.bairro;
+    _cidadeController.text = imovel.cidade;
+    _estadoSelecionado = imovel.estado.isEmpty ? null : imovel.estado;
+
+    _tipoSelecionado = imovel.tipo;
+    _tipoImovelSelecionado = imovel.tipoImovel;
+    _tagsSelecionadas.addAll(imovel.tags);
+    _fotosJaSalvas.addAll(imovel.fotos);
+
+    _incluiLuz = imovel.incluiLuz;
+    _incluiAgua = imovel.incluiAgua;
+    _incluiWifi = imovel.incluiWifi;
+    _iptuEhUpload = imovel.iptuComprovanteUrl.isNotEmpty;
+  }
 
   // monta a string de endereco completa a partir dos campos estruturados --
   // usada tanto pra geocodificar quanto pra exibir nas telas que so mostram
@@ -179,7 +229,7 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
   // valida o form, geocodifica o endereco, sobe as fotos/documentos e salva no firestore
   Future<void> _salvarAnuncio() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_imagensSelecionadas.isEmpty) {
+    if (_imagensSelecionadas.isEmpty && _fotosJaSalvas.isEmpty) {
       _mostrarErro('Adicione pelo menos uma foto!');
       return;
     }
@@ -208,15 +258,15 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
         _mostrarErro('Informe o andar do apartamento.');
         return;
       }
-      if (_comprovanteResidencia == null) {
+      if (!_temComprovanteResidencia) {
         _mostrarErro('Anexe o comprovante de residência.');
         return;
       }
-      if (_iptuEhUpload && _comprovanteIptu == null) {
+      if (_iptuEhUpload && !_temComprovanteIptu) {
         _mostrarErro('Anexe o comprovante de IPTU.');
         return;
       }
-      if (!_iptuEhUpload && _iptuValorController.text.trim().isEmpty) {
+      if (!_iptuEhUpload && valorDoCampo(_iptuValorController.text) <= 0) {
         _mostrarErro('Informe o valor do IPTU.');
         return;
       }
@@ -226,8 +276,11 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
 
     try {
       final enderecoFormatado = _enderecoCompleto;
-      double lat = posicaoInatel.latitude;
-      double lng = posicaoInatel.longitude;
+      // na edicao o fallback e a coordenada que o anuncio JA tem: se a
+      // geocodificacao falhar agora, um imovel que estava no lugar certo iria
+      // parar no Inatel so por ter sido reaberto pra corrigir o preco
+      double lat = widget.imovel?.posicao.latitude ?? posicaoInatel.latitude;
+      double lng = widget.imovel?.posicao.longitude ?? posicaoInatel.longitude;
 
       // transforma o endereco digitado em lat/lng
       try {
@@ -241,16 +294,26 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
         debugPrint("Geocoding falhou, usando coordenada de fallback: $e");
       }
 
-      final docRef = FirebaseFirestore.instance.collection('imoveis').doc();
+      final colecao = FirebaseFirestore.instance.collection('imoveis');
+      final docRef = _editando ? colecao.doc(widget.imovel!.id) : colecao.doc();
 
-      final urlsImagens = await ImgbbService.instance.enviarImagens(_imagensSelecionadas);
+      // so as fotos novas sobem: as que ja estavam no anuncio continuam
+      // apontando pra mesma URL
+      final urlsImagens = [
+        ..._fotosJaSalvas,
+        ...await ImgbbService.instance.enviarImagens(_imagensSelecionadas),
+      ];
 
       String comprovanteResidenciaUrl = '';
       String comprovanteIptuUrl = '';
       if (ehMoradia) {
-        comprovanteResidenciaUrl = await ImgbbService.instance.enviarImagem(_comprovanteResidencia!);
+        comprovanteResidenciaUrl = _comprovanteResidencia != null
+            ? await ImgbbService.instance.enviarImagem(_comprovanteResidencia!)
+            : widget.imovel?.comprovanteResidenciaUrl ?? '';
         if (_iptuEhUpload) {
-          comprovanteIptuUrl = await ImgbbService.instance.enviarImagem(_comprovanteIptu!);
+          comprovanteIptuUrl = _comprovanteIptu != null
+              ? await ImgbbService.instance.enviarImagem(_comprovanteIptu!)
+              : widget.imovel?.iptuComprovanteUrl ?? '';
         }
       }
 
@@ -264,13 +327,15 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
         id: docRef.id,
         titulo: _tituloController.text.trim(),
         descricao: _descricaoController.text.trim(),
-        preco: double.tryParse(_precoController.text.replaceAll(',', '.')) ?? 0.0,
+        preco: valorDoCampo(_precoController.text),
         posicao: LatLng(lat, lng),
         tipo: _tipoSelecionado,
         tags: tagsFinal,
         endereco: enderecoFormatado,
         fotos: urlsImagens,
-        donoUid: FirebaseAuth.instance.currentUser?.uid ?? '',
+        // na edicao o dono continua sendo quem publicou: as regras do
+        // firestore comparam esse campo com quem esta autenticado
+        donoUid: widget.imovel?.donoUid ?? FirebaseAuth.instance.currentUser?.uid ?? '',
         cep: _cepController.text.trim(),
         logradouro: _logradouroController.text.trim(),
         numero: _numeroController.text.trim(),
@@ -281,7 +346,7 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
         tipoImovel: ehMoradia ? _tipoImovelSelecionado : '',
         andar: (ehMoradia && _ehApartamento) ? _andarController.text.trim() : '',
         comprovanteResidenciaUrl: comprovanteResidenciaUrl,
-        iptuValor: (ehMoradia && !_iptuEhUpload) ? (double.tryParse(_iptuValorController.text.replaceAll(',', '.')) ?? 0.0) : 0.0,
+        iptuValor: (ehMoradia && !_iptuEhUpload) ? valorDoCampo(_iptuValorController.text) : 0.0,
         iptuComprovanteUrl: comprovanteIptuUrl,
         incluiLuz: _incluiLuz,
         incluiAgua: _incluiAgua,
@@ -289,12 +354,18 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
       );
 
       await docRef.set(novoImovel.toMap());
-      // sem await: o anuncio ja foi publicado, o aviso nao segura a tela
-      NotificacaoService.instance.avisarNovoAnuncio(novoImovel);
+      // o aviso e de anuncio NOVO: edicao nao notifica ninguem de novo.
+      // Sem await -- o anuncio ja foi publicado, o aviso nao segura a tela
+      if (!_editando) NotificacaoService.instance.avisarNovoAnuncio(novoImovel);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Anúncio publicado com sucesso!'), backgroundColor: corSucesso),
+          SnackBar(
+            content: Text(_editando
+                ? 'Anúncio atualizado com sucesso!'
+                : 'Anúncio publicado com sucesso!'),
+            backgroundColor: corSucesso,
+          ),
         );
         Navigator.pop(context);
       }
@@ -316,7 +387,7 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
         elevation: 0,
         iconTheme: IconThemeData(color: isDark ? Colors.white : Colors.black87),
         title: Text(
-          'Novo Anúncio',
+          _editando ? 'Editar Anúncio' : 'Novo Anúncio',
           style: AppTextStyles.heading3.copyWith(color: isDark ? Colors.white : Colors.black87),
         ),
         centerTitle: true,
@@ -470,11 +541,14 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
 
               _buildTextField(
                 controller: _precoController,
-                label: 'Preço (R\$)',
+                label: 'Preço',
                 icon: Icons.attach_money_rounded,
                 isDark: isDark,
-                keyboardType: TextInputType.number,
-                validator: (val) => val!.isEmpty ? 'Informe o preço' : null,
+                campoDeDinheiro: true,
+                validator: (val) {
+                  if (val == null || val.isEmpty) return 'Informe o preço';
+                  return valorDoCampo(val) > 0 ? null : 'Informe um valor maior que zero';
+                },
               ),
 
               if (_tipoSelecionado == TipoListing.moradia) ...[
@@ -520,7 +594,7 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
                 const SizedBox(height: 12),
                 _buildUploadUnico(
                   isDark: isDark,
-                  arquivo: _comprovanteResidencia,
+                  anexado: _temComprovanteResidencia,
                   onTap: _escolherComprovanteResidencia,
                   rotulo: 'Toque para anexar o comprovante',
                 ),
@@ -557,17 +631,17 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
                 if (_iptuEhUpload)
                   _buildUploadUnico(
                     isDark: isDark,
-                    arquivo: _comprovanteIptu,
+                    anexado: _temComprovanteIptu,
                     onTap: _escolherComprovanteIptu,
                     rotulo: 'Toque para anexar o comprovante de IPTU',
                   )
                 else
                   _buildTextField(
                     controller: _iptuValorController,
-                    label: 'Valor anual do IPTU (R\$)',
+                    label: 'Valor anual do IPTU',
                     icon: Icons.receipt_long_outlined,
                     isDark: isDark,
-                    keyboardType: TextInputType.number,
+                    campoDeDinheiro: true,
                   ),
 
                 const SizedBox(height: 24),
@@ -641,8 +715,8 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
               _salvando
                   ? const Center(child: CircularProgressIndicator(color: corPrimaria))
                   : AnimatedGradientButton(
-                      label: 'Publicar Anúncio',
-                      icon: Icons.cloud_upload_rounded,
+                      label: _editando ? 'Salvar Alterações' : 'Publicar Anúncio',
+                      icon: _editando ? Icons.save_rounded : Icons.cloud_upload_rounded,
                       onTap: _salvarAnuncio,
                     ),
             ],
@@ -738,9 +812,11 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
     );
   }
 
+  // `anexado` e nao o XFile: na edicao o comprovante pode ja estar enviado,
+  // e nesse caso nao ha arquivo nenhum em maos pra mostrar
   Widget _buildUploadUnico({
     required bool isDark,
-    required XFile? arquivo,
+    required bool anexado,
     required VoidCallback onTap,
     required String rotulo,
   }) {
@@ -757,13 +833,13 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
         child: Row(
           children: [
             Icon(
-              arquivo != null ? Icons.check_circle_rounded : Icons.upload_file_rounded,
-              color: arquivo != null ? corSucesso : corPrimaria,
+              anexado ? Icons.check_circle_rounded : Icons.upload_file_rounded,
+              color: anexado ? corSucesso : corPrimaria,
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                arquivo != null ? 'Arquivo selecionado' : rotulo,
+                anexado ? 'Arquivo selecionado' : rotulo,
                 style: TextStyle(color: isDark ? Colors.white54 : Colors.grey.shade700),
               ),
             ),
@@ -774,7 +850,7 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
   }
 
   Widget _buildSeletorDeFotos(bool isDark) {
-    if (_imagensSelecionadas.isEmpty) {
+    if (_imagensSelecionadas.isEmpty && _fotosJaSalvas.isEmpty) {
       return GestureDetector(
         onTap: _escolherImagens,
         child: Container(
@@ -800,13 +876,19 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
       );
     }
 
+    // as ja salvas (edicao) vem primeiro, depois as escolhidas agora -- a
+    // mesma ordem em que vao ser gravadas, entao a primeira miniatura e
+    // sempre a foto de capa do anuncio
+    final totalJaSalvas = _fotosJaSalvas.length;
+    final total = totalJaSalvas + _imagensSelecionadas.length;
+
     return SizedBox(
       height: 100,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        itemCount: _imagensSelecionadas.length + 1,
+        itemCount: total + 1,
         itemBuilder: (context, index) {
-          if (index == _imagensSelecionadas.length) {
+          if (index == total) {
             return GestureDetector(
               onTap: _escolherImagens,
               child: Container(
@@ -821,6 +903,8 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
               ),
             );
           }
+
+          final bool jaSalva = index < totalJaSalvas;
           return Stack(
             children: [
               Container(
@@ -829,7 +913,10 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(16),
                   image: DecorationImage(
-                    image: FileImage(File(_imagensSelecionadas[index].path)),
+                    image: jaSalva
+                        ? NetworkImage(_fotosJaSalvas[index])
+                        : FileImage(File(_imagensSelecionadas[index - totalJaSalvas].path))
+                            as ImageProvider,
                     fit: BoxFit.cover,
                   ),
                 ),
@@ -838,7 +925,9 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
                 top: 4,
                 right: 16,
                 child: GestureDetector(
-                  onTap: () => _removerImagem(index),
+                  onTap: () => jaSalva
+                      ? setState(() => _fotosJaSalvas.removeAt(index))
+                      : _removerImagem(index - totalJaSalvas),
                   child: Container(
                     padding: const EdgeInsets.all(4),
                     decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
@@ -862,12 +951,19 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
     TextInputType keyboardType = TextInputType.text,
     String? Function(String?)? validator,
     List<TextInputFormatter>? formatters,
+
+    // preco e IPTU: teclado numerico + mascara de moeda em reais. Vem como
+    // uma chave so pra nao dar pra esquecer metade da combinacao num campo
+    // novo de dinheiro -- foi assim que o preco ficava R$ 0,00
+    bool campoDeDinheiro = false,
   }) {
     return TextFormField(
       controller: controller,
       maxLines: maxLines,
-      keyboardType: keyboardType,
-      inputFormatters: formatters,
+      keyboardType: campoDeDinheiro
+          ? const TextInputType.numberWithOptions(decimal: false, signed: false)
+          : keyboardType,
+      inputFormatters: campoDeDinheiro ? const [MoedaInputFormatter()] : formatters,
       style: TextStyle(color: isDark ? Colors.white : Colors.black87),
       validator: validator,
       // campo de varias linhas nao usa pilula: em caixa alta o raio de
@@ -876,6 +972,7 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
         isDark: isDark,
         rotulo: label,
         icone: icon,
+        prefixoTexto: campoDeDinheiro ? 'R\$ ' : null,
         raio: maxLines > 1 ? AppRadius.lg : AppRadius.md + 6,
       ),
     );
