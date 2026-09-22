@@ -122,6 +122,84 @@ class LugaresService {
   static final LugaresService instance = LugaresService._();
 
   final Map<String, Future<List<LugarProximo>>> _cache = {};
+  Future<List<Lugar>>? _cacheFixos;
+
+  // lugares que ficam no mapa SEMPRE, mesmo sem nenhum anuncio por perto.
+  //
+  // A busca normal guarda so o estabelecimento mais proximo de cada
+  // categoria por moradia, entao um mercado bom mas longe dos anuncios de
+  // hoje nunca ganharia pin. Esta lista e a excecao, pra quando alguem
+  // conhece a cidade e sabe que um lugar tem que estar la.
+  //
+  // So o place id entra aqui: nome, endereco e foto continuam vindo da API a
+  // cada sessao, porque os termos do Google nao deixam guardar isso no
+  // aparelho (mesmo motivo do cache so em memoria)
+  static const String _idAlvorada = 'ChIJTZTKRVCiy5QRTkIdLa7PDN8';
+  static const String _idMaristelaBairro = 'ChIJs5SKOlOiy5QRMW7tclY_Sd0';
+  static const String _idMaristelaInatel = 'ChIJcbDcH5mjy5QR7WpUlv780Ww';
+  static const String _idUnissul = 'ChIJaQy3zv2iy5QRGVQXUvu_vt0';
+
+  static const Map<String, CategoriaLugar> _idsFixos = {
+    // Supermercados Alvorada -- R. Comendador Custodio Ribeiro, Centro
+    _idAlvorada: CategoriaLugar.mercado,
+    // Supermercado Maristela -- Av. Frederico de Paula Cunha, bairro Maristela
+    _idMaristelaBairro: CategoriaLugar.mercado,
+    // a outra loja do Maristela -- Av. Joao de Camargo, a avenida do Inatel
+    _idMaristelaInatel: CategoriaLugar.mercado,
+    // Supermercado Avenida Unissul -- Av. Sinha Moreira, Centro
+    _idUnissul: CategoriaLugar.mercado,
+  };
+
+  // categorias em que SO estes lugares valem. Lista branca, e nao o contrario
+  // (proibir um por um), porque em mercado os falsos positivos sao a regra:
+  //
+  // o filtro por nome (nomeContem) resolve farmacia e hospital, onde o nome
+  // sempre entrega -- "farma", "drog", "hospital". Nome de supermercado e
+  // qualquer coisa, entao la nao da pra exigir palavra nenhuma e passa tudo
+  // que o Google marcou como grocery_store: adega, banca de jornal, loja de
+  // tamaras. Em Santa Rita a curadoria e curta: os mercados abaixo.
+  //
+  // Categoria que nao esta neste mapa continua aceitando o que a busca achar
+  static const Map<CategoriaLugar, Set<String>> _idsPermitidos = {
+    CategoriaLugar.mercado: {
+      _idAlvorada,
+      _idMaristelaBairro,
+      _idMaristelaInatel,
+      _idUnissul,
+    },
+  };
+
+  // busca os fixos uma vez por sessao. Falha nao fica em cache
+  Future<List<Lugar>> fixos() {
+    return _cacheFixos ??= Future.wait(_idsFixos.entries.map(_detalhesDe))
+        .then((lista) => [for (final l in lista) ?l]).then((lugares) {
+      if (lugares.isEmpty) _cacheFixos = null;
+      return lugares;
+    });
+  }
+
+  Future<Lugar?> _detalhesDe(MapEntry<String, CategoriaLugar> fixo) async {
+    try {
+      final resposta = await http.get(
+        Uri.https('places.googleapis.com', '/v1/places/${fixo.key}',
+            {'languageCode': 'pt-BR', 'regionCode': 'BR'}),
+        headers: {
+          'X-Goog-Api-Key': googleMapsApiKey,
+          'X-Goog-FieldMask':
+              'id,displayName,formattedAddress,location,photos,googleMapsUri',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      if (resposta.statusCode != 200) {
+        debugPrint('Places (fixo ${fixo.key}) respondeu ${resposta.statusCode}');
+        return null;
+      }
+      return _lugarDe(json.decode(resposta.body) as Map<String, dynamic>, fixo.value);
+    } catch (e) {
+      debugPrint('Erro ao buscar lugar fixo ${fixo.key}: $e');
+      return null;
+    }
+  }
 
   Future<List<LugarProximo>> proximosDe(LatLng posicao) {
     // chave pela coordenada arredondada (~10 m): o mesmo predio anunciado
@@ -194,8 +272,12 @@ class LugaresService {
       // ja vem do mais perto pro mais longe: fica o primeiro que e o que diz
       // ser e tem foto. Sem foto sai de proposito -- lugar sem nenhuma foto
       // no Google costuma ser cadastro abandonado ou errado
+      final permitidos = _idsPermitidos[categoria];
       final lugar = candidatos
-          .where((l) => l.fotos.isNotEmpty && categoria.aceitaNome(l.nome))
+          .where((l) =>
+              (permitidos == null || permitidos.contains(l.id)) &&
+              l.fotos.isNotEmpty &&
+              categoria.aceitaNome(l.nome))
           .firstOrNull;
       if (lugar == null) return (null,);
       final metros = Geolocator.distanceBetween(

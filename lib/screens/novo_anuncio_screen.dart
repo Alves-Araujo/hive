@@ -598,8 +598,6 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
                 const SizedBox(height: 20),
                 _buildGrupoDeTags(isDark, 'Características positivas', tagsPositivas),
                 const SizedBox(height: 16),
-                _buildGrupoDeTags(isDark, 'Pontos de atenção', tagsNegativas),
-                const SizedBox(height: 16),
                 _buildGrupoGenero(isDark),
                 const SizedBox(height: 16),
                 Text('Outra característica', style: AppTextStyles.captionBold.copyWith(color: isDark ? Colors.white70 : Colors.black87)),

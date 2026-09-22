@@ -22,20 +22,40 @@ const String _tagPertoDaFaculdadeAntiga = 'Perto da Facul';
 // leitura (ver fromMap)
 const String _tagWifiAntiga = 'Com Wi-Fi';
 
-const List<String> tagsPositivas = ['Mobiliado', 'Garagem', 'Suíte', 'Elevador', tagPertoDaFaculdade];
+// "Sem elevador" saiu: dizer que o predio NAO tem elevador nao e
+// caracteristica que alguem procura -- quem precisa de elevador marca
+// "Elevador", e o resto nao filtra por isso. Anuncio antigo com a tag gravada
+// tem ela descartada na leitura (ver fromMap)
+const String _tagSemElevadorAntiga = 'Sem elevador';
+
+// comodidades do proprio imovel -- as unicas que valem como caracteristica
+// tanto no anuncio quanto no filtro
+const List<String> tagsComodidade = ['Mobiliado', 'Garagem', 'Suíte', 'Elevador'];
+
+const List<String> tagsPositivas = [...tagsComodidade, tagPertoDaFaculdade];
 
 // converte tag gravada no banco pro nome atual
 String tagCompativel(String tag) =>
     tag == _tagPertoDaFaculdadeAntiga ? tagPertoDaFaculdade : tag;
-const List<String> tagsNegativas = ['Sem elevador'];
 const List<String> tagsPreferenciaGenero = ['Exclusivo para Mulheres', 'Exclusivo para Homens'];
 
-const List<String> tagsDisponiveis = [...tagsPositivas, ...tagsNegativas, ...tagsPreferenciaGenero];
+const List<String> tagsDisponiveis = [...tagsPositivas, ...tagsPreferenciaGenero];
 
-// o filtro do mapa continua oferecendo Wi-Fi, mas casando com o campo
-// incluiWifi em vez de uma tag (ver Imovel.atendeFiltro)
-const String filtroWifiIncluso = 'Wi-Fi incluso';
-const List<String> opcoesDeFiltro = [...tagsDisponiveis, filtroWifiIncluso];
+// contas que ja podem vir no aluguel. Nao sao tags: cada uma tem campo
+// proprio no anuncio (incluiLuz/incluiAgua/incluiWifi), e no filtro elas
+// formam um grupo separado das caracteristicas. Os nomes e a ordem sao os
+// mesmos do "O que está incluso" da ficha e do cadastro
+const String contaLuz = 'Luz';
+const String contaAgua = 'Água';
+const String contaWifi = 'Wi-Fi';
+const List<String> opcoesContasInclusas = [contaLuz, contaAgua, contaWifi];
+
+// caracteristicas do filtro do mapa. "Perto da Faculdade" NAO entra aqui: no
+// filtro a proximidade virou o grupo "Localidade", medido pela distancia real
+// (ver opcoesLocalidade em filtro_state.dart) em vez do que o anunciante
+// achou que era perto. Como tag do anuncio ela continua valendo, pra aparecer
+// no card e na ficha
+const List<String> opcoesDeFiltro = [...tagsComodidade, ...tagsPreferenciaGenero];
 
 // siglas dos estados brasileiros, usadas no campo "Estado" do endereco estruturado
 const List<String> estadosBrasileiros = [
@@ -131,7 +151,10 @@ class Imovel {
       preco: (map['preco'] ?? 0.0).toDouble(),
       posicao: LatLng(lat, lng),
       tipo: (map['tipo'] ?? '') == 'evento' ? TipoListing.evento : TipoListing.moradia,
-      tags: tagsGravadas.where((t) => t != _tagWifiAntiga).map(tagCompativel).toList(),
+      tags: tagsGravadas
+          .where((t) => t != _tagWifiAntiga && t != _tagSemElevadorAntiga)
+          .map(tagCompativel)
+          .toList(),
       endereco: normalizarTracosOuVazio(map['endereco']),
       fotos: List<String>.from(map['fotos'] ?? []),
       donoUid: map['donoUid'] ?? '',
@@ -153,9 +176,13 @@ class Imovel {
     );
   }
 
-  // uma opcao do filtro do mapa: tag normal, ou o Wi-Fi que vem do campo
-  bool atendeFiltro(String opcao) =>
-      opcao == filtroWifiIncluso ? incluiWifi : tags.contains(opcao);
+  // o aluguel ja inclui essa conta?
+  bool incluiConta(String conta) => switch (conta) {
+        contaLuz => incluiLuz,
+        contaAgua => incluiAgua,
+        contaWifi => incluiWifi,
+        _ => false,
+      };
 
   Map<String, dynamic> toMap() {
     return {

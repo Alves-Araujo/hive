@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/services.dart' show rootBundle, FilteringTextInputFormatter;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart' show TravelMode;
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -25,6 +25,8 @@ import '../services/rota_service.dart';
 import '../services/usuario_service.dart';
 import '../utils/cor_foto.dart';
 import '../utils/distancia.dart';
+import '../utils/icones_tag.dart';
+import '../utils/moeda.dart';
 import '../utils/pins_mapa.dart';
 import '../utils/moderacao.dart';
 import '../widgets/avatar_widget.dart';
@@ -109,7 +111,16 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   // (Google Places). Por id do Google: duas republicas vizinhas costumam ter
   // a mesma farmacia como a mais perto, e o pin sairia duplicado
   Map<String, Lugar> _lugares = {};
+  // os que aparecem sempre (ver LugaresService.fixos). Ficam em campo
+  // separado porque _lugares e trocado inteiro a cada busca nova, e eles nao
+  // podem sumir junto
+  Map<String, Lugar> _lugaresFixos = {};
   Set<Marker> _marcadoresLugares = {};
+  // o que cada moradia tem por perto, por id do anuncio -- e o que o grupo
+  // "Localidade" do filtro consulta. Fica vazio enquanto a busca nao volta
+  // (ou se a Places falhar), e nesse caso o filtro de localidade avisa em vez
+  // de esconder tudo em silencio
+  Map<String, Set<CategoriaLugar>> _categoriasPerto = {};
   // posicoes de moradia ja consultadas -- o snapshot dos imoveis dispara a
   // cada mudanca no banco, e sem isso cada edicao de anuncio refaria tudo
   String _chaveLugaresConsultados = '';
@@ -181,7 +192,6 @@ class _CentroDoMapaState extends State<CentroDoMapa>
 
   late VoidCallback _temaListener;
   late VoidCallback _filtroListener;
-  late VoidCallback _cidadeFiltroListener;
   late VoidCallback _rotaAtivaListener;
   late VoidCallback _rotaCarregandoListener;
   late VoidCallback _rotaErroListener;
@@ -242,6 +252,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       }
     });
 
+    // nao depende de anuncio nenhum, entao nao espera o Firestore
+    _carregarLugaresFixos();
+
     _temaListener = () {
       if (mounted) {
         _atualizarEstiloMapa();
@@ -257,11 +270,6 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       if (mounted) _atualizarMarcadoresFiltrados();
     };
     _filtroState.addListener(_filtroListener);
-
-    _cidadeFiltroListener = () {
-      if (mounted) _atualizarMarcadoresFiltrados();
-    };
-    cidadeFiltroGlobal.addListener(_cidadeFiltroListener);
 
     // espelha o resultado/estado de carregamento da rota, que sao globais
     // (ver comentario nos campos acima) -- inclui o valor JA atual na hora
@@ -434,8 +442,12 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     if (!mounted || chave != _chaveLugaresConsultados) return;
 
     final lugares = <String, Lugar>{};
-    for (final lista in porMoradia) {
-      for (final l in lista) {
+    final categorias = <String, Set<CategoriaLugar>>{};
+    for (var i = 0; i < moradias.length; i++) {
+      // o servico ja devolve so o que esta dentro do raio da categoria,
+      // entao estar na lista ja significa "perto"
+      categorias[moradias[i].id] = {for (final l in porMoradia[i]) l.lugar.categoria};
+      for (final l in porMoradia[i]) {
         lugares[l.lugar.id] = l.lugar;
       }
     }
@@ -444,15 +456,39 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     if (lugares.isEmpty) _chaveLugaresConsultados = '';
     setState(() {
       _lugares = lugares;
+      _categoriasPerto = lugares.isEmpty ? {} : categorias;
       _atualizarMarcadoresLugares();
     });
+    // um filtro de localidade pode estar ligado desde antes dessa resposta
+    _atualizarMarcadoresFiltrados();
+  }
+
+  // "tem isso a ate X metros?". A faculdade sai da distancia ate o Inatel,
+  // que nao depende do Places; o resto vem do que o servico achou perto
+  bool _atendeLocalidade(Imovel item, String id) {
+    if (id == localidadeFaculdade) {
+      return metrosAteInatel(item.posicao) <= raioFaculdade;
+    }
+    return _categoriasPerto[item.id]?.any((c) => c.name == id) ?? false;
   }
 
   // pins dos estabelecimentos -- fora de _marcadores pelo mesmo motivo das
   // imobiliarias: nao sao anuncio, o filtro de preco e tag nao se aplica
+  // pins que nao dependem de anuncio nenhum por perto
+  Future<void> _carregarLugaresFixos() async {
+    final fixos = await LugaresService.instance.fixos();
+    if (!mounted || fixos.isEmpty) return;
+    setState(() {
+      _lugaresFixos = {for (final l in fixos) l.id: l};
+      _atualizarMarcadoresLugares();
+    });
+  }
+
   void _atualizarMarcadoresLugares() {
     final rota = rotaAtivaGlobal.value;
-    _marcadoresLugares = _lugares.values.map((lugar) {
+    // a chave e o place id, entao um fixo que TAMBEM seja o mais perto de
+    // algum anuncio nao vira dois pins
+    _marcadoresLugares = {..._lugaresFixos, ..._lugares}.values.map((lugar) {
       final pins = _pinsAnuncio[lugar.categoria.pin];
       BitmapDescriptor? icone = pins?.$1;
       if (rota != null && lugar.posicao == rota.destino) icone = pins?.$3;
@@ -830,7 +866,6 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     WidgetsBinding.instance.removeObserver(this);
     temaGlobal.removeListener(_temaListener);
     _filtroState.removeListener(_filtroListener);
-    cidadeFiltroGlobal.removeListener(_cidadeFiltroListener);
     _inscricaoNav?.cancel();
     _inscricaoImobiliarias?.cancel();
     rotaAtivaGlobal.removeListener(_rotaAtivaListener);
@@ -852,28 +887,71 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     if (mounted) _atualizarEstiloMapa();
   }
 
-  void _atualizarMarcadoresFiltrados() {
+  // o item bate com o texto da caixa de busca? Fica separado dos filtros da
+  // folha porque e outra caixa: a folha nao mexe nele
+  bool _passaNaBusca(Imovel item) {
     final textoBusca = _buscaController.text.toLowerCase().trim();
+    if (textoBusca.isEmpty) return true;
+    return '${item.titulo} ${item.descricao}'.toLowerCase().contains(textoBusca);
+  }
 
-    final imovelFiltrados = _imoveisDoBanco.where((item) {
-      if (textoBusca.isNotEmpty) {
-        final combinado = '${item.titulo} ${item.descricao}'.toLowerCase();
-        if (!combinado.contains(textoBusca)) return false;
-      }
-      // evento nao tem preco de aluguel, entao pula so o filtro de preco
-      if (item.tipo != TipoListing.evento && item.preco > _filtroState.precoMaximo) {
-        return false;
-      }
-      if (_filtroState.tagsSelecionadas.isNotEmpty) {
-        final temTodasAsTags = _filtroState.tagsSelecionadas
-            .every(item.atendeFiltro);
-        if (!temTodasAsTags) return false;
-      }
-      if (cidadeFiltroGlobal.value != null && item.cidade != cidadeFiltroGlobal.value) {
-        return false;
-      }
-      return true;
-    }).toList();
+  // o item passa pelos filtros da folha? Recebe os valores por parametro (em
+  // vez de ler _filtroState) pra folha poder contar quantos imoveis sobram
+  // COM o que esta escolhido ali, antes de aplicar
+  bool _passaNosFiltros(
+    Imovel item, {
+    required double? precoMinimo,
+    required double? precoMaximo,
+    required List<String> tags,
+    required List<String> contas,
+    required List<String> localidades,
+  }) {
+    // evento nao tem preco de aluguel, entao pula so o filtro de preco
+    if (item.tipo != TipoListing.evento) {
+      if (precoMinimo != null && item.preco < precoMinimo) return false;
+      if (precoMaximo != null && item.preco > precoMaximo) return false;
+    }
+    if (!tags.every(item.tags.contains)) return false;
+    if (!contas.every(item.incluiConta)) return false;
+    if (!localidades.every((id) => _atendeLocalidade(item, id))) return false;
+    return true;
+  }
+
+  // quantos imoveis sobrariam com essa escolha -- alimenta o numero do botao
+  // da folha de filtros
+  int _quantosAtendem({
+    required double? precoMinimo,
+    required double? precoMaximo,
+    required List<String> tags,
+    required List<String> contas,
+    required List<String> localidades,
+  }) =>
+      _imoveisDoBanco
+          .where((item) =>
+              _passaNaBusca(item) &&
+              _passaNosFiltros(
+                item,
+                precoMinimo: precoMinimo,
+                precoMaximo: precoMaximo,
+                tags: tags,
+                contas: contas,
+                localidades: localidades,
+              ))
+          .length;
+
+  void _atualizarMarcadoresFiltrados() {
+    final imovelFiltrados = _imoveisDoBanco
+        .where((item) =>
+            _passaNaBusca(item) &&
+            _passaNosFiltros(
+              item,
+              precoMinimo: _filtroState.precoMinimo,
+              precoMaximo: _filtroState.precoMaximo,
+              tags: _filtroState.tagsSelecionadas,
+              contas: _filtroState.contasSelecionadas,
+              localidades: _filtroState.localidadesSelecionadas,
+            ))
+        .toList();
 
     final rota = rotaAtivaGlobal.value;
 
@@ -1942,256 +2020,605 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     );
   }
 
+  // o que a pessoa digitou no campo de preco, em reais. Vazio (ou zero) = sem
+  // limite naquela ponta
+  double? _precoDigitado(TextEditingController campo) {
+    final so = campo.text.replaceAll(RegExp(r'[^0-9]'), '');
+    final valor = double.tryParse(so);
+    return (valor == null || valor == 0) ? null : valor;
+  }
+
+  // faixas prontas -- quase todo aluguel de estudante cai numa dessas, e um
+  // toque preenche os dois campos. (minimo, maximo, rotulo); null = ponta aberta
+  static const List<(double?, double?, String)> _faixasSugeridas = [
+    (null, 600, 'Até 600'),
+    (600, 1000, '600 a 1.000'),
+    (1000, 1500, '1.000 a 1.500'),
+    (1500, null, 'Acima de 1.500'),
+  ];
+
   void _mostrarFiltros() {
-    bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
 
-    double precoTemp = _filtroState.precoMaximo;
-    List<String> tagsTemp = List.from(_filtroState.tagsSelecionadas);
-    String? cidadeTemp = cidadeFiltroGlobal.value;
-
-    // mesma lista fixa de cidades parceiras usada no chip de cima -- so essas
-    // 4 opcoes (+ "todas"), sem misturar com o resto da lista de busca
-    final cidadesDisponiveis = cidadesParceiras.map((c) => c.texto).toList()..sort();
+    final List<String> tagsTemp = List.from(_filtroState.tagsSelecionadas);
+    final List<String> contasTemp = List.from(_filtroState.contasSelecionadas);
+    final List<String> localidadesTemp = List.from(_filtroState.localidadesSelecionadas);
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: isDark ? superficieEscura : superficieClara,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
-      ),
+      // a folha desenha o proprio fundo (cantos, borda de luz e sombra), por
+      // isso o do modal sai da frente
+      backgroundColor: Colors.transparent,
       builder: (context) {
-        return StatefulBuilder(
+        return _CamposDePreco(
+          minimoInicial: _filtroState.precoMinimo?.toInt().toString() ?? '',
+          maximoInicial: _filtroState.precoMaximo?.toInt().toString() ?? '',
+          builder: (context, precoMinCtrl, precoMaxCtrl) => StatefulBuilder(
           builder: (context, setModalState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 24, right: 24, top: 16,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: isDark ? Colors.white.withAlpha(30) : Colors.grey.shade300,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
+            // ja sai ordenado: quem digita 1500 no minimo e 800 no maximo
+            // quis a mesma faixa ao contrario, e nao um mapa vazio
+            var minimo = _precoDigitado(precoMinCtrl);
+            var maximo = _precoDigitado(precoMaxCtrl);
+            if (minimo != null && maximo != null && minimo > maximo) {
+              final troca = minimo;
+              minimo = maximo;
+              maximo = troca;
+            }
+            final int quantosFiltros = (minimo != null ? 1 : 0) +
+                (maximo != null ? 1 : 0) +
+                tagsTemp.length +
+                contasTemp.length +
+                localidadesTemp.length;
+            final int resultados = _quantosAtendem(
+              precoMinimo: minimo,
+              precoMaximo: maximo,
+              tags: tagsTemp,
+              contas: contasTemp,
+              localidades: localidadesTemp,
+            );
 
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            return Container(
+              margin: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+              decoration: BoxDecoration(
+                color: isDark ? corCardEscuro : Colors.white,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
+                // fio de luz na borda de cima -- e o que separa a folha do
+                // mapa escuro atras sem precisar de sombra pesada
+                border: Border(
+                  top: BorderSide(color: isDark ? Colors.white.withAlpha(20) : Colors.black.withAlpha(10)),
+                ),
+                boxShadow: AppShadows.nivel3(isDark),
+              ),
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.xxl, AppSpacing.md, AppSpacing.xxl, AppSpacing.xxl),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text(
-                        'Filtros de Busca',
-                        style: AppTextStyles.heading3.copyWith(
-                          color: isDark ? Colors.white : Colors.black87,
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: isDark ? Colors.white.withAlpha(30) : Colors.grey.shade300,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
                         ),
                       ),
-                      TextButton.icon(
-                        onPressed: () {
-                          setModalState(() {
-                            precoTemp = 3000;
-                            tagsTemp.clear();
-                            cidadeTemp = null;
-                          });
-                        },
-                        icon: Icon(Icons.refresh_rounded, size: 16, color: isDark ? Colors.white38 : Colors.grey),
-                        label: Text('Limpar', style: TextStyle(color: isDark ? Colors.white38 : Colors.grey)),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
+                      const SizedBox(height: AppSpacing.xl),
 
-                  Text(
-                    'Cidade / Região',
-                    style: AppTextStyles.captionBold.copyWith(
-                      color: isDark ? Colors.white70 : Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<String?>(
-                    initialValue: cidadeTemp,
-                    isExpanded: true,
-                    style: TextStyle(color: isDark ? Colors.white : Colors.black87),
-                    dropdownColor: isDark ? corSuperficieEscura : Colors.white,
-                    decoration: InputDecoration(
-                      filled: true,
-                      fillColor: isDark ? Colors.white.withAlpha(5) : Colors.grey.withAlpha(8),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                    ),
-                    items: [
-                      const DropdownMenuItem(value: null, child: Text('Todas as cidades')),
-                      ...cidadesDisponiveis.map((c) => DropdownMenuItem(value: c, child: Text(c))),
-                    ],
-                    onChanged: (val) => setModalState(() => cidadeTemp = val),
-                  ),
-                  const SizedBox(height: 20),
-
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: isDark ? Colors.white.withAlpha(5) : Colors.grey.withAlpha(8),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'Preço Máximo',
-                              style: AppTextStyles.captionBold.copyWith(
-                                color: isDark ? Colors.white70 : Colors.black87,
+                      // cabecalho: selo da marca, titulo e quantos filtros
+                      // estao de pe agora
+                      Row(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              gradient: gradientePrincipal,
+                              borderRadius: BorderRadius.circular(AppRadius.sm),
+                              boxShadow: AppShadows.marca(forca: 0.6),
+                            ),
+                            child: const Icon(Icons.tune_rounded, color: Colors.white, size: 20),
+                          ),
+                          const SizedBox(width: AppSpacing.md),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Filtrar busca',
+                                  style: AppTextStyles.heading3.copyWith(
+                                    color: isDark ? Colors.white : Colors.black87,
+                                  ),
+                                ),
+                                Text(
+                                  quantosFiltros == 0
+                                      ? 'Nenhum filtro ativo'
+                                      : '$quantosFiltros ${quantosFiltros == 1 ? 'filtro ativo' : 'filtros ativos'}',
+                                  style: AppTextStyles.caption.copyWith(
+                                    color: quantosFiltros == 0
+                                        ? (isDark ? Colors.white38 : Colors.grey)
+                                        : corPrimaria2,
+                                    fontWeight:
+                                        quantosFiltros == 0 ? FontWeight.w400 : FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          // so aparece quando ha o que limpar -- botao morto
+                          // ocupando o canto e parte do ar de tela inacabada
+                          AnimatedOpacity(
+                            duration: AppMotion.rapida,
+                            opacity: quantosFiltros == 0 ? 0 : 1,
+                            child: Pressionavel(
+                              onTap: quantosFiltros == 0
+                                  ? () {}
+                                  : () => setModalState(() {
+                                        precoMinCtrl.clear();
+                                        precoMaxCtrl.clear();
+                                        tagsTemp.clear();
+                                        contasTemp.clear();
+                                        localidadesTemp.clear();
+                                      }),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+                                decoration: BoxDecoration(
+                                  color: isDark ? Colors.white.withAlpha(12) : Colors.grey.withAlpha(20),
+                                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.refresh_rounded,
+                                        size: 14, color: isDark ? Colors.white60 : Colors.black54),
+                                    const SizedBox(width: AppSpacing.xs),
+                                    Text(
+                                      'Limpar',
+                                      style: AppTextStyles.caption.copyWith(
+                                        color: isDark ? Colors.white60 : Colors.black54,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                              decoration: BoxDecoration(
-                                gradient: gradienteSecundario,
-                                borderRadius: BorderRadius.circular(8),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.xl),
+
+                      // --- preco ---
+                      Container(
+                        padding: const EdgeInsets.all(AppSpacing.lg),
+                        decoration: BoxDecoration(
+                          color: isDark ? Colors.white.withAlpha(8) : superficieClara,
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                          border: Border.all(
+                            color: isDark ? Colors.white.withAlpha(12) : Colors.black.withAlpha(8),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                _rotuloSecao('Quanto quer pagar', Icons.payments_rounded, isDark),
+                                // o ciano e reservado a preco no app inteiro
+                                // (ver gradienteSecundario em main.dart), e e
+                                // ele que da a unica cor viva desta folha
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: AppSpacing.md, vertical: AppSpacing.xs + 1),
+                                  decoration: BoxDecoration(
+                                    gradient: gradienteSecundario,
+                                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                                  ),
+                                  child: Text(
+                                    _resumoDaFaixaDePreco(minimo, maximo),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: AppSpacing.md),
+                            // dois campos em vez do slider: quem procura sabe
+                            // o valor que cabe no bolso e digita direto, sem
+                            // teto fixo e sem caçar a posicao certa na barra
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _campoPreco(
+                                    controller: precoMinCtrl,
+                                    rotulo: 'mínimo',
+                                    isDark: isDark,
+                                    aoMudar: () => setModalState(() {}),
+                                  ),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+                                  child: Text(
+                                    'até',
+                                    style: AppTextStyles.caption.copyWith(
+                                      color: isDark ? Colors.white38 : Colors.grey,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  child: _campoPreco(
+                                    controller: precoMaxCtrl,
+                                    rotulo: 'máximo',
+                                    isDark: isDark,
+                                    aoMudar: () => setModalState(() {}),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: AppSpacing.md),
+                            Wrap(
+                              spacing: AppSpacing.sm,
+                              runSpacing: AppSpacing.sm,
+                              children: _faixasSugeridas.map((faixa) {
+                                final (de, ate, rotulo) = faixa;
+                                return _pilulaFaixa(
+                                  rotulo: rotulo,
+                                  selecionada: minimo == de && maximo == ate,
+                                  isDark: isDark,
+                                  onTap: () => setModalState(() {
+                                    precoMinCtrl.text = de?.toInt().toString() ?? '';
+                                    precoMaxCtrl.text = ate?.toInt().toString() ?? '';
+                                  }),
+                                );
+                              }).toList(),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xl),
+
+                      // --- caracteristicas ---
+                      _rotuloSecao('Características do imóvel', Icons.home_work_rounded, isDark),
+                      const SizedBox(height: AppSpacing.md),
+                      Wrap(
+                        spacing: AppSpacing.sm,
+                        runSpacing: AppSpacing.sm,
+                        children: opcoesDeFiltro
+                            .map((tag) => _chipFiltro(
+                                  rotulo: tag,
+                                  icone: iconeDaTag(tag),
+                                  selecionado: tagsTemp.contains(tag),
+                                  isDark: isDark,
+                                  onTap: () => setModalState(() {
+                                    if (tagsTemp.contains(tag)) {
+                                      tagsTemp.remove(tag);
+                                    } else {
+                                      tagsTemp.add(tag);
+                                    }
+                                  }),
+                                ))
+                            .toList(),
+                      ),
+                      const SizedBox(height: AppSpacing.xl),
+
+                      // --- contas inclusas ---
+                      _rotuloSecao('Contas inclusas no aluguel', Icons.receipt_long_rounded, isDark),
+                      const SizedBox(height: AppSpacing.md),
+                      Wrap(
+                        spacing: AppSpacing.sm,
+                        runSpacing: AppSpacing.sm,
+                        children: opcoesContasInclusas
+                            .map((conta) => _chipFiltro(
+                                  rotulo: conta,
+                                  icone: iconeDaConta(conta),
+                                  selecionado: contasTemp.contains(conta),
+                                  isDark: isDark,
+                                  onTap: () => setModalState(() {
+                                    if (contasTemp.contains(conta)) {
+                                      contasTemp.remove(conta);
+                                    } else {
+                                      contasTemp.add(conta);
+                                    }
+                                  }),
+                                ))
+                            .toList(),
+                      ),
+                      const SizedBox(height: AppSpacing.xl),
+
+                      // --- localidade ---
+                      _rotuloSecao('O que tem por perto', Icons.place_rounded, isDark),
+                      const SizedBox(height: AppSpacing.md),
+                      Wrap(
+                        spacing: AppSpacing.sm,
+                        runSpacing: AppSpacing.sm,
+                        children: opcoesLocalidade.map((opcao) {
+                          // so a faculdade sai de conta local; o resto depende
+                          // da busca de lugares, que pode nao ter voltado (ou
+                          // ter falhado). Chip apagado avisa disso em vez de
+                          // filtrar e devolver mapa vazio sem explicacao
+                          final habilitado =
+                              opcao.id == localidadeFaculdade || _categoriasPerto.isNotEmpty;
+                          return _chipFiltro(
+                            rotulo: opcao.rotulo,
+                            icone: opcao.icone,
+                            selecionado: localidadesTemp.contains(opcao.id),
+                            habilitado: habilitado,
+                            isDark: isDark,
+                            onTap: () => setModalState(() {
+                              if (localidadesTemp.contains(opcao.id)) {
+                                localidadesTemp.remove(opcao.id);
+                              } else {
+                                localidadesTemp.add(opcao.id);
+                              }
+                            }),
+                          );
+                        }).toList(),
+                      ),
+                      if (_categoriasPerto.isEmpty) ...[
+                        const SizedBox(height: AppSpacing.sm),
+                        Row(
+                          children: [
+                            SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 1.6,
+                                color: isDark ? Colors.white38 : Colors.grey,
                               ),
+                            ),
+                            const SizedBox(width: AppSpacing.sm),
+                            Expanded(
                               child: Text(
-                                'R\$ ${precoTemp.toInt()}',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13,
+                                'Buscando os estabelecimentos de cada imóvel.',
+                                style: AppTextStyles.caption.copyWith(
+                                  color: isDark ? Colors.white38 : Colors.grey,
                                 ),
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 8),
-                        SliderTheme(
-                          data: SliderTheme.of(context).copyWith(
-                            activeTrackColor: corPrimaria,
-                            inactiveTrackColor: isDark ? Colors.white.withAlpha(15) : Colors.grey.withAlpha(30),
-                            thumbColor: corPrimaria,
-                            overlayColor: corPrimaria.withAlpha(20),
-                            trackHeight: 4,
-                          ),
-                          child: Slider(
-                            value: precoTemp,
-                            min: 300,
-                            max: 3000,
-                            divisions: 27,
-                            onChanged: (valor) {
-                              setModalState(() => precoTemp = valor);
-                            },
-                          ),
-                        ),
                       ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
+                      const SizedBox(height: AppSpacing.xxl),
 
-                  Text(
-                    'Características do Imóvel',
-                    style: AppTextStyles.captionBold.copyWith(
-                      color: isDark ? Colors.white70 : Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: opcoesDeFiltro.map((tag) {
-                      bool selecionado = tagsTemp.contains(tag);
-                      return GestureDetector(
+                      // o numero no botao responde antes do toque quantos
+                      // imoveis sobram -- filtro que zera o mapa era
+                      // descoberto so depois de fechar a folha
+                      AnimatedGradientButton(
+                        label: resultados == 0
+                            ? 'Nenhum imóvel com esses filtros'
+                            : 'Ver $resultados ${resultados == 1 ? 'imóvel' : 'imóveis'}',
+                        icon: resultados == 0 ? Icons.search_off_rounded : Icons.search_rounded,
                         onTap: () {
-                          setModalState(() {
-                            if (selecionado) {
-                              tagsTemp.remove(tag);
-                            } else {
-                              tagsTemp.add(tag);
-                            }
-                          });
+                          _filtroState.aplicarEstado(
+                            precoMinimo: minimo,
+                            precoMaximo: maximo,
+                            tags: tagsTemp,
+                            contas: contasTemp,
+                            localidades: localidadesTemp,
+                          );
+
+                          Navigator.pop(context);
+                          final qtd = _filtroState.quantidadeAtiva;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Row(
+                                children: [
+                                  const Icon(Icons.check_circle_outline, color: Colors.white, size: 20),
+                                  const SizedBox(width: 10),
+                                  Text(qtd > 0
+                                      ? '$qtd ${qtd == 1 ? 'filtro aplicado' : 'filtros aplicados'} no mapa!'
+                                      : 'Filtros removidos - todos os imóveis visíveis.'),
+                                ],
+                              ),
+                              backgroundColor: corSucesso,
+                              behavior: SnackBarBehavior.floating,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                              margin: const EdgeInsets.all(16),
+                            ),
+                          );
                         },
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                          decoration: BoxDecoration(
-                            gradient: selecionado ? gradientePrincipal : null,
-                            color: selecionado
-                                ? null
-                                : (isDark ? Colors.white.withAlpha(10) : Colors.grey.withAlpha(18)),
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: selecionado
-                                ? [
-                              BoxShadow(
-                                color: corPrimaria.withAlpha(30),
-                                blurRadius: 6,
-                                offset: const Offset(0, 2),
-                              ),
-                            ]
-                                : [],
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (selecionado) ...[
-                                const Icon(Icons.check_rounded, size: 14, color: Colors.white),
-                                const SizedBox(width: 4),
-                              ],
-                              Text(
-                                tag,
-                                style: TextStyle(
-                                  color: selecionado ? Colors.white : (isDark ? Colors.white60 : Colors.black87),
-                                  fontSize: 13,
-                                  fontWeight: selecionado ? FontWeight.w600 : FontWeight.w400,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    }).toList(),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 28),
-
-                  AnimatedGradientButton(
-                    label: 'Mostrar Resultados',
-                    icon: Icons.search_rounded,
-                    onTap: () {
-                      _filtroState.aplicarEstado(preco: precoTemp, tags: tagsTemp);
-                      cidadeFiltroGlobal.value = cidadeTemp;
-
-                      Navigator.pop(context);
-                      final qtd = tagsTemp.length + (precoTemp < 3000 ? 1 : 0) + (cidadeTemp != null ? 1 : 0);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Row(
-                            children: [
-                              const Icon(Icons.check_circle_outline, color: Colors.white, size: 20),
-                              const SizedBox(width: 10),
-                              Text(qtd > 0
-                                  ? '$qtd filtro(s) aplicado(s) no mapa!'
-                                  : 'Filtros removidos - todos os imóveis visíveis.'),
-                            ],
-                          ),
-                          backgroundColor: corSucesso,
-                          behavior: SnackBarBehavior.floating,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                          margin: const EdgeInsets.all(16),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                ],
+                ),
               ),
             );
           },
+          ),
         );
       },
+    );
+  }
+
+  // titulo de secao: icone em selo + texto. O selo e o que tira a folha do
+  // "lista de textos cinzas" sem gritar mais que o conteudo
+  Widget _rotuloSecao(String titulo, IconData icone, bool isDark) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 24,
+          height: 24,
+          decoration: BoxDecoration(
+            color: corPrimaria.withAlpha(isDark ? 55 : 22),
+            borderRadius: BorderRadius.circular(AppRadius.sm - 4),
+          ),
+          child: Icon(icone, size: 14, color: isDark ? corDestaque : corPrimaria),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Text(
+          titulo,
+          style: AppTextStyles.captionBold.copyWith(
+            color: isDark ? Colors.white : Colors.black87,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // campo de valor da faixa de preco -- so digito, o "R$" fica no prefixo
+  Widget _campoPreco({
+    required TextEditingController controller,
+    required String rotulo,
+    required bool isDark,
+    required VoidCallback aoMudar,
+  }) {
+    return TextField(
+      controller: controller,
+      keyboardType: TextInputType.number,
+      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+      style: TextStyle(
+        color: isDark ? Colors.white : Colors.black87,
+        fontWeight: FontWeight.w700,
+        fontSize: 16,
+      ),
+      onChanged: (_) => aoMudar(),
+      decoration: InputDecoration(
+        hintText: rotulo,
+        hintStyle: TextStyle(
+          color: isDark ? Colors.white24 : Colors.grey.shade400,
+          fontWeight: FontWeight.w400,
+          fontSize: 14,
+        ),
+        prefixText: 'R\$ ',
+        prefixStyle: TextStyle(
+          color: isDark ? Colors.white38 : Colors.black45,
+          fontWeight: FontWeight.w600,
+          fontSize: 14,
+        ),
+        filled: true,
+        fillColor: isDark ? corFundoEscuro : Colors.white,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          borderSide: BorderSide(
+            color: isDark ? Colors.white.withAlpha(15) : Colors.black.withAlpha(12),
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          borderSide: const BorderSide(color: corPrimaria2, width: 1.6),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md, vertical: AppSpacing.md + 2),
+      ),
+    );
+  }
+
+  // o texto da etiqueta de preco: diz em portugues o que a faixa significa,
+  // inclusive quando so uma das pontas foi preenchida
+  String _resumoDaFaixaDePreco(double? minimo, double? maximo) {
+    String curto(double v) => formatarPreco(v).replaceAll(',00', '');
+    if (minimo == null && maximo == null) return 'Qualquer valor';
+    if (minimo == null) return 'Até ${curto(maximo!)}';
+    if (maximo == null) return 'A partir de ${curto(minimo)}';
+    return '${curto(minimo)} a ${curto(maximo)}';
+  }
+
+  // pilula das faixas prontas de preco -- menor e so de contorno, pra nao
+  // competir com os chips de caracteristica logo abaixo
+  Widget _pilulaFaixa({
+    required String rotulo,
+    required bool selecionada,
+    required bool isDark,
+    required VoidCallback onTap,
+  }) {
+    return Pressionavel(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: AppMotion.rapida,
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm - 2),
+        decoration: BoxDecoration(
+          color: selecionada
+              ? corPrimaria.withAlpha(isDark ? 70 : 28)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppRadius.pill),
+          border: Border.all(
+            color: selecionada
+                ? corPrimaria2
+                : (isDark ? Colors.white.withAlpha(25) : Colors.black.withAlpha(20)),
+          ),
+        ),
+        child: Text(
+          rotulo,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: selecionada ? FontWeight.w700 : FontWeight.w500,
+            color: selecionada
+                ? (isDark ? Colors.white : corPrimaria)
+                : (isDark ? Colors.white60 : Colors.black54),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // chip dos filtros: mesmo desenho nas caracteristicas e na localidade.
+  // Apagado (habilitado: false) = a informacao ainda nao chegou
+  Widget _chipFiltro({
+    required String rotulo,
+    required IconData icone,
+    required bool selecionado,
+    required bool isDark,
+    required VoidCallback onTap,
+    bool habilitado = true,
+  }) {
+    final bool ligado = selecionado && habilitado;
+    final Color corTexto = !habilitado
+        ? (isDark ? Colors.white24 : Colors.grey.shade400)
+        : ligado
+            ? Colors.white
+            : (isDark ? Colors.white70 : Colors.black87);
+
+    return Pressionavel(
+      onTap: habilitado ? onTap : () {},
+      child: AnimatedContainer(
+        duration: AppMotion.rapida,
+        curve: AppMotion.suave,
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm + 2),
+        decoration: BoxDecoration(
+          gradient: ligado ? gradientePrincipal : null,
+          color: ligado
+              ? null
+              : (isDark ? Colors.white.withAlpha(10) : Colors.white),
+          borderRadius: BorderRadius.circular(AppRadius.pill),
+          border: Border.all(
+            color: ligado
+                ? Colors.transparent
+                : (isDark ? Colors.white.withAlpha(20) : Colors.black.withAlpha(15)),
+          ),
+          // o chip ligado sobe da superficie; o desligado so repousa nela
+          boxShadow: ligado ? AppShadows.marca(forca: 0.5) : AppShadows.nivel1(isDark),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icone, size: 15, color: ligado ? Colors.white : corTexto.withAlpha(200)),
+            const SizedBox(width: AppSpacing.sm - 2),
+            Text(
+              rotulo,
+              style: TextStyle(
+                color: corTexto,
+                fontSize: 13,
+                fontWeight: ligado ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -3248,4 +3675,42 @@ class _EntradaDeslizanteState extends State<_EntradaDeslizante>
       ),
     );
   }
+}
+
+// dona dos dois campos de preco da folha de filtros.
+//
+// Os TextEditingController nao podem ser descartados assim que o
+// showModalBottomSheet retorna: a folha ainda esta descendo na tela e os
+// TextField se reconstroem durante a animacao -- usar um controller ja
+// descartado ali lanca "A TextEditingController was used after being
+// disposed". Como widget, o descarte cai no dispose dela, que so roda quando
+// a rota sai de vez
+class _CamposDePreco extends StatefulWidget {
+  final String minimoInicial;
+  final String maximoInicial;
+  final Widget Function(BuildContext, TextEditingController, TextEditingController) builder;
+
+  const _CamposDePreco({
+    required this.minimoInicial,
+    required this.maximoInicial,
+    required this.builder,
+  });
+
+  @override
+  State<_CamposDePreco> createState() => _CamposDePrecoState();
+}
+
+class _CamposDePrecoState extends State<_CamposDePreco> {
+  late final TextEditingController _minimo = TextEditingController(text: widget.minimoInicial);
+  late final TextEditingController _maximo = TextEditingController(text: widget.maximoInicial);
+
+  @override
+  void dispose() {
+    _minimo.dispose();
+    _maximo.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context, _minimo, _maximo);
 }

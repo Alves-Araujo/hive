@@ -4,26 +4,13 @@ import '../models/imovel.dart';
 import '../screens/detalhes_imovel_screen.dart';
 import '../utils/moeda.dart';
 import '../utils/distancia.dart';
+import '../utils/icones_tag.dart';
 
 class CardImovelVertical extends StatelessWidget {
   final Imovel imovel;
   final bool isDark;
 
   const CardImovelVertical({super.key, required this.imovel, required this.isDark});
-
-  IconData _getTagIcon(String tag) {
-    switch (tag) {
-      case 'República': return Icons.groups_rounded;
-      case 'Apartamento': return Icons.apartment_rounded;
-      case 'Kitnet': return Icons.door_back_door_rounded;
-      case 'Suíte': return Icons.king_bed_rounded;
-      case 'Mobiliado': return Icons.chair_rounded;
-      case tagPertoDaFaculdade: return Icons.school_rounded;
-      case 'Garagem': return Icons.garage_rounded;
-      case 'Exclusivo para Mulheres': return Icons.woman_rounded;
-      default: return Icons.label_rounded;
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -234,7 +221,7 @@ class CardImovelVertical extends StatelessWidget {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Icon(
-                                    _getTagIcon(tag),
+                                    iconeDaTag(tag),
                                     size: 14,
                                     color: isDark
                                         ? Colors.white.withAlpha(160)

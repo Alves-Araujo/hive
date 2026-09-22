@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../main.dart';
-import '../utils/distancia.dart';
-import '../models/filtro_state.dart' show cidadeFiltroGlobal;
 import '../models/imovel.dart';
-import '../utils/moeda.dart';
 import '../models/usuario.dart';
 import '../utils/cor_foto.dart';
 import '../widgets/card_imovel_vertical.dart';
@@ -182,11 +179,9 @@ class _TelaResumoState extends State<TelaResumo> with SingleTickerProviderStateM
 
         // lista de imoveis
         Expanded(
-          child: ValueListenableBuilder<String?>(
-            valueListenable: cidadeFiltroGlobal,
-            builder: (context, cidadeFiltro, _) => StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance.collection('imoveis').snapshots(),
-              builder: (context, snapshot) {
+          child: StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance.collection('imoveis').snapshots(),
+            builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator(color: corPrimaria));
                 }
@@ -202,7 +197,6 @@ class _TelaResumoState extends State<TelaResumo> with SingleTickerProviderStateM
                 }).toList() ?? [];
 
                 final imoveisFiltrados = imoveisDoBanco.where((i) {
-                  if (cidadeFiltro != null && i.cidade != cidadeFiltro) return false;
                   if (_filtroTipo == 'Todos') return true;
                   if (_filtroTipo == 'Moradias') return i.tipo == TipoListing.moradia;
                   return i.tipo == TipoListing.evento;
@@ -272,8 +266,7 @@ class _TelaResumoState extends State<TelaResumo> with SingleTickerProviderStateM
                     );
                   },
                 );
-              },
-            ),
+            },
           ),
         ),
       ],
