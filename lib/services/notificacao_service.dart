@@ -21,16 +21,28 @@ class NotificacaoService {
 
   final _db = FirebaseFirestore.instance;
 
-  // lista unica, das duas origens, mais recente primeiro
+  // lista unica, das duas origens, mais recente primeiro -- SEM mensagem: aviso
+  // de mensagem nova vive so no Chat (ver mensagensNaoLidas), nao aparece
+  // aqui nem conta pra naoLidas
   final ValueNotifier<List<Notificacao>> notificacoes = ValueNotifier([]);
   final ValueNotifier<int> naoLidas = ValueNotifier(0);
+
+  // avisos de mensagem pendentes (um documento por mensagem, na colecao
+  // pessoal). Nao usa data de leitura como o resto: cada um e apagado na hora
+  // que a conversa dele e aberta, entao "existe" ja significa "nao lida"
+  final ValueNotifier<int> mensagensNaoLidas = ValueNotifier(0);
+
+  // quantas dessas sao de cada conversa (chatId -> contagem), pro balaozinho
+  // na caixa de entrada, no estilo WhatsApp
+  final ValueNotifier<Map<String, int>> mensagensNaoLidasPorChat = ValueNotifier(const {});
 
   // cada aviso que chega com o app aberto passa por aqui -- a TelaPrincipal
   // escuta e mostra o aviso flutuante
   final ValueNotifier<Notificacao?> ultimaRecebida = ValueNotifier(null);
 
-  // chat aberto agora: mensagem nova DESSE chat nao vira aviso flutuante,
-  // a pessoa ja esta lendo
+  // chat aberto agora: mensagem nova DESSE chat nao vira aviso flutuante (a
+  // pessoa ja esta lendo) e o aviso dela e apagado na hora -- mexer so pelos
+  // metodos entrarNoChat/sairDoChat, que cuidam dessa limpeza
   String? chatAberto;
 
   String? _uid;
@@ -77,7 +89,6 @@ class NotificacaoService {
     return consulta.snapshots().listen((snap) {
       // o proprio autor nao e avisado do que ele mesmo fez
       guardar(snap.docs.map(Notificacao.fromDoc).where((n) => n.autorUid != _uid).toList());
-      _recalcular();
 
       // a primeira carga e o historico, nao novidade -- so avisa o que
       // chegar depois que o app ja esta aberto
@@ -85,18 +96,37 @@ class NotificacaoService {
         for (final mudanca in snap.docChanges) {
           if (mudanca.type != DocumentChangeType.added) continue;
           final nova = Notificacao.fromDoc(mudanca.doc);
-          if (nova.autorUid != _uid) ultimaRecebida.value = nova;
+          if (nova.autorUid == _uid) continue;
+          ultimaRecebida.value = nova;
+          // chegou mensagem da conversa que a pessoa ja esta lendo agora --
+          // some da lista local na hora (sem esperar o delete abaixo voltar
+          // do servidor) e apaga de fato, sem esperar ela sair do chat pra "ler"
+          if (nova.tipo == TipoNotificacao.novaMensagem && nova.alvoId == chatAberto) {
+            _pessoais = _pessoais.where((n) => n.id != nova.id).toList();
+            mudanca.doc.reference.delete().catchError((e) {
+              debugPrint('Não foi possível apagar aviso de mensagem: $e');
+            });
+          }
         }
       }
       primeiraCarga = false;
+      _recalcular();
     }, onError: (e) => debugPrint('Notificações: $e'));
   }
 
   void _recalcular() {
-    final todas = [..._gerais, ..._pessoais]
+    final todas = [..._gerais, ..._pessoais.where((n) => n.tipo != TipoNotificacao.novaMensagem)]
       ..sort((a, b) => (b.criadoEm ?? DateTime.now()).compareTo(a.criadoEm ?? DateTime.now()));
     notificacoes.value = todas;
     naoLidas.value = todas.where(naoLida).length;
+
+    final porChat = <String, int>{};
+    for (final n in _pessoais) {
+      if (n.tipo != TipoNotificacao.novaMensagem) continue;
+      porChat[n.alvoId] = (porChat[n.alvoId] ?? 0) + 1;
+    }
+    mensagensNaoLidasPorChat.value = porChat;
+    mensagensNaoLidas.value = porChat.values.fold(0, (soma, n) => soma + n);
   }
 
   bool naoLida(Notificacao n) {
@@ -132,7 +162,59 @@ class NotificacaoService {
     chatAberto = null;
     notificacoes.value = [];
     naoLidas.value = 0;
+    mensagensNaoLidas.value = 0;
+    mensagensNaoLidasPorChat.value = const {};
     ultimaRecebida.value = null;
+  }
+
+  // entrar numa conversa "le" os avisos de mensagem dela na hora. Some da
+  // lista local IMEDIATAMENTE (o balaozinho nao pode esperar a viagem ate o
+  // servidor e volta do listener pra sumir) e so DEPOIS manda apagar de fato
+  // no firestore, que e o que faz nao voltar quando o app reabrir
+  void entrarNoChat(String chatId) {
+    chatAberto = chatId;
+    final uid = _uid;
+    final pendentes = _pessoais
+        .where((n) => n.tipo == TipoNotificacao.novaMensagem && n.alvoId == chatId)
+        .toList();
+    if (pendentes.isEmpty) return;
+
+    _pessoais = _pessoais.where((n) => !pendentes.contains(n)).toList();
+    _recalcular();
+
+    if (uid == null) return;
+    for (final n in pendentes) {
+      _colecaoPessoal(uid).doc(n.id).delete().catchError((e) {
+        debugPrint('Não foi possível apagar aviso de mensagem: $e');
+      });
+    }
+  }
+
+  // limpa aviso de mensagem orfao: de uma conversa que nao existe mais na
+  // caixa de entrada (a outra pessoa apagou, por exemplo). Sem isso ele nunca
+  // seria lido -- a unica forma de "ler" um aviso de mensagem e abrindo a
+  // conversa dele, e essa conversa sumiu -- e ficaria acendendo a bolinha da
+  // aba Chat pra sempre. Chamado toda vez que a lista de conversas atualiza
+  void sincronizarChatsValidos(Iterable<String> chatIdsValidos) {
+    final uid = _uid;
+    if (uid == null) return;
+    final validos = chatIdsValidos.toSet();
+    final orfaos = _pessoais
+        .where((n) => n.tipo == TipoNotificacao.novaMensagem && !validos.contains(n.alvoId))
+        .toList();
+    if (orfaos.isEmpty) return;
+
+    _pessoais = _pessoais.where((n) => !orfaos.contains(n)).toList();
+    _recalcular();
+    for (final n in orfaos) {
+      _colecaoPessoal(uid).doc(n.id).delete().catchError((e) {
+        debugPrint('Não foi possível apagar aviso de mensagem órfão: $e');
+      });
+    }
+  }
+
+  void sairDoChat(String chatId) {
+    if (chatAberto == chatId) chatAberto = null;
   }
 
   // ---------------------------------------------------------------------------

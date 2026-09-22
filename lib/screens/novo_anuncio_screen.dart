@@ -11,6 +11,7 @@ import '../models/imovel.dart';
 import '../services/imgbb_service.dart';
 import '../services/notificacao_service.dart';
 import '../utils/moeda.dart';
+import '../utils/texto.dart';
 import '../widgets/animated_gradient_button.dart';
 import '../main.dart';
 import '../widgets/campo_formulario.dart';
@@ -341,7 +342,7 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
         numero: _numeroController.text.trim(),
         complemento: _complementoController.text.trim(),
         bairro: _bairroController.text.trim(),
-        cidade: _cidadeController.text.trim(),
+        cidade: capitalizarNome(_cidadeController.text.trim()),
         estado: _estadoSelecionado ?? '',
         tipoImovel: ehMoradia ? _tipoImovelSelecionado : '',
         andar: (ehMoradia && _ehApartamento) ? _andarController.text.trim() : '',
@@ -517,6 +518,7 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
                       label: 'Cidade',
                       icon: Icons.location_city_rounded,
                       isDark: isDark,
+                      textCapitalization: TextCapitalization.words,
                       validator: (val) => val!.isEmpty ? 'Informe a cidade' : null,
                     ),
                   ),
@@ -949,6 +951,7 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
     required bool isDark,
     int maxLines = 1,
     TextInputType keyboardType = TextInputType.text,
+    TextCapitalization textCapitalization = TextCapitalization.none,
     String? Function(String?)? validator,
     List<TextInputFormatter>? formatters,
 
@@ -964,6 +967,7 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
           ? const TextInputType.numberWithOptions(decimal: false, signed: false)
           : keyboardType,
       inputFormatters: campoDeDinheiro ? const [MoedaInputFormatter()] : formatters,
+      textCapitalization: textCapitalization,
       style: TextStyle(color: isDark ? Colors.white : Colors.black87),
       validator: validator,
       // campo de varias linhas nao usa pilula: em caixa alta o raio de

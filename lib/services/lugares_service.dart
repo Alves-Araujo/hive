@@ -126,6 +126,33 @@ class LugaresService {
 
   final Map<String, Future<List<LugarProximo>>> _cache = {};
   Future<List<Lugar>>? _cacheFixos;
+  Future<List<Lugar>>? _cacheCidade;
+
+  // raio da varredura da cidade, a partir do Inatel. 3 km cobrem Santa Rita
+  // inteira com folga -- a cidade tem cerca de 2 km de ponta a ponta
+  static const int _raioCidade = 3000;
+
+  // teto da API por chamada
+  static const int _maxResultados = 20;
+
+  // quantas fotos o estabelecimento precisa ter no Google pra ganhar pin.
+  //
+  // Duas, e nao uma: cadastro com foto unica costuma ser foto de fachada
+  // tirada de carro, ou logo enviado pelo dono -- o painel do lugar abre com
+  // uma imagem so e fica pobre. Exigir duas e o que separa quem tem presenca
+  // de verdade no Google de quem tem cadastro largado, e derruba de uma vez
+  // a lista de "Branca", "Vibra Energia" e "Raizen" que a API devolve como
+  // posto de combustivel.
+  //
+  // _lugarDe para de coletar na segunda foto, entao ter 2 aqui ja significa
+  // "tem pelo menos 2"
+  static const int _minimoDeFotos = 2;
+
+  // quanto dois pins da mesma categoria precisam estar afastados pra os dois
+  // aparecerem (ver _espacados). Medido no centro de Santa Rita: com 200 m
+  // as 8 farmacias viram 4 bem distribuidas; 150 m deixa 5 e 250 m deixa 3.
+  // Postos e hospitais ja nascem espalhados e nao sentem esse corte
+  static const double _distanciaMinima = 200;
 
   // lugares que ficam no mapa SEMPRE, mesmo sem nenhum anuncio por perto.
   //
@@ -204,6 +231,72 @@ class LugaresService {
     }
   }
 
+  // TODOS os estabelecimentos da cidade, categoria por categoria.
+  //
+  // Existe porque o mapa e a ficha do anuncio querem coisas diferentes. A
+  // ficha pergunta "o que tem PERTO DESTA MORADIA?", e a resposta e um lugar
+  // por categoria, medido a partir dela -- e o que proximosDe() faz. O mapa
+  // nao pergunta isso: ele mostra a cidade, e quem abre espera ver as
+  // farmacias, os postos e os hospitais que existem, tenha anuncio do lado
+  // ou nao.
+  //
+  // Enquanto o mapa dependia so de proximosDe(), esses pins eram um efeito
+  // colateral dos anuncios: sem anuncio carregado (ou com os anuncios longe
+  // demais pro raio da categoria), sobravam apenas os mercados de _idsFixos,
+  // que nao dependem de anuncio nenhum. Era exatamente o que acontecia --
+  // mapa com quatro mercados e mais nada.
+  //
+  // Sao 5 chamadas por sessao, guardadas em memoria. Menos que antes, que
+  // fazia 5 POR ANUNCIO
+  Future<List<Lugar>> naCidade() {
+    return _cacheCidade ??= Future.wait(
+      CategoriaLugar.values.map(_naCidadeDe),
+    ).then((porCategoria) {
+      final lugares = [for (final lista in porCategoria) ...lista];
+      // falha nao fica em cache: a proxima abertura do mapa tenta de novo
+      if (lugares.isEmpty) _cacheCidade = null;
+      return lugares;
+    });
+  }
+
+  Future<List<Lugar>> _naCidadeDe(CategoriaLugar categoria) async {
+    final achados = await _buscarPerto(categoria, posicaoInatel, _raioCidade, _maxResultados);
+    final comFoto =
+        (achados ?? const <Lugar>[]).where((l) => l.fotos.length >= _minimoDeFotos).toList();
+    return _espacados(comFoto);
+  }
+
+  // Afina o amontoado: entre dois estabelecimentos da mesma categoria a menos
+  // de _distanciaMinima um do outro, fica um so.
+  //
+  // O centro de Santa Rita e compacto e quase toda farmacia da cidade esta a
+  // 85-126 m da farmacia seguinte: no zoom em que da pra ler a rua, os pins
+  // encostavam e viravam uma mancha, e a informacao que o mapa dava ("tem
+  // farmacia aqui") ja estava dada pelo primeiro pin.
+  //
+  // Resolve DOIS problemas de uma vez, por isso nao ha um passo separado de
+  // deduplicacao: cadastro repetido do mesmo lugar (o Google devolve o
+  // Hospital Antonio Moreira da Costa e a Drogaria Farmadil duas vezes) cai
+  // aqui junto, porque duas copias do mesmo ponto estao a 0 m.
+  //
+  // A ordem da passada e por numero de fotos, nao por distancia ao centro:
+  // quando dois disputam a mesma area, quem fica e o de cadastro mais
+  // completo -- que e o que vai abrir um painel decente quando tocarem nele
+  List<Lugar> _espacados(List<Lugar> lugares) {
+    final ordenados = [...lugares]
+      ..sort((a, b) => b.fotos.length.compareTo(a.fotos.length));
+
+    final mantidos = <Lugar>[];
+    for (final lugar in ordenados) {
+      final temVizinho = mantidos.any((m) =>
+          Geolocator.distanceBetween(m.posicao.latitude, m.posicao.longitude,
+                  lugar.posicao.latitude, lugar.posicao.longitude) <
+              _distanciaMinima);
+      if (!temVizinho) mantidos.add(lugar);
+    }
+    return mantidos;
+  }
+
   Future<List<LugarProximo>> proximosDe(LatLng posicao) {
     // chave pela coordenada arredondada (~10 m): o mesmo predio anunciado
     // duas vezes aproveita a busca
@@ -226,6 +319,29 @@ class LugaresService {
 
   // devolve (lugar ou null se nao ha nenhum perto,) ou null se a chamada falhou
   Future<(LugarProximo?,)?> _maisPerto(CategoriaLugar categoria, LatLng p) async {
+    // os 10 mais perto, e nao so 1: o mais perto pode nao ter foto ou nao
+    // passar no filtro de nome. O preco da chamada e o mesmo
+    final candidatos = await _buscarPerto(categoria, p, categoria.raio, 10);
+    if (candidatos == null) return null;
+
+    // ja vem do mais perto pro mais longe: fica o primeiro que passa na
+    // regra de foto -- a mesma do mapa, pra ficha e mapa nao discordarem
+    // sobre qual estabelecimento existe
+    final lugar = candidatos.where((l) => l.fotos.length >= _minimoDeFotos).firstOrNull;
+    if (lugar == null) return (null,);
+
+    final metros = Geolocator.distanceBetween(
+        p.latitude, p.longitude, lugar.posicao.latitude, lugar.posicao.longitude);
+    return (LugarProximo(lugar, metros),);
+  }
+
+  // a chamada em si, do mais perto pro mais longe, ja filtrada pelo que a
+  // categoria aceita (lista branca de id e filtro de nome). O filtro de FOTO
+  // nao entra aqui: quem chama decide, porque mapa e ficha querem coisas
+  // diferentes. null = a chamada falhou (diferente de lista vazia, que
+  // significa "a API respondeu e nao ha nada que sirva")
+  Future<List<Lugar>?> _buscarPerto(
+      CategoriaLugar categoria, LatLng p, int raio, int maximo) async {
     try {
       final resposta = await http
           .post(
@@ -242,16 +358,14 @@ class LugaresService {
               // tipo PRINCIPAL, nao qualquer tipo: com includedTypes um posto
               // com loja de conveniencia entrava como mercado
               'includedPrimaryTypes': categoria.tiposGoogle,
-              // os 10 mais perto, e nao so 1: o mais perto pode nao ter foto
-              // ou nao passar no filtro de nome. O preco da chamada e o mesmo
-              'maxResultCount': 10,
+              'maxResultCount': maximo,
               'rankPreference': 'DISTANCE',
               'languageCode': 'pt-BR',
               'regionCode': 'BR',
               'locationRestriction': {
                 'circle': {
                   'center': {'latitude': p.latitude, 'longitude': p.longitude},
-                  'radius': categoria.raio.toDouble(),
+                  'radius': raio.toDouble(),
                 },
               },
             }),
@@ -267,25 +381,15 @@ class LugaresService {
       }
 
       final dados = json.decode(resposta.body) as Map<String, dynamic>;
-      final candidatos = (dados['places'] as List<dynamic>? ?? [])
+      final permitidos = _idsPermitidos[categoria];
+      return (dados['places'] as List<dynamic>? ?? [])
           .whereType<Map<String, dynamic>>()
           .map((m) => _lugarDe(m, categoria))
-          .whereType<Lugar>();
-
-      // ja vem do mais perto pro mais longe: fica o primeiro que e o que diz
-      // ser e tem foto. Sem foto sai de proposito -- lugar sem nenhuma foto
-      // no Google costuma ser cadastro abandonado ou errado
-      final permitidos = _idsPermitidos[categoria];
-      final lugar = candidatos
+          .whereType<Lugar>()
           .where((l) =>
               (permitidos == null || permitidos.contains(l.id)) &&
-              l.fotos.isNotEmpty &&
               categoria.aceitaNome(l.nome))
-          .firstOrNull;
-      if (lugar == null) return (null,);
-      final metros = Geolocator.distanceBetween(
-          p.latitude, p.longitude, lugar.posicao.latitude, lugar.posicao.longitude);
-      return (LugarProximo(lugar, metros),);
+          .toList();
     } catch (e) {
       debugPrint('Erro ao buscar ${categoria.name} perto: $e');
       return null;

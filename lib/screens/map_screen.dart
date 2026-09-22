@@ -115,6 +115,11 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   // separado porque _lugares e trocado inteiro a cada busca nova, e eles nao
   // podem sumir junto
   Map<String, Lugar> _lugaresFixos = {};
+  // os estabelecimentos da cidade inteira (ver LugaresService.naCidade). Sao
+  // eles que dao ao mapa as farmacias, os postos e os hospitais: o campo
+  // _lugares acima so tem o que esta perto de algum ANUNCIO, entao sem
+  // anuncio carregado ele vem vazio e sobravam so os mercados de _lugaresFixos
+  Map<String, Lugar> _lugaresCidade = {};
   Set<Marker> _marcadoresLugares = {};
   // o que cada moradia tem por perto, por id do anuncio -- e o que o grupo
   // "Localidade" do filtro consulta. Fica vazio enquanto a busca nao volta
@@ -252,8 +257,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       }
     });
 
-    // nao depende de anuncio nenhum, entao nao espera o Firestore
+    // nenhum dos dois depende de anuncio, entao nao esperam o Firestore
     _carregarLugaresFixos();
+    _carregarLugaresDaCidade();
 
     _temaListener = () {
       if (mounted) {
@@ -488,12 +494,25 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     });
   }
 
+  // os estabelecimentos da cidade -- os pins que existem independente de
+  // haver anuncio por perto
+  Future<void> _carregarLugaresDaCidade() async {
+    final lugares = await LugaresService.instance.naCidade();
+    if (!mounted || lugares.isEmpty) return;
+    setState(() {
+      _lugaresCidade = {for (final l in lugares) l.id: l};
+      _atualizarMarcadoresLugares();
+    });
+  }
+
   void _atualizarMarcadoresLugares() {
     final rota = rotaAtivaGlobal.value;
     final categorias = _filtroState.categoriasSelecionadas;
-    // a chave e o place id, entao um fixo que TAMBEM seja o mais perto de
-    // algum anuncio nao vira dois pins
-    _marcadoresLugares = {..._lugaresFixos, ..._lugares}
+    // a chave e o place id, entao o mesmo lugar achado por dois caminhos
+    // (varredura da cidade, lista fixa, busca por anuncio) nao vira dois
+    // pins. A ordem importa: quem vem depois vence, e a busca por anuncio e
+    // a que garante foto no painel
+    _marcadoresLugares = {..._lugaresCidade, ..._lugaresFixos, ..._lugares}
         .values
         // sem categoria escolhida o mapa mostra tudo; com alguma, so os pins
         // daquele tipo ficam (escolher "Eventos" tira todos os pins daqui)
@@ -941,7 +960,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   // categoria pode nao deixar anuncio nenhum e ainda assim mostrar muita coisa
   int _quantosLugares(List<String> categorias) {
     if (categorias.isEmpty) return 0;
-    return {..._lugaresFixos, ..._lugares}
+    // a mesma juncao de _atualizarMarcadoresLugares: a contagem do botao tem
+    // que bater com o que vai aparecer no mapa
+    return {..._lugaresCidade, ..._lugaresFixos, ..._lugares}
         .values
         .where((l) => categorias.contains(l.categoria.name))
         .length;

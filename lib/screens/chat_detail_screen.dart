@@ -9,6 +9,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
+import '../utils/tempo.dart';
 import '../utils/texto.dart';
 import '../main.dart';
 import '../models/perfil_publico.dart';
@@ -17,8 +18,8 @@ import '../services/chat_service.dart';
 import '../services/notificacao_service.dart';
 import '../services/perfil_publico_service.dart';
 import '../services/usuario_service.dart';
-import '../utils/chamada.dart';
 import '../widgets/avatar_widget.dart';
+import '../widgets/papel_parede_chat.dart';
 import 'concluir_perfil_screen.dart';
 import 'perfil_publico_screen.dart';
 
@@ -82,7 +83,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   @override
   void initState() {
     super.initState();
-    NotificacaoService.instance.chatAberto = widget.chatId;
+    NotificacaoService.instance.entrarNoChat(widget.chatId);
     _carregarMeuPerfil();
     _carregarContato();
 
@@ -355,12 +356,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     );
   }
 
-  void _iniciarChamadaDeVoz() {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? 'anonimo';
-    final nome = (_meuPerfil?.nome.isNotEmpty ?? false) ? _meuPerfil!.nome : 'Usuário Hive';
-    iniciarChamadaDeVoz(context, meuUid: uid, meuNome: nome, outroUid: widget.contatoUid);
-  }
-
   void _abrirPerfilDoContato() {
     if (_contato == null) return;
     Navigator.push(
@@ -382,9 +377,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   @override
   void dispose() {
-    if (NotificacaoService.instance.chatAberto == widget.chatId) {
-      NotificacaoService.instance.chatAberto = null;
-    }
+    NotificacaoService.instance.sairDoChat(widget.chatId);
     _timerGravacao?.cancel();
     _mensagemController.dispose();
     _recorder.dispose();
@@ -399,31 +392,169 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     final double larguraMaxima = MediaQuery.of(context).size.width * 0.7;
 
     return Scaffold(
-      backgroundColor: isDark ? corFundoEscuro : superficieClara,
-      appBar: AppBar(
-        backgroundColor: isDark ? superficieEscura : superficieClara,
-        surfaceTintColor: Colors.transparent,
-        elevation: 1,
-        iconTheme: IconThemeData(color: isDark ? Colors.white : Colors.black87),
-        titleSpacing: 0,
-        title: InkWell(
-          onTap: _contato == null ? null : _abrirPerfilDoContato,
-          borderRadius: BorderRadius.circular(12),
+      backgroundColor: isDark ? corFundoEscuro : corFundoClaro,
+      appBar: _buildCabecalho(isDark),
+      body: PapelDeParedeChat(
+        child: Column(
+          children: [
+            if (widget.imovelTitulo.isNotEmpty) _buildFaixaImovel(isDark),
+            Expanded(
+              child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                stream: _mensagensStream,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator(color: corPrimaria));
+                  }
+
+                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                    return _buildConversaVazia(isDark);
+                  }
+
+                  final mensagens = snapshot.data!.docs;
+
+                  return ListView.builder(
+                    reverse: true,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.lg,
+                      vertical: AppSpacing.md,
+                    ),
+                    itemCount: mensagens.length,
+                    itemBuilder: (context, index) {
+                      final doc = mensagens[index];
+                      final msg = doc.data();
+                      // pelo uid, nao pelo e-mail: o e-mail da conta pode mudar,
+                      // e as mensagens antigas ficariam do lado errado da tela
+                      final bool isMinha = (msg['remetenteUid'] as String? ?? '') == meuUid;
+                      final tipo = msg['tipo'] as String? ?? 'texto';
+                      final DateTime? quando = (msg['timestamp'] as Timestamp?)?.toDate();
+
+                      // A lista e invertida: o indice 0 fica EMBAIXO. Entao
+                      // "a mensagem acima desta" e index + 1, e "a de baixo"
+                      // e index - 1 -- e o que decide onde entra a faixa de
+                      // dia e em qual mensagem do bloco vai o avatar
+                      final anterior = index + 1 < mensagens.length ? mensagens[index + 1].data() : null;
+                      final seguinte = index > 0 ? mensagens[index - 1].data() : null;
+
+                      final bool abreDia = _abreNovoDia(quando, anterior);
+                      // o avatar so na ULTIMA mensagem seguida do contato:
+                      // repetido em todas, uma resposta de tres linhas virava
+                      // uma coluna de carinhas identicas ao lado dos baloes
+                      final bool fechaBloco =
+                          seguinte == null || (seguinte['remetenteUid'] as String? ?? '') != (msg['remetenteUid'] as String? ?? '');
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (abreDia) _buildFaixaDia(quando, isDark),
+                          Padding(
+                            // mensagens do mesmo bloco ficam quase coladas;
+                            // a troca de quem fala e que abre o respiro
+                            padding: EdgeInsets.only(bottom: fechaBloco ? AppSpacing.md : 3),
+                            child: Align(
+                              alignment: isMinha ? Alignment.centerRight : Alignment.centerLeft,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  if (!isMinha) ...[
+                                    // so o contato escreve do outro lado, entao
+                                    // o perfil do cabecalho serve pra toda
+                                    // mensagem recebida
+                                    SizedBox(
+                                      width: 28,
+                                      child: fechaBloco
+                                          ? AvatarWidget(
+                                              nome: (_contato?.nome.isNotEmpty ?? false) ? _contato!.nome : '?',
+                                              fotoUrl: _contato?.fotoUrl,
+                                              size: 28,
+                                            )
+                                          : null,
+                                    ),
+                                    const SizedBox(width: AppSpacing.sm),
+                                  ],
+                                  ConstrainedBox(
+                                    constraints: BoxConstraints(maxWidth: larguraMaxima),
+                                    child: _buildConteudoMensagem(
+                                      doc.id,
+                                      tipo,
+                                      msg,
+                                      isMinha,
+                                      isDark,
+                                      quando,
+                                      fechaBloco,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+            _buildAreaEnvio(isDark),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // mesma receita de gradiente do CabecalhoTela das abas, pra conversa e
+  // resto do app lerem como a mesma interface
+  PreferredSizeWidget _buildCabecalho(bool isDark) {
+    final String nome = (_contato?.nome.isNotEmpty ?? false) ? _contato!.nome : 'Proprietário';
+
+    return AppBar(
+      backgroundColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      iconTheme: IconThemeData(color: isDark ? Colors.white : Colors.black87),
+      titleSpacing: 0,
+      flexibleSpace: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            stops: const [0, 0.55, 1],
+            colors: isDark
+                ? [
+                    Color.alphaBlend(Colors.white.withAlpha(15), superficieEscura),
+                    superficieEscura,
+                    Color.alphaBlend(corPrimaria.withAlpha(20), superficieEscura),
+                  ]
+                : [
+                    superficieClara,
+                    superficieClara,
+                    Color.alphaBlend(corPrimaria.withAlpha(8), superficieClara),
+                  ],
+          ),
+          boxShadow: AppShadows.nivel2(isDark),
+        ),
+      ),
+      title: InkWell(
+        onTap: _contato == null ? null : _abrirPerfilDoContato,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs, horizontal: AppSpacing.xs),
           child: Row(
             children: [
               AvatarWidget(
                 nome: (_contato?.nome.isNotEmpty ?? false) ? _contato!.nome : '?',
                 fotoUrl: _contato?.fotoUrl,
-                size: 36,
+                size: 38,
+                showOnlineIndicator: _contatoOnline,
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: AppSpacing.md),
               Expanded(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      (_contato?.nome.isNotEmpty ?? false) ? _contato!.nome : 'Proprietário',
+                      nome,
                       style: AppTextStyles.bodyBold.copyWith(
                         color: isDark ? Colors.white : Colors.black87,
                         fontSize: 15,
@@ -431,114 +562,186 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    if (widget.imovelTitulo.isNotEmpty)
+                    // presenca, como em qualquer mensageiro -- o "Ref: anuncio"
+                    // saiu daqui pra faixa logo abaixo, onde cabe inteiro
+                    if (_contato != null)
                       Text(
-                        'Ref: ${widget.imovelTitulo}',
-                        style: AppTextStyles.caption.copyWith(color: corPrimaria, fontSize: 11),
+                        _contatoOnline ? 'Online agora' : formatarUltimoAcesso(_contato!.ultimoAcesso),
+                        style: AppTextStyles.label.copyWith(
+                          color: _contatoOnline
+                              ? corSucesso
+                              : (isDark ? Colors.white38 : Colors.black45),
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                   ],
                 ),
               ),
+              if (_contato != null)
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: isDark ? Colors.white30 : Colors.black26,
+                  size: 22,
+                ),
             ],
           ),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.call_rounded),
-            color: corPrimaria,
-            onPressed: _iniciarChamadaDeVoz,
-          ),
-        ],
       ),
-      body: Column(
+    );
+  }
+
+  // "online" aqui e simplesmente acesso nos ultimos 5 minutos: o app nao tem
+  // canal de presenca de verdade, e inventar um so pra bolinha verde nao
+  // pagaria o custo de manter
+  bool get _contatoOnline {
+    final acesso = _contato?.ultimoAcesso;
+    if (acesso == null) return false;
+    return DateTime.now().difference(acesso).inMinutes < 5;
+  }
+
+  // de qual anuncio e essa conversa. Vale uma faixa propria: quem anuncia
+  // costuma ter varias conversas abertas ao mesmo tempo e precisa saber de
+  // cara sobre qual imovel esta falando
+  Widget _buildFaixaImovel(bool isDark) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: isDark ? corPrimaria.withAlpha(38) : corPrimaria.withAlpha(16),
+        border: Border(
+          bottom: BorderSide(color: corPrimaria.withAlpha(isDark ? 60 : 30)),
+        ),
+      ),
+      child: Row(
         children: [
+          Icon(Icons.home_work_outlined, size: 16, color: isDark ? corDestaque : corPrimaria),
+          const SizedBox(width: AppSpacing.sm),
           Expanded(
-            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: _mensagensStream,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator(color: corPrimaria));
-                }
-
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return Center(
-                    child: Text(
-                      'Envie a primeira mensagem!',
-                      style: TextStyle(color: isDark ? Colors.white38 : Colors.black38),
-                    ),
-                  );
-                }
-
-                final mensagens = snapshot.data!.docs;
-
-                return ListView.builder(
-                  reverse: true,
-                  padding: const EdgeInsets.all(16),
-                  itemCount: mensagens.length,
-                  itemBuilder: (context, index) {
-                    final doc = mensagens[index];
-                    final msg = doc.data();
-                    // pelo uid, nao pelo e-mail: o e-mail da conta pode mudar,
-                    // e as mensagens antigas ficariam do lado errado da tela
-                    final bool isMinha = (msg['remetenteUid'] as String? ?? '') == meuUid;
-                    final tipo = msg['tipo'] as String? ?? 'texto';
-
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Align(
-                        alignment: isMinha ? Alignment.centerRight : Alignment.centerLeft,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            if (!isMinha) ...[
-                              // so o contato escreve do outro lado, entao o
-                              // perfil do cabecalho serve pra toda mensagem
-                              AvatarWidget(
-                                nome: (_contato?.nome.isNotEmpty ?? false) ? _contato!.nome : '?',
-                                fotoUrl: _contato?.fotoUrl,
-                                size: 28,
-                              ),
-                              const SizedBox(width: 8),
-                            ],
-                            ConstrainedBox(
-                              constraints: BoxConstraints(maxWidth: larguraMaxima),
-                              child: _buildConteudoMensagem(doc.id, tipo, msg, isMinha, isDark),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                );
-              },
+            child: Text(
+              widget.imovelTitulo,
+              style: AppTextStyles.label.copyWith(
+                color: isDark ? corDestaque : corPrimaria,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
-          _buildAreaEnvio(isDark),
         ],
       ),
     );
   }
 
-  Widget _buildConteudoMensagem(String mensagemId, String tipo, Map<String, dynamic> msg, bool isMinha, bool isDark) {
+  // true quando esta mensagem e a primeira do dia dela -- `anterior` e a de
+  // cima na tela, que numa lista invertida e a mais VELHA
+  bool _abreNovoDia(DateTime? quando, Map<String, dynamic>? anterior) {
+    if (quando == null) return false;
+    if (anterior == null) return true;
+    final antes = (anterior['timestamp'] as Timestamp?)?.toDate();
+    if (antes == null) return false;
+    return !mesmoDia(antes, quando);
+  }
+
+  Widget _buildFaixaDia(DateTime? quando, bool isDark) {
+    if (quando == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 5),
+          decoration: BoxDecoration(
+            color: isDark ? Colors.white.withAlpha(20) : Colors.white.withAlpha(220),
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+            border: Border.all(
+              color: isDark ? Colors.white.withAlpha(20) : corPrimaria.withAlpha(24),
+            ),
+            boxShadow: AppShadows.nivel1(isDark),
+          ),
+          child: Text(
+            rotuloDiaConversa(quando),
+            style: AppTextStyles.label.copyWith(
+              color: isDark ? Colors.white70 : corPrimaria,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConversaVazia(bool isDark) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.xxxl),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.xl),
+              decoration: BoxDecoration(
+                gradient: gradientePrincipal,
+                shape: BoxShape.circle,
+                boxShadow: AppShadows.marca(),
+              ),
+              child: const Icon(Icons.waving_hand_rounded, color: Colors.white, size: 34),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            Text(
+              'Diga um oi',
+              style: AppTextStyles.heading3.copyWith(
+                color: isDark ? Colors.white : Colors.black87,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              widget.imovelTitulo.isNotEmpty
+                  ? 'Pergunte sobre o imóvel, combine uma visita ou tire suas dúvidas.'
+                  : 'Comece a conversa mandando a primeira mensagem.',
+              textAlign: TextAlign.center,
+              style: AppTextStyles.caption.copyWith(
+                color: isDark ? Colors.white38 : Colors.black45,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConteudoMensagem(
+    String mensagemId,
+    String tipo,
+    Map<String, dynamic> msg,
+    bool isMinha,
+    bool isDark,
+    DateTime? quando,
+    bool fechaBloco,
+  ) {
     // minha mensagem leva o gradiente da marca; a recebida, a superficie do
-    // app. A quina "mordida" de 4px do lado de quem enviou e o que da a
-    // leitura de origem sem precisar de seta nem rotulo
+    // app. A quina "mordida" de 5px do lado de quem enviou e o que da a
+    // leitura de origem sem precisar de seta nem rotulo -- e ela so aparece
+    // na ULTIMA mensagem seguida de cada um, como em qualquer mensageiro:
+    // repetida em todas, o bloco vira uma escada de quinas
+    final Radius quina = Radius.circular(fechaBloco ? 5 : AppRadius.md);
     final decoracaoBalao = BoxDecoration(
       gradient: isMinha ? gradientePrincipal : null,
-      color: isMinha ? null : (isDark ? Colors.white.withAlpha(16) : superficieClara),
+      color: isMinha
+          ? null
+          : (isDark ? const Color(0xFF1F303F) : Colors.white),
       borderRadius: BorderRadius.only(
         topLeft: const Radius.circular(AppRadius.md),
         topRight: const Radius.circular(AppRadius.md),
-        bottomLeft: Radius.circular(isMinha ? AppRadius.md : 4),
-        bottomRight: Radius.circular(isMinha ? 4 : AppRadius.md),
+        bottomLeft: isMinha ? const Radius.circular(AppRadius.md) : quina,
+        bottomRight: isMinha ? quina : const Radius.circular(AppRadius.md),
       ),
       border: isMinha
           ? null
           : Border.all(color: isDark ? Colors.white.withAlpha(14) : Colors.black.withAlpha(10)),
-      boxShadow: AppShadows.nivel1(isDark),
+      // sobre papel de parede a sombra deixa de ser enfeite: e ela que
+      // descola o balao do padrao e mantem o texto facil de ler
+      boxShadow: isMinha ? AppShadows.marca(forca: 0.5) : AppShadows.nivel1(isDark),
     );
 
     if (tipo == 'imagem') {
@@ -548,23 +751,41 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       final Widget foto;
       if (base64.isNotEmpty) {
         bytes = _imagensCache.putIfAbsent(mensagemId, () => base64Decode(base64));
-        foto = Image.memory(bytes, width: 200, fit: BoxFit.cover, gaplessPlayback: true);
+        foto = Image.memory(bytes, width: 220, fit: BoxFit.cover, gaplessPlayback: true);
       } else if (url.isNotEmpty) {
-        foto = Image.network(url, width: 200, fit: BoxFit.cover);
+        foto = Image.network(url, width: 220, fit: BoxFit.cover);
       } else {
         foto = const SizedBox(width: 160, height: 160);
       }
       return Container(
         decoration: decoracaoBalao,
         padding: const EdgeInsets.all(4),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: (bytes == null && url.isEmpty)
-              ? foto
-              : GestureDetector(
-                  onTap: () => _abrirFotoAmpliada(bytes: bytes, url: url.isEmpty ? null : url),
-                  child: foto,
+        child: Stack(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+              child: (bytes == null && url.isEmpty)
+                  ? foto
+                  : GestureDetector(
+                      onTap: () => _abrirFotoAmpliada(bytes: bytes, url: url.isEmpty ? null : url),
+                      child: foto,
+                    ),
+            ),
+            // sobre a foto a hora precisa de fundo proprio: em imagem clara
+            // ela sumia, em escura ficava dura
+            Positioned(
+              right: 6,
+              bottom: 6,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.black.withAlpha(110),
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
                 ),
+                child: _buildRodapeHora(quando, isMinha, isDark, sobreMidia: true),
+              ),
+            ),
+          ],
         ),
       );
     }
@@ -574,61 +795,143 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           (msg['midiaUrl'] as String? ?? '').isNotEmpty;
       final duracao = msg['duracao'] as int?;
       final tocando = _audioTocandoId == mensagemId;
+      final Color corConteudo = isMinha ? Colors.white : (isDark ? Colors.white : Colors.black87);
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.sm, AppSpacing.md, 6),
         decoration: decoracaoBalao,
-        child: Row(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            GestureDetector(
-              onTap: temAudio ? () => _alternarReproducaoAudio(mensagemId, msg) : null,
-              child: Icon(
-                tocando ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded,
-                color: isMinha ? Colors.white : corPrimaria,
-                size: 32,
-              ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                GestureDetector(
+                  onTap: temAudio ? () => _alternarReproducaoAudio(mensagemId, msg) : null,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isMinha ? Colors.white.withAlpha(36) : corPrimaria.withAlpha(18),
+                    ),
+                    child: Icon(
+                      tocando ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                      color: isMinha ? Colors.white : corPrimaria,
+                      size: 26,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                // a "onda" e decorativa (nao ha analise do audio gravado),
+                // mas e o que faz a mensagem de voz ler como voz e nao como
+                // uma linha de texto com um botao do lado
+                _OndaAudio(cor: corConteudo, ativa: tocando),
+                const SizedBox(width: AppSpacing.md),
+                Text(
+                  _formatarDuracao(duracao ?? 0),
+                  style: AppTextStyles.caption.copyWith(
+                    color: corConteudo.withAlpha(200),
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 8),
-            Text(
-              duracao == null ? 'Mensagem de voz' : 'Mensagem de voz · ${_formatarDuracao(duracao)}',
-              style: TextStyle(color: isMinha ? Colors.white : (isDark ? Colors.white : Colors.black87)),
-            ),
+            _buildRodapeHora(quando, isMinha, isDark),
           ],
         ),
       );
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.fromLTRB(AppSpacing.lg - 2, AppSpacing.sm + 2, AppSpacing.md, 6),
       decoration: decoracaoBalao,
-      child: Text(
-        normalizarTracosOuVazio(msg['texto']),
-        style: TextStyle(color: isMinha ? Colors.white : (isDark ? Colors.white : Colors.black87)),
+      // Wrap, e nao Column: assim a hora senta na MESMA linha quando sobra
+      // espaco (mensagem curta) e cai pra linha de baixo, encostada a
+      // direita, quando nao sobra. Com Column o balao esticava ate os 70% da
+      // tela mesmo pra um "ok", porque o alinhamento do texto obriga o filho
+      // a ocupar toda a largura disponivel
+      child: Wrap(
+        alignment: WrapAlignment.end,
+        crossAxisAlignment: WrapCrossAlignment.end,
+        children: [
+          Text(
+            normalizarTracosOuVazio(msg['texto']),
+            style: AppTextStyles.body.copyWith(
+              color: isMinha ? Colors.white : (isDark ? Colors.white : Colors.black87),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: AppSpacing.sm, top: 2),
+            child: _buildRodapeHora(quando, isMinha, isDark),
+          ),
+        ],
       ),
+    );
+  }
+
+  // hora e, nas minhas mensagens, o estado do envio. O relogio vira um tique
+  // quando o horario do servidor volta: enquanto e nulo, a mensagem ainda
+  // esta saindo do aparelho. Nao existe confirmacao de LEITURA aqui, entao
+  // nao ha dois tiques -- prometer algo que o app nao sabe seria pior que
+  // nao mostrar nada
+  Widget _buildRodapeHora(DateTime? quando, bool isMinha, bool isDark, {bool sobreMidia = false}) {
+    final Color cor = sobreMidia
+        ? Colors.white.withAlpha(230)
+        : isMinha
+            ? Colors.white.withAlpha(180)
+            : (isDark ? Colors.white38 : Colors.black38);
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          quando == null ? 'enviando' : formatarHora(quando),
+          style: AppTextStyles.label.copyWith(color: cor, fontSize: 10.5),
+        ),
+        if (isMinha) ...[
+          const SizedBox(width: AppSpacing.xs),
+          Icon(
+            quando == null ? Icons.schedule_rounded : Icons.done_rounded,
+            size: 13,
+            color: cor,
+          ),
+        ],
+      ],
     );
   }
 
   Widget _buildAreaEnvio(bool isDark) {
     final perfilIncompleto = _meuPerfil != null && !_meuPerfil!.perfilCompleto;
+    final bool temTexto = _mensagemController.text.trim().isNotEmpty;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
       decoration: BoxDecoration(
-        color: isDark ? corSuperficieEscura : Colors.white,
+        color: isDark ? superficieEscura : Colors.white,
+        border: Border(
+          top: BorderSide(color: isDark ? Colors.white.withAlpha(16) : Colors.black.withAlpha(12)),
+        ),
         boxShadow: [
-          BoxShadow(color: Colors.black.withAlpha(10), blurRadius: 10, offset: const Offset(0, -4)),
+          BoxShadow(
+            color: Colors.black.withAlpha(isDark ? 60 : 16),
+            blurRadius: 16,
+            offset: const Offset(0, -4),
+          ),
         ],
       ),
       child: SafeArea(
+        top: false,
         child: perfilIncompleto
             ? Row(
                 children: [
                   const Icon(Icons.lock_outline_rounded, color: corAtencao, size: 20),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: AppSpacing.md),
                   Expanded(
                     child: Text(
                       'Complete seu perfil pra poder enviar mensagens.',
-                      style: TextStyle(color: isDark ? Colors.white70 : Colors.black87, fontSize: 13),
+                      style: AppTextStyles.caption.copyWith(
+                        color: isDark ? Colors.white70 : Colors.black87,
+                      ),
                     ),
                   ),
                   TextButton(
@@ -638,66 +941,246 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 ],
               )
             : Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  IconButton(
-                    icon: Icon(Icons.add_photo_alternate_outlined, color: isDark ? Colors.white54 : corPrimaria),
-                    onPressed: _enviandoMidia ? null : _mostrarOpcoesDeAnexo,
-                  ),
+                  // o campo e o anexo vivem na MESMA pilula: antes o clipe
+                  // ficava solto a esquerda e o campo era outra peca, o que
+                  // dava tres elementos soltos na barra
                   Expanded(
-                    child: _gravandoAudio
-                        ? Row(
-                            children: [
-                              const Icon(Icons.fiber_manual_record_rounded, color: corErro, size: 16),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Gravando ${_formatarDuracao(_segundosGravando)} / ${_formatarDuracao(_duracaoMaximaAudio)}',
-                                style: TextStyle(color: isDark ? Colors.white70 : Colors.black87),
-                              ),
-                            ],
-                          )
-                        : TextField(
-                            controller: _mensagemController,
-                            style: TextStyle(color: isDark ? Colors.white : Colors.black87),
-                            decoration: InputDecoration(
-                              hintText: 'Digite sua mensagem...',
-                              hintStyle: TextStyle(color: isDark ? Colors.white38 : Colors.black38),
-                              filled: true,
-                              fillColor: isDark ? Colors.white.withAlpha(10) : Colors.grey.withAlpha(15),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(99.0),
-                                borderSide: BorderSide.none,
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: _gravandoAudio
+                            ? corErro.withAlpha(isDark ? 40 : 20)
+                            : (isDark ? Colors.white.withAlpha(14) : superficieClara),
+                        borderRadius: BorderRadius.circular(AppRadius.xl),
+                        border: Border.all(
+                          color: _gravandoAudio
+                              ? corErro.withAlpha(90)
+                              : (isDark ? Colors.white.withAlpha(18) : corPrimaria.withAlpha(22)),
+                        ),
+                      ),
+                      child: _gravandoAudio
+                          ? _buildLinhaGravacao(isDark)
+                          : Row(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                IconButton(
+                                  icon: Icon(
+                                    Icons.attach_file_rounded,
+                                    color: isDark ? Colors.white54 : corPrimaria,
+                                    size: 21,
+                                  ),
+                                  onPressed: _enviandoMidia ? null : _mostrarOpcoesDeAnexo,
+                                ),
+                                Expanded(
+                                  child: TextField(
+                                    controller: _mensagemController,
+                                    // ate 5 linhas antes de rolar: mensagem
+                                    // longa rolando dentro de uma linha unica
+                                    // e o jeito mais rapido de errar o que se
+                                    // escreveu
+                                    minLines: 1,
+                                    maxLines: 5,
+                                    textCapitalization: TextCapitalization.sentences,
+                                    keyboardType: TextInputType.multiline,
+                                    style: AppTextStyles.body.copyWith(
+                                      color: isDark ? Colors.white : Colors.black87,
+                                    ),
+                                    decoration: InputDecoration(
+                                      hintText: 'Mensagem',
+                                      hintStyle: AppTextStyles.body.copyWith(
+                                        color: isDark ? Colors.white38 : Colors.black38,
+                                      ),
+                                      border: InputBorder.none,
+                                      isDense: true,
+                                      contentPadding: const EdgeInsets.symmetric(
+                                        vertical: AppSpacing.md + 1,
+                                        horizontal: 2,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: AppSpacing.md),
+                              ],
                             ),
-                          ),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: _gravandoAudio ? corErro : corPrimaria,
-                      shape: BoxShape.circle,
-                    ),
-                    child: IconButton(
-                      icon: _enviandoMidia
-                          ? const SizedBox(
-                              width: 18, height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                            )
-                          : Icon(
-                              _mensagemController.text.trim().isEmpty
-                                  ? (_gravandoAudio ? Icons.stop_rounded : Icons.mic_rounded)
-                                  : Icons.send_rounded,
-                              color: Colors.white,
-                              size: 20,
-                            ),
-                      onPressed: _enviandoMidia
-                          ? null
-                          : (_mensagemController.text.trim().isEmpty ? _alternarGravacaoAudio : _enviarMensagemTexto),
                     ),
                   ),
+                  const SizedBox(width: AppSpacing.sm),
+                  _buildBotaoEnviar(temTexto, isDark),
                 ],
               ),
       ),
+    );
+  }
+
+  Widget _buildLinhaGravacao(bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md + 2),
+      child: Row(
+        children: [
+          // o ponto pisca junto com a onda: gravacao parada e gravacao
+          // rodando pareciam iguais, so mudava o numero
+          const _PontoGravando(),
+          const SizedBox(width: AppSpacing.md),
+          Text(
+            _formatarDuracao(_segundosGravando),
+            style: AppTextStyles.bodyBold.copyWith(
+              color: isDark ? Colors.white : Colors.black87,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Text(
+              'Toque em parar para enviar · máx ${_formatarDuracao(_duracaoMaximaAudio)}',
+              style: AppTextStyles.label.copyWith(
+                color: isDark ? Colors.white54 : Colors.black45,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBotaoEnviar(bool temTexto, bool isDark) {
+    return Container(
+      width: 48,
+      height: 48,
+      decoration: BoxDecoration(
+        gradient: _gravandoAudio ? null : gradientePrincipal,
+        color: _gravandoAudio ? corErro : null,
+        shape: BoxShape.circle,
+        boxShadow: _gravandoAudio
+            ? [BoxShadow(color: corErro.withAlpha(80), blurRadius: 16, offset: const Offset(0, 6))]
+            : AppShadows.marca(forca: temTexto ? 1 : 0.6),
+      ),
+      child: IconButton(
+        icon: _enviandoMidia
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              )
+            : Icon(
+                temTexto
+                    ? Icons.send_rounded
+                    : (_gravandoAudio ? Icons.stop_rounded : Icons.mic_rounded),
+                color: Colors.white,
+                size: 21,
+              ),
+        onPressed: _enviandoMidia ? null : (temTexto ? _enviarMensagemTexto : _alternarGravacaoAudio),
+      ),
+    );
+  }
+}
+
+// Barrinhas de uma mensagem de voz. Nao e a forma de onda real do audio
+// gravado (o app nao analisa o arquivo): e um padrao fixo, derivado da
+// posicao da barra, que so existe pra mensagem de voz nao parecer um botao
+// de play perdido dentro do balao. As barras acendem enquanto toca
+class _OndaAudio extends StatefulWidget {
+  final Color cor;
+  final bool ativa;
+
+  const _OndaAudio({required this.cor, required this.ativa});
+
+  @override
+  State<_OndaAudio> createState() => _OndaAudioState();
+}
+
+class _OndaAudioState extends State<_OndaAudio> with SingleTickerProviderStateMixin {
+  static const int _barras = 18;
+
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1600),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.ativa) _controller.repeat();
+  }
+
+  @override
+  void didUpdateWidget(_OndaAudio anterior) {
+    super.didUpdateWidget(anterior);
+    // parar em vez de deixar girando: animacao rodando em balao que nao esta
+    // tocando gasta frame a toa numa lista que ja rola
+    if (widget.ativa && !_controller.isAnimating) {
+      _controller.repeat();
+    } else if (!widget.ativa && _controller.isAnimating) {
+      _controller.stop();
+      _controller.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  // alturas sempre iguais pra mesma barra: sorteio de verdade faria a onda
+  // mudar a cada rebuild da lista
+  double _altura(int i) => 6 + ((i * 37) % 13).toDouble();
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        // a "cabeca" da reproducao anda da esquerda pra direita; o que ja
+        // passou fica aceso
+        final double progresso = widget.ativa ? _controller.value * _barras : -1;
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (int i = 0; i < _barras; i++)
+              Container(
+                width: 2.5,
+                height: _altura(i),
+                margin: const EdgeInsets.symmetric(horizontal: 1),
+                decoration: BoxDecoration(
+                  color: widget.cor.withAlpha(i <= progresso ? 230 : 90),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+// ponto vermelho pulsando enquanto grava
+class _PontoGravando extends StatefulWidget {
+  const _PontoGravando();
+
+  @override
+  State<_PontoGravando> createState() => _PontoGravandoState();
+}
+
+class _PontoGravandoState extends State<_PontoGravando> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 800),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: Tween<double>(begin: 0.3, end: 1).animate(_controller),
+      child: const Icon(Icons.fiber_manual_record_rounded, color: corErro, size: 14),
     );
   }
 }

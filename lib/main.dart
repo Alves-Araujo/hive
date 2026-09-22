@@ -41,10 +41,6 @@ const LatLng posicaoInatel = LatLng(-22.2573047, -45.6958702);
 // mapa desenhar os tiles, nao precisa mudar)
 const String googleMapsApiKey = 'AIzaSyDL0aaR1gdW-x3oiH4gxZVNMozISryp5CI';
 
-// credenciais do ZegoCloud (chamadas de voz/video no chat)
-const int zegoAppId = 969417110;
-const String zegoAppSign = '158812f25b867a6135e44b4fe1c3ea5eda22dcbd7bd1b7cd4a073a66d980d167';
-
 // cores principais
 const corPrimaria = Color(0xFF00509E);
 const corPrimaria2 = Color(0xFF007BFF);
@@ -690,9 +686,10 @@ class _TelaPrincipalState extends State<TelaPrincipal>
                       size: 21,
                     ),
                   ),
-                  // notificacoes agora vivem no avatar de perfil, que fica no
-                  // Mapa -- o ponto aqui avisa quem esta no Resumo, Chat ou
-                  // Painel que tem novidade pra ver lá
+                  // notificacoes gerais (moradia, evento, imobiliaria,
+                  // avaliacao) vivem no avatar de perfil, que fica no Mapa --
+                  // o ponto aqui avisa quem esta no Resumo, Chat ou Painel
+                  // que tem novidade pra ver lá
                   if (index == 0)
                     Positioned(
                       top: 5,
@@ -700,6 +697,30 @@ class _TelaPrincipalState extends State<TelaPrincipal>
                       child: ValueListenableBuilder<int>(
                         valueListenable: NotificacaoService.instance.naoLidas,
                         builder: (_, naoLidas, _) => naoLidas == 0
+                            ? const SizedBox.shrink()
+                            : Container(
+                                width: 9,
+                                height: 9,
+                                decoration: BoxDecoration(
+                                  color: corErro,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: isSelected ? corPilula : (isDark ? superficieEscura : superficieClara),
+                                    width: 1.5,
+                                  ),
+                                ),
+                              ),
+                      ),
+                    ),
+                  // mensagem nova mora so aqui: some assim que a conversa dela
+                  // e aberta, nao quando a pessoa so olha as notificacoes
+                  if (index == 2)
+                    Positioned(
+                      top: 5,
+                      right: 14,
+                      child: ValueListenableBuilder<int>(
+                        valueListenable: NotificacaoService.instance.mensagensNaoLidas,
+                        builder: (_, mensagensNaoLidas, _) => mensagensNaoLidas == 0
                             ? const SizedBox.shrink()
                             : Container(
                                 width: 9,

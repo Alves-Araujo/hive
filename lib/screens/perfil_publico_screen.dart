@@ -11,7 +11,6 @@ import '../services/avaliacao_service.dart';
 import '../services/imobiliaria_service.dart';
 import '../services/notificacao_service.dart';
 import '../services/usuario_service.dart';
-import '../utils/chamada.dart';
 import '../widgets/animated_gradient_button.dart';
 import '../widgets/avatar_widget.dart';
 import '../widgets/card_imovel_vertical.dart';
@@ -78,19 +77,6 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
       MaterialPageRoute(
         builder: (_) => ChatDetailScreen(chatId: chatId, contatoUid: widget.pessoa!.uid),
       ),
-    );
-  }
-
-  Future<void> _ligar() async {
-    final meuUid = FirebaseAuth.instance.currentUser?.uid;
-    if (meuUid == null || widget.pessoa == null || !mounted) return;
-    final meuPerfil = await UsuarioService.instance.buscarPorUid(meuUid);
-    if (!mounted) return;
-    iniciarChamadaDeVoz(
-      context,
-      meuUid: meuUid,
-      meuNome: (meuPerfil?.nome.isNotEmpty ?? false) ? meuPerfil!.nome : 'Usuário Hive',
-      outroUid: widget.pessoa!.uid,
     );
   }
 
@@ -161,26 +147,10 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
           const SizedBox(height: 24),
 
           if (!_ehImobiliaria && !_souEu)
-            Row(
-              children: [
-                Expanded(
-                  child: AnimatedGradientButton(
-                    label: 'Enviar Mensagem',
-                    icon: Icons.chat_bubble_outline_rounded,
-                    onTap: _enviarMensagem,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Container(
-                  height: 56,
-                  width: 56,
-                  decoration: BoxDecoration(gradient: gradientePrincipal, borderRadius: BorderRadius.circular(99.0)),
-                  child: IconButton(
-                    icon: const Icon(Icons.call_rounded, color: Colors.white),
-                    onPressed: _ligar,
-                  ),
-                ),
-              ],
+            AnimatedGradientButton(
+              label: 'Enviar Mensagem',
+              icon: Icons.chat_bubble_outline_rounded,
+              onTap: _enviarMensagem,
             ),
 
           if (_ehImobiliaria) ...[

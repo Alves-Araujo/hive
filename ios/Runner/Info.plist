@@ -27,11 +27,11 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Precisamos da câmera para as chamadas de vídeo no chat.</string>
+	<string>Precisamos da câmera para você enviar fotos no chat e nos anúncios.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Usamos sua localização para mostrar onde você está no mapa e traçar rotas até moradias, eventos e a faculdade.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Precisamos do microfone para as chamadas de voz e vídeo no chat.</string>
+	<string>Precisamos do microfone para você enviar mensagens de voz no chat.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

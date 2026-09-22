@@ -232,9 +232,17 @@ class _TelaResumoState extends State<TelaResumo> with SingleTickerProviderStateM
                 }
 
                 return ListView.builder(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.lg,
-                    vertical: AppSpacing.md + 2,
+                  padding: EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.md + 2,
+                    AppSpacing.lg,
+                    // com extendBody: true o body vai ate a base da tela e a
+                    // barra inferior fica por cima -- sem esse reforco o
+                    // ultimo card da lista ficava escondido atras dela.
+                    // MediaQuery.padding.bottom aqui ja e a altura REAL da
+                    // barra (o Scaffold soma ela ao inset por causa do
+                    // extendBody), igual e feito no mapa em map_screen.dart
+                    MediaQuery.of(context).padding.bottom + AppSpacing.md + 2,
                   ),
                   physics: const BouncingScrollPhysics(),
                   itemCount: imoveisFiltrados.length,

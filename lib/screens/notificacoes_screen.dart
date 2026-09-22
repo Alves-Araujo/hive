@@ -167,7 +167,7 @@ class _NotificacoesScreenState extends State<NotificacoesScreen> {
             ),
             const SizedBox(height: AppSpacing.xs),
             Text(
-              'Avisamos aqui quando aparecer moradia, evento ou imobiliária nova, e quando alguém falar com você.',
+              'Avisamos aqui quando aparecer moradia, evento ou imobiliária nova, e quando alguém te avaliar. Mensagens ficam na aba Chat.',
               textAlign: TextAlign.center,
               style: AppTextStyles.caption.copyWith(color: isDark ? Colors.white38 : Colors.grey),
             ),
