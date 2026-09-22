@@ -18,10 +18,12 @@ import '../models/imovel.dart';
 // O desenho fica em cache por tipo: sao poucos pins diferentes e recriar o
 // bitmap a cada rebuild da lista de marcadores seria desperdicio.
 //
-// Cada tipo de anuncio tem cor E icone proprios: de longe a cor separa, de
-// perto o icone confirma. Hotel, mercado e farmacia ainda nao tem cadastro,
-// mas o pin ja existe -- quando o tipo for criado basta gravar o nome em
-// tipoImovel que tipoPinDoImovel() resolve sozinho.
+// Cada tipo de anuncio tem icone proprio; a cor so separa moradia fixa do
+// resto (hotel, mercado, farmacia, evento, faculdade, imobiliaria) -- entre
+// casa, apartamento, kitnet, republica e pensao quem diferencia de perto e o
+// icone, a cor e a mesma pros cinco. Hotel, mercado e farmacia ainda nao tem
+// cadastro, mas o pin ja existe -- quando o tipo for criado basta gravar o
+// nome em tipoImovel que tipoPinDoImovel() resolve sozinho.
 enum TipoPin {
   casa,
   apartamento,
@@ -89,38 +91,35 @@ class PinsMapa {
     return gerado;
   }
 
+  // moradia fixa (casa, apartamento, kitnet, republica, pensao) usa sempre o
+  // mesmo azul: de longe todo pin de moradia le igual, e quem diferencia o
+  // tipo de perto e o icone, nao a cor. So sai dessa familia quem nao e
+  // moradia fixa (hotel, mercado, farmacia, evento, faculdade, imobiliaria).
+  static const _corMoradia = [Color(0xFF1C5A8F), Color(0xFF12294A)];
+
   static (List<Color>, IconData, double) _estilo(TipoPin tipo) => switch (tipo) {
-        // casa: azul da marca, o caso mais comum no mapa e o padrao pra
-        // anuncio sem tipo
         TipoPin.casa => (
-            const [Color(0xFF1C5A8F), Color(0xFF12294A)],
+            _corMoradia,
             Icons.home_rounded,
             1.0,
           ),
-        // apartamento: indigo, vizinho do azul da casa -- os dois sao
-        // moradia "comum", so muda o predio no lugar da casa
         TipoPin.apartamento => (
-            const [Color(0xFF34458F), Color(0xFF171F4A)],
+            _corMoradia,
             Icons.apartment_rounded,
             1.0,
           ),
-        // kitnet: cinza-azulado, mesma familia fria das moradias
         TipoPin.kitnet => (
-            const [Color(0xFF4A5F6B), Color(0xFF1D282E)],
+            _corMoradia,
             Icons.door_back_door_rounded,
             1.0,
           ),
-        // republica: vinho. Ja foi laranja, mas chamava atencao demais perto
-        // dos tons escuros do resto do mapa -- toda a paleta fica fechada e
-        // quem diferencia e a matiz, nao o brilho
         TipoPin.republica => (
-            const [Color(0xFF8A2D4B), Color(0xFF3B0F1F)],
+            _corMoradia,
             Icons.groups_rounded,
             1.0,
           ),
-        // pensao: marrom, quarto com refeicao -- a cama diz "quarto", nao casa
         TipoPin.pensao => (
-            const [Color(0xFF6E4E3C), Color(0xFF2E1E15)],
+            _corMoradia,
             Icons.bed_rounded,
             1.0,
           ),

@@ -6,6 +6,7 @@ import '../models/filtro_state.dart' show cidadeFiltroGlobal;
 import '../models/imovel.dart';
 import '../utils/moeda.dart';
 import '../models/usuario.dart';
+import '../utils/cor_foto.dart';
 import '../widgets/card_imovel_vertical.dart';
 
 class TelaResumo extends StatefulWidget {
@@ -87,28 +88,32 @@ class _TelaResumoState extends State<TelaResumo> with SingleTickerProviderStateM
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Avatar do usuario ou icone fallback
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: gradientePrincipal,
-                      boxShadow: AppShadows.marca(forca: 0.3),
-                      border: Border.all(
-                        color: isDark ? Colors.white.withAlpha(40) : Colors.white,
-                        width: 2,
-                      ),
-                    ),
-                    child: ClipOval(
-                      child: widget.perfil.fotoUrl.isNotEmpty
-                          ? Image.network(
-                              widget.perfil.fotoUrl,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) => const Icon(Icons.person_rounded, color: Colors.white),
-                            )
-                          : const Icon(Icons.person_rounded, color: Colors.white, size: 24),
-                    ),
+                  // Avatar do usuario ou icone fallback -- com foto, a borda
+                  // orna com a cor da propria foto em vez do branco fixo
+                  FutureBuilder<Color?>(
+                    future: widget.perfil.fotoUrl.isNotEmpty ? corDaFoto(widget.perfil.fotoUrl) : null,
+                    builder: (context, snapshot) {
+                      final corBorda = snapshot.data ?? (isDark ? Colors.white.withAlpha(40) : Colors.white);
+                      return Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: gradientePrincipal,
+                          boxShadow: AppShadows.marca(forca: 0.3),
+                          border: Border.all(color: corBorda, width: 2),
+                        ),
+                        child: ClipOval(
+                          child: widget.perfil.fotoUrl.isNotEmpty
+                              ? Image.network(
+                                  widget.perfil.fotoUrl,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) => const Icon(Icons.person_rounded, color: Colors.white),
+                                )
+                              : const Icon(Icons.person_rounded, color: Colors.white, size: 24),
+                        ),
+                      );
+                    },
                   ),
                   const SizedBox(width: AppSpacing.md),
                   Expanded(
