@@ -72,6 +72,28 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
       _tipoSelecionado == 'proprietario' ||
       (_tipoSelecionado == 'corretor' && _subtipoCorretor == 'autonomo');
 
+  // documento e identidade: depois que o cadastro esta finalizado, CPF/CNPJ
+  // viram somente leitura. Trocar o numero depois valeria por trocar de
+  // pessoa -- e o perfil ja circulou em anuncio, chat e avaliacao com ele.
+  // Vale campo a campo: quem completou o perfil como estudante e so agora
+  // virou corretor de empresa nunca informou CNPJ da empresa, entao esse
+  // ainda esta liberado
+  bool get _documentoBloqueado =>
+      widget.perfil.perfilCompleto &&
+      (widget.perfil.cpf.isNotEmpty || widget.perfil.cnpj.isNotEmpty);
+
+  bool get _cnpjEmpresaBloqueado =>
+      widget.perfil.perfilCompleto && widget.perfil.cnpjEmpresa.isNotEmpty;
+
+  bool get _cpfResponsavelBloqueado =>
+      widget.perfil.perfilCompleto && widget.perfil.responsavelCpf.isNotEmpty;
+
+  // conta cadastrada com CNPJ tentando virar um tipo que so aceita CPF
+  // (estudante, corretor de empresa) -- como o documento nao pode mais mudar,
+  // a troca de tipo nao tem como ser salva
+  bool get _tipoConflitaComDocumento =>
+      _documentoBloqueado && widget.perfil.cnpj.isNotEmpty && !_permiteEscolherCnpj;
+
   int? get _idade => _dataNascimento != null ? calcularIdade(_dataNascimento!) : null;
 
   bool get _mostraSecaoResponsavel =>
@@ -203,6 +225,11 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
 
     if (_dataNascimento == null) return 'Informe a data de nascimento.';
 
+    if (_tipoConflitaComDocumento) {
+      return 'Sua conta está cadastrada com CNPJ e esse tipo de conta exige CPF. '
+          'O documento não pode ser alterado depois do cadastro.';
+    }
+
     final documento = _documentoController.text.trim();
     if (documento.isEmpty) return 'Informe o CPF${_permiteEscolherCnpj ? ' ou CNPJ' : ''}.';
     if (_documentoEhCnpj) {
@@ -263,7 +290,19 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
         return;
       }
 
-      final documento = _documentoController.text.trim();
+      // o que vale pros campos travados e o que ja esta no perfil, nunca o
+      // controller -- assim nem um estado de tela fora de sincronia troca o
+      // documento de quem ja finalizou o cadastro
+      final ehCnpj = _documentoBloqueado ? widget.perfil.cnpj.isNotEmpty : _documentoEhCnpj;
+      final documento = _documentoBloqueado
+          ? (widget.perfil.cnpj.isNotEmpty ? widget.perfil.cnpj : widget.perfil.cpf)
+          : _documentoController.text.trim();
+      final cnpjEmpresa = _cnpjEmpresaBloqueado
+          ? widget.perfil.cnpjEmpresa
+          : _cnpjEmpresaController.text.trim();
+      final cpfResponsavel = _cpfResponsavelBloqueado
+          ? widget.perfil.responsavelCpf
+          : _respCpfController.text.trim();
 
       // se for corretor de empresa, acha (ou cria) a imobiliaria pelo cnpj --
       // o vinculo so fica confirmado quando alguem que loga com o e-mail da
@@ -273,7 +312,7 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
       if (_mostraSecaoEmpresa) {
         imobiliariaId = await ImobiliariaService.instance.encontrarOuCriar(
           nome: _nomeEmpresaController.text.trim(),
-          cnpj: _cnpjEmpresaController.text.trim(),
+          cnpj: cnpjEmpresa,
           email: _emailEmpresaController.text.trim(),
           endereco: _enderecoEmpresaControllers.valor.formatado,
         );
@@ -294,17 +333,17 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
         // cidade "de interesse" agora vem direto da cidade do endereco --
         // nao pedimos mais separado (era duplicado, ver "Endereço atual" logo acima)
         cidade: _enderecoControllers.cidade.text.trim(),
-        cpf: _documentoEhCnpj ? '' : documento,
-        cnpj: _documentoEhCnpj ? documento : '',
+        cpf: ehCnpj ? '' : documento,
+        cnpj: ehCnpj ? documento : '',
         dataNascimento: _dataFormatada(_dataNascimento!),
         endereco: _enderecoControllers.valor,
         responsavelNome: _mostraSecaoResponsavel ? _respNomeController.text.trim() : '',
         responsavelEndereco: _mostraSecaoResponsavel ? _respEnderecoControllers.valor : const Endereco(),
-        responsavelCpf: _mostraSecaoResponsavel ? _respCpfController.text.trim() : '',
+        responsavelCpf: _mostraSecaoResponsavel ? cpfResponsavel : '',
         responsavelEmail: _mostraSecaoResponsavel ? _respEmailController.text.trim() : '',
         responsavelEmailVerificado: false,
         nomeEmpresa: _mostraSecaoEmpresa ? _nomeEmpresaController.text.trim() : '',
-        cnpjEmpresa: _mostraSecaoEmpresa ? _cnpjEmpresaController.text.trim() : '',
+        cnpjEmpresa: _mostraSecaoEmpresa ? cnpjEmpresa : '',
         enderecoEmpresa: _mostraSecaoEmpresa ? _enderecoEmpresaControllers.valor : const Endereco(),
         emailEmpresa: _mostraSecaoEmpresa ? _emailEmpresaController.text.trim() : '',
         emailEmpresaVerificado: false,
@@ -448,8 +487,11 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
                   onSelecionar: (valor) => setState(() {
                     _tipoSelecionado = valor;
                     if (valor != 'corretor') _subtipoCorretor = '';
-                    _documentoEhCnpj = false;
-                    _documentoController.clear();
+                    // documento ja finalizado nao acompanha a troca de tipo
+                    if (!_documentoBloqueado) {
+                      _documentoEhCnpj = false;
+                      _documentoController.clear();
+                    }
                   }),
                 ),
                 if (_tipoSelecionado == 'corretor') ...[
@@ -472,8 +514,10 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
                           label: 'Empresa',
                           onTap: () => setState(() {
                             _subtipoCorretor = 'empresa';
-                            _documentoEhCnpj = false;
-                            _documentoController.clear();
+                            if (!_documentoBloqueado) {
+                              _documentoEhCnpj = false;
+                              _documentoController.clear();
+                            }
                           }),
                         ),
                       ),
@@ -490,7 +534,7 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
                 titulo: 'Documento pessoal',
                 icone: Icons.badge_outlined,
                 filhos: [
-                  if (_permiteEscolherCnpj)
+                  if (_permiteEscolherCnpj && !_documentoBloqueado)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 14),
                       child: Row(
@@ -528,7 +572,24 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
                     isDark: isDark,
                     keyboardType: TextInputType.number,
                     formatters: [_documentoEhCnpj ? _mascaraCnpj : _mascaraCpf],
+                    bloqueado: _documentoBloqueado,
                   ),
+                  if (_documentoBloqueado) ...[
+                    const SizedBox(height: 8),
+                    _avisoBloqueado(
+                      isDark,
+                      '${_documentoEhCnpj ? 'CNPJ' : 'CPF'} não pode ser alterado depois que o '
+                      'cadastro é finalizado. Se o número estiver errado, fale com o suporte.',
+                    ),
+                  ],
+                  if (_tipoConflitaComDocumento) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Sua conta foi finalizada com CNPJ, e esse tipo de conta exige CPF. '
+                      'Como o documento não pode mudar, escolha Proprietário ou Corretor autônomo.',
+                      style: AppTextStyles.caption.copyWith(color: corErro),
+                    ),
+                  ],
                 ],
               ),
 
@@ -542,7 +603,12 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
                   _campo(controller: _nomeEmpresaController, label: 'Nome da empresa', icon: Icons.store_outlined, isDark: isDark),
                   const SizedBox(height: 14),
                   _campo(controller: _cnpjEmpresaController, label: 'CNPJ da empresa', icon: Icons.badge_outlined, isDark: isDark,
-                      keyboardType: TextInputType.number, formatters: [_mascaraCnpjEmpresa]),
+                      keyboardType: TextInputType.number, formatters: [_mascaraCnpjEmpresa],
+                      bloqueado: _cnpjEmpresaBloqueado),
+                  if (_cnpjEmpresaBloqueado) ...[
+                    const SizedBox(height: 8),
+                    _avisoBloqueado(isDark, 'O CNPJ da empresa ficou travado quando o cadastro foi finalizado.'),
+                  ],
                   const SizedBox(height: 14),
                   Text('Endereço corporativo', style: AppTextStyles.captionBold.copyWith(color: isDark ? Colors.white70 : Colors.black87)),
                   const SizedBox(height: 10),
@@ -573,7 +639,12 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
                   CampoEndereco(controllers: _respEnderecoControllers, isDark: isDark),
                   const SizedBox(height: 14),
                   _campo(controller: _respCpfController, label: 'CPF do responsável', icon: Icons.badge_outlined, isDark: isDark,
-                      keyboardType: TextInputType.number, formatters: [_mascaraCpfResponsavel]),
+                      keyboardType: TextInputType.number, formatters: [_mascaraCpfResponsavel],
+                      bloqueado: _cpfResponsavelBloqueado),
+                  if (_cpfResponsavelBloqueado) ...[
+                    const SizedBox(height: 8),
+                    _avisoBloqueado(isDark, 'O CPF do responsável ficou travado quando o cadastro foi finalizado.'),
+                  ],
                   const SizedBox(height: 14),
                   _campo(controller: _respEmailController, label: 'E-mail do responsável', icon: Icons.email_outlined, isDark: isDark,
                       keyboardType: TextInputType.emailAddress),
@@ -742,6 +813,7 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
     List<TextInputFormatter>? formatters,
     String? Function(String?)? validator,
     ValueChanged<String>? onChanged,
+    bool bloqueado = false,
   }) {
     return TextFormField(
       controller: controller,
@@ -750,12 +822,38 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
       inputFormatters: formatters,
       validator: validator,
       onChanged: onChanged,
-      style: TextStyle(color: isDark ? Colors.white : Colors.black87),
+      // readOnly em vez de enabled:false -- o texto continua selecionavel
+      // (da pra copiar o proprio documento) e o campo nao muda de altura
+      readOnly: bloqueado,
+      style: TextStyle(
+        color: bloqueado
+            ? (isDark ? Colors.white54 : Colors.black54)
+            : (isDark ? Colors.white : Colors.black87),
+      ),
       decoration: decoracaoCampo(
         isDark: isDark,
         rotulo: label,
         icone: icon,
+        sufixo: bloqueado
+            ? Icon(Icons.lock_outline_rounded, size: 19, color: isDark ? Colors.white38 : Colors.grey)
+            : null,
       ),
+    );
+  }
+
+  Widget _avisoBloqueado(bool isDark, String texto) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.lock_outline_rounded, size: 14, color: isDark ? Colors.white38 : Colors.grey),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            texto,
+            style: AppTextStyles.caption.copyWith(color: isDark ? Colors.white38 : Colors.grey),
+          ),
+        ),
+      ],
     );
   }
 }

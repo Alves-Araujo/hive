@@ -3,10 +3,38 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Depois que o cadastro e finalizado (perfilCompleto), CPF e CNPJ ficam
+    // imutaveis: sao o que identifica a pessoa em anuncio, chat e avaliacao,
+    // entao trocar o numero valeria por trocar de pessoa numa conta que ja
+    // tem historico. Antes a regra so olhava o dono, e o app inteiro
+    // confiava na tela -- quem chamasse o Firestore direto reescrevia
+    function documentoImutavel(campo) {
+      return resource.data.get(campo, '') == ''
+      || request.resource.data.get(campo, '') == resource.data.get(campo, '');
+    }
+
+    // documento da empresa/do responsavel e vinculo, nao identidade: pode ser
+    // apagado (deixou de ser corretor de empresa, fez 18 anos), so nao pode
+    // ser trocado por outro numero de uma vez
+    function vinculoImutavel(campo) {
+      return request.resource.data.get(campo, '') == ''
+      || documentoImutavel(campo);
+    }
+
+    function documentosPreservados() {
+      return resource.data.get('perfilCompleto', false) != true
+      || (documentoImutavel('cpf')
+      && documentoImutavel('cnpj')
+      && vinculoImutavel('cnpjEmpresa')
+      && vinculoImutavel('responsavelCpf'));
+    }
+
     // perfil do usuario (dados sensiveis: cpf, endereco, telefone...) -- so
     // o dono le e escreve o proprio
     match /usuarios/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read, create, delete: if request.auth != null && request.auth.uid == uid;
+      allow update: if request.auth != null && request.auth.uid == uid
+      && documentosPreservados();
 
       // avaliacoes recebidas -- qualquer logado le e cria a sua, ninguem edita
       // a de outra pessoa depois de publicada

@@ -71,9 +71,22 @@ class UsuarioService {
     if (atualizado != null) await PerfilPublicoService.instance.sincronizar(atualizado);
   }
 
-  // grava o formulario inteiro de "concluir perfil" de uma vez
+  // grava o formulario inteiro de "concluir perfil" de uma vez.
+  //
+  // CPF e CNPJ de quem ja finalizou o cadastro nunca vao no update: o
+  // documento e imutavel dali em diante (as regras do Firestore recusariam o
+  // update inteiro), entao o que estiver gravado prevalece sobre o que veio
+  // do formulario -- a tela ja bloqueia os campos, isto e a rede de seguranca
   Future<void> completarPerfil(Usuario usuario) async {
-    await _colecao.doc(usuario.uid).update(usuario.toMap());
+    final dados = usuario.toMap();
+    final anterior = (await _colecao.doc(usuario.uid).get()).data();
+    if (anterior != null && anterior['perfilCompleto'] == true) {
+      for (final campo in ['cpf', 'cnpj']) {
+        final salvo = anterior[campo];
+        if (salvo is String && salvo.isNotEmpty) dados[campo] = salvo;
+      }
+    }
+    await _colecao.doc(usuario.uid).update(dados);
     await PerfilPublicoService.instance.sincronizar(usuario);
   }
 
