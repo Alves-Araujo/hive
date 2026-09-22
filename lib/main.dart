@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
@@ -324,6 +325,13 @@ class MeuAppEstudantil extends StatelessWidget {
         return MaterialApp(
           title: 'Hive Moradias',
           debugShowCheckedModeBanner: false,
+          locale: const Locale('pt', 'BR'),
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: const [Locale('pt', 'BR')],
           themeMode: currentMode,
           theme: ThemeData(
             brightness: Brightness.light,
@@ -659,9 +667,10 @@ class _TelaPrincipalState extends State<TelaPrincipal>
                       size: 21,
                     ),
                   ),
-                  // o sininho fica no cabecalho do Resumo -- o ponto na aba
-                  // avisa quem esta no mapa ou no chat que tem novidade la
-                  if (index == 1)
+                  // notificacoes agora vivem no avatar de perfil, que fica no
+                  // Mapa -- o ponto aqui avisa quem esta no Resumo, Chat ou
+                  // Painel que tem novidade pra ver lá
+                  if (index == 0)
                     Positioned(
                       top: 5,
                       right: 14,

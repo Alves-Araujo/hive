@@ -190,7 +190,11 @@ class _ItemConversaStream extends StatelessWidget {
         if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
           final doc = snapshot.data!.docs.first;
           final data = doc.data() as Map<String, dynamic>;
-          ultimaMensagem = normalizarTracosOuVazio(data['texto']);
+          ultimaMensagem = switch (data['tipo']) {
+            'imagem' => '📷 Foto',
+            'audio' => '🎤 Áudio',
+            _ => normalizarTracosOuVazio(data['texto']),
+          };
           temMensagem = true;
 
           if (data['timestamp'] != null) {

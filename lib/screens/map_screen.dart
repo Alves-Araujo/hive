@@ -9,6 +9,7 @@ import 'package:geolocator/geolocator.dart';
 import 'concluir_perfil_screen.dart';
 import 'detalhes_imovel_screen.dart';
 import 'novo_anuncio_screen.dart';
+import 'notificacoes_screen.dart';
 import '../main.dart';
 import '../models/imobiliaria.dart';
 import '../models/imovel.dart';
@@ -18,8 +19,10 @@ import '../services/auth_service.dart';
 import '../services/busca_service.dart';
 import '../services/imobiliaria_service.dart';
 import '../services/localizacao_service.dart';
+import '../services/notificacao_service.dart';
 import '../services/rota_service.dart';
 import '../services/usuario_service.dart';
+import '../utils/cor_foto.dart';
 import '../utils/distancia.dart';
 import '../utils/pins_mapa.dart';
 import '../utils/moderacao.dart';
@@ -2106,6 +2109,10 @@ class _CentroDoMapaState extends State<CentroDoMapa>
             Navigator.pop(sheetContext);
             _confirmarLogout();
           },
+          onVerNotificacoes: () {
+            Navigator.pop(sheetContext);
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificacoesScreen()));
+          },
         );
       },
     );
@@ -2375,9 +2382,15 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     );
   }
 
-  // avatar com anel de estado, igual a referencia. O anel comunica perfil
-  // completo (verde) ou pendente (ambar) de longe, sem texto -- antes isso era
-  // so um pontinho vermelho de 10px, facil de nao ver
+  // avatar com anel de estado, igual a referencia. Pendente (cadastro
+  // incompleto) sempre ambar, pra nao se perder no meio da cor da foto.
+  // Completo: verde por padrao, ou a cor extraida da propria foto de perfil
+  // quando tem uma -- o anel passa a ornar com a pessoa em vez de ser um
+  // verde generico.
+  //
+  // O ponto no canto muda de papel dependendo do estado: com o cadastro
+  // pendente ele reforça o ambar do anel; com o cadastro completo ele vira
+  // o indicador de notificação não lida (some assim que não tem novidade).
   Widget _buildGlassButton({
     required Widget child,
     required VoidCallback onTap,
@@ -2385,7 +2398,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   }) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
     final bool pendente = badgeColor != null;
-    final Color corAnel = pendente ? corAtencao : corSucesso;
+    final String fotoUrl = _perfilAtual.fotoUrl;
 
     return Pressionavel(
       onTap: onTap,
@@ -2404,17 +2417,32 @@ class _CentroDoMapaState extends State<CentroDoMapa>
             ),
             // anel por cima, sem preenchimento
             IgnorePointer(
-              child: Container(
-                width: 46,
-                height: 46,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: corAnel.withAlpha(215), width: 2),
-                ),
+              child: FutureBuilder<Color?>(
+                future: (!pendente && fotoUrl.isNotEmpty) ? corDaFoto(fotoUrl) : null,
+                builder: (context, snapshot) {
+                  final corAnel = pendente ? corAtencao : (snapshot.data ?? corSucesso);
+                  return Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: corAnel.withAlpha(215), width: 2),
+                    ),
+                  );
+                },
               ),
             ),
-            // UM ponto só (perfil pendente/completo).
-            Positioned(top: 1, right: 2, child: _pontoAnel(corAnel, isDark)),
+            Positioned(
+              top: 1,
+              right: 2,
+              child: pendente
+                  ? _pontoAnel(corAtencao, isDark)
+                  : ValueListenableBuilder<int>(
+                      valueListenable: NotificacaoService.instance.naoLidas,
+                      builder: (_, naoLidas, _) =>
+                          naoLidas > 0 ? _pontoAnel(corErro, isDark) : const SizedBox.shrink(),
+                    ),
+            ),
           ],
         ),
       ),
@@ -2935,8 +2963,14 @@ class _PerfilPreview extends StatelessWidget {
   final Usuario perfil;
   final VoidCallback onConcluirPerfil;
   final VoidCallback onSair;
+  final VoidCallback onVerNotificacoes;
 
-  const _PerfilPreview({required this.perfil, required this.onConcluirPerfil, required this.onSair});
+  const _PerfilPreview({
+    required this.perfil,
+    required this.onConcluirPerfil,
+    required this.onSair,
+    required this.onVerNotificacoes,
+  });
 
   String get _rotuloTipo {
     switch (perfil.tipoUsuario.toLowerCase()) {
@@ -3013,6 +3047,26 @@ class _PerfilPreview extends StatelessWidget {
           AnimatedGradientButton(
             label: perfil.perfilCompleto ? 'Editar Perfil' : 'Concluir Perfil',
             onTap: onConcluirPerfil,
+          ),
+          const SizedBox(height: 12),
+          ValueListenableBuilder<int>(
+            valueListenable: NotificacaoService.instance.naoLidas,
+            builder: (_, naoLidas, _) => OutlinedButton.icon(
+              onPressed: onVerNotificacoes,
+              icon: Icon(Icons.notifications_none_rounded, color: isDark ? Colors.white : Colors.black87, size: 18),
+              label: Text(
+                naoLidas > 0 ? 'Notificações ($naoLidas)' : 'Notificações',
+                style: TextStyle(
+                  color: isDark ? Colors.white : Colors.black87,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(44),
+                side: BorderSide(color: isDark ? Colors.white24 : Colors.black12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
+              ),
+            ),
           ),
           const SizedBox(height: 12),
           TextButton.icon(

@@ -1,5 +1,9 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
@@ -11,7 +15,6 @@ import '../models/perfil_publico.dart';
 import '../models/usuario.dart';
 import '../services/notificacao_service.dart';
 import '../services/perfil_publico_service.dart';
-import '../services/storage_service.dart';
 import '../services/usuario_service.dart';
 import '../utils/chamada.dart';
 import '../widgets/avatar_widget.dart';
@@ -50,9 +53,27 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   Usuario? _meuPerfil;
   PerfilPublico? _contato;
 
+  // foto e audio vao em base64 dentro da propria mensagem: o firebase storage
+  // nao esta ativo no projeto e a chave do imgbb foi bloqueada. Documento do
+  // firestore tem teto de 1MB: a 32kbps, 2 minutos de audio dao ~650KB ja em
+  // base64; a foto sai reduzida pra 1280px, o que fica bem abaixo disso
+  static const int _duracaoMaximaAudio = 120;
+  static const int _tamanhoMaximoMidia = 900 * 1024;
+
+  // bytes das fotos ja decodificados, pra nao refazer o base64 a cada rebuild
+  final Map<String, Uint8List> _imagensCache = {};
+
   bool _gravandoAudio = false;
   bool _enviandoMidia = false;
   String? _audioTocandoId;
+  int _segundosGravando = 0;
+  Timer? _timerGravacao;
+
+  // criado uma unica vez: se ficasse inline no build(), cada segundo de
+  // gravacao (que da setState pra atualizar o cronometro) recriava o stream
+  // e o chat piscava voltando pro loading
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _mensagensStream =
+      _mensagensRef.orderBy('timestamp', descending: true).snapshots();
 
   @override
   void initState() {
@@ -149,20 +170,26 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   Future<void> _escolherEEnviarFoto(ImageSource source) async {
     Navigator.pop(context); // fecha a folha de opcoes de anexo
-    final imagem = await _picker.pickImage(source: source, imageQuality: 70);
+    final XFile? imagem;
+    try {
+      imagem = await _picker.pickImage(source: source, maxWidth: 1280, maxHeight: 1280, imageQuality: 60);
+    } catch (e) {
+      _mostrarErro(source == ImageSource.camera
+          ? 'Libere o acesso à câmera nas configurações do celular pra tirar foto.'
+          : 'Não deu pra abrir a galeria: $e');
+      return;
+    }
     if (imagem == null) return;
 
     setState(() => _enviandoMidia = true);
     try {
-      final caminho = 'chats/${widget.imovelId}/midia/${DateTime.now().microsecondsSinceEpoch}.jpg';
-      final url = await StorageService.instance.enviarArquivo(File(imagem.path), caminho);
-      await _enviarDocumentoMensagem({'tipo': 'imagem', 'midiaUrl': url});
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro ao enviar foto: $e'), backgroundColor: corErro),
-        );
+      final base64 = base64Encode(await imagem.readAsBytes());
+      if (base64.length > _tamanhoMaximoMidia) {
+        throw Exception('foto grande demais');
       }
+      await _enviarDocumentoMensagem({'tipo': 'imagem', 'imagemBase64': base64});
+    } catch (e) {
+      _mostrarErro('Erro ao enviar foto: $e');
     } finally {
       if (mounted) setState(() => _enviandoMidia = false);
     }
@@ -223,43 +250,128 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     );
   }
 
+  void _mostrarErro(String mensagem) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(mensagem), backgroundColor: corErro),
+    );
+  }
+
   Future<void> _alternarGravacaoAudio() async {
     if (_gravandoAudio) {
-      final caminho = await _recorder.stop();
-      setState(() => _gravandoAudio = false);
-      if (caminho == null) return;
-
-      setState(() => _enviandoMidia = true);
-      try {
-        final destino = 'chats/${widget.imovelId}/midia/${DateTime.now().microsecondsSinceEpoch}.m4a';
-        final url = await StorageService.instance.enviarArquivo(File(caminho), destino);
-        await _enviarDocumentoMensagem({'tipo': 'audio', 'midiaUrl': url});
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Erro ao enviar áudio: $e'), backgroundColor: corErro),
-          );
-        }
-      } finally {
-        if (mounted) setState(() => _enviandoMidia = false);
-      }
+      await _pararEEnviarAudio();
     } else {
-      if (!await _recorder.hasPermission()) return;
-      final diretorio = Directory.systemTemp;
-      final caminho = '${diretorio.path}/audio_${DateTime.now().microsecondsSinceEpoch}.m4a';
-      await _recorder.start(const RecordConfig(), path: caminho);
-      setState(() => _gravandoAudio = true);
+      await _comecarGravacao();
     }
   }
 
-  Future<void> _alternarReproducaoAudio(String mensagemId, String url) async {
+  Future<void> _comecarGravacao() async {
+    if (!await _recorder.hasPermission()) {
+      _mostrarErro('Libere o acesso ao microfone nas configurações do celular pra gravar áudio.');
+      return;
+    }
+    try {
+      final pasta = await getTemporaryDirectory();
+      final caminho = '${pasta.path}/audio_${DateTime.now().microsecondsSinceEpoch}.m4a';
+      // qualidade de voz, mono -- mantem o arquivo pequeno o bastante pro firestore
+      await _recorder.start(
+        const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 32000, sampleRate: 22050, numChannels: 1),
+        path: caminho,
+      );
+    } catch (e) {
+      _mostrarErro('Não deu pra começar a gravação: $e');
+      return;
+    }
+    setState(() {
+      _gravandoAudio = true;
+      _segundosGravando = 0;
+    });
+    _timerGravacao = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() => _segundosGravando++);
+      if (_segundosGravando >= _duracaoMaximaAudio) _pararEEnviarAudio();
+    });
+  }
+
+  Future<void> _pararEEnviarAudio() async {
+    _timerGravacao?.cancel();
+    _timerGravacao = null;
+    final caminho = await _recorder.stop();
+    setState(() {
+      _gravandoAudio = false;
+      _enviandoMidia = true;
+    });
+    try {
+      if (caminho == null) throw Exception('a gravação não gerou arquivo');
+      final arquivo = File(caminho);
+      final bytes = await arquivo.readAsBytes();
+      arquivo.delete().ignore();
+      if (bytes.isEmpty) return;
+      final base64 = base64Encode(bytes);
+      if (base64.length > _tamanhoMaximoMidia) {
+        throw Exception('áudio grande demais, grave um mais curto');
+      }
+      await _enviarDocumentoMensagem({
+        'tipo': 'audio',
+        'audioBase64': base64,
+        'duracao': _segundosGravando,
+      });
+    } catch (e) {
+      _mostrarErro('Erro ao enviar áudio: $e');
+    } finally {
+      if (mounted) setState(() => _enviandoMidia = false);
+    }
+  }
+
+  Future<void> _alternarReproducaoAudio(String mensagemId, Map<String, dynamic> msg) async {
     if (_audioTocandoId == mensagemId) {
       await _player.pause();
       setState(() => _audioTocandoId = null);
-    } else {
-      await _player.play(UrlSource(url));
-      setState(() => _audioTocandoId = mensagemId);
+      return;
     }
+    try {
+      final base64 = msg['audioBase64'] as String?;
+      if (base64 != null && base64.isNotEmpty) {
+        // tocar direto de bytes nao funciona em todo aparelho, entao passa por
+        // um arquivo temporario
+        final pasta = await getTemporaryDirectory();
+        final arquivo = File('${pasta.path}/chat_$mensagemId.m4a');
+        if (!await arquivo.exists()) await arquivo.writeAsBytes(base64Decode(base64));
+        await _player.play(DeviceFileSource(arquivo.path));
+      } else {
+        await _player.play(UrlSource(msg['midiaUrl'] as String));
+      }
+      setState(() => _audioTocandoId = mensagemId);
+    } catch (e) {
+      _mostrarErro('Não deu pra tocar o áudio: $e');
+    }
+  }
+
+  String _formatarDuracao(int segundos) =>
+      '${segundos ~/ 60}:${(segundos % 60).toString().padLeft(2, '0')}';
+
+  void _abrirFotoAmpliada({Uint8List? bytes, String? url}) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            iconTheme: const IconThemeData(color: Colors.white),
+          ),
+          body: Center(
+            child: InteractiveViewer(
+              maxScale: 4,
+              child: bytes != null
+                  ? Image.memory(bytes, fit: BoxFit.contain)
+                  : Image.network(url!, fit: BoxFit.contain),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   void _iniciarChamadaDeVoz() {
@@ -292,6 +404,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     if (NotificacaoService.instance.chatAberto == widget.imovelId) {
       NotificacaoService.instance.chatAberto = null;
     }
+    _timerGravacao?.cancel();
     _mensagemController.dispose();
     _recorder.dispose();
     _player.dispose();
@@ -361,8 +474,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       body: Column(
         children: [
           Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: _mensagensRef.orderBy('timestamp', descending: true).snapshots(),
+            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: _mensagensStream,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator(color: corPrimaria));
@@ -380,7 +493,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 final mensagens = snapshot.data!.docs;
                 // guardado pra saber quem avisar quando o dono responder
                 for (final doc in mensagens) {
-                  final uid = (doc.data() as Map<String, dynamic>)['remetenteUid'] as String? ?? '';
+                  final uid = doc.data()['remetenteUid'] as String? ?? '';
                   if (uid.isNotEmpty) _participantes.add(uid);
                 }
 
@@ -390,7 +503,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   itemCount: mensagens.length,
                   itemBuilder: (context, index) {
                     final doc = mensagens[index];
-                    final msg = doc.data() as Map<String, dynamic>;
+                    final msg = doc.data();
                     final bool isMinha = msg['remetente'] == emailUsuario;
                     final remetenteUid = msg['remetenteUid'] as String? ?? '';
                     final tipo = msg['tipo'] as String? ?? 'texto';
@@ -456,21 +569,37 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     );
 
     if (tipo == 'imagem') {
+      final base64 = msg['imagemBase64'] as String? ?? '';
       final url = msg['midiaUrl'] as String? ?? '';
+      Uint8List? bytes;
+      final Widget foto;
+      if (base64.isNotEmpty) {
+        bytes = _imagensCache.putIfAbsent(mensagemId, () => base64Decode(base64));
+        foto = Image.memory(bytes, width: 200, fit: BoxFit.cover, gaplessPlayback: true);
+      } else if (url.isNotEmpty) {
+        foto = Image.network(url, width: 200, fit: BoxFit.cover);
+      } else {
+        foto = const SizedBox(width: 160, height: 160);
+      }
       return Container(
         decoration: decoracaoBalao,
         padding: const EdgeInsets.all(4),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(12),
-          child: url.isEmpty
-              ? const SizedBox(width: 160, height: 160)
-              : Image.network(url, width: 200, fit: BoxFit.cover),
+          child: (bytes == null && url.isEmpty)
+              ? foto
+              : GestureDetector(
+                  onTap: () => _abrirFotoAmpliada(bytes: bytes, url: url.isEmpty ? null : url),
+                  child: foto,
+                ),
         ),
       );
     }
 
     if (tipo == 'audio') {
-      final url = msg['midiaUrl'] as String? ?? '';
+      final temAudio = (msg['audioBase64'] as String? ?? '').isNotEmpty ||
+          (msg['midiaUrl'] as String? ?? '').isNotEmpty;
+      final duracao = msg['duracao'] as int?;
       final tocando = _audioTocandoId == mensagemId;
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -479,7 +608,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             GestureDetector(
-              onTap: url.isEmpty ? null : () => _alternarReproducaoAudio(mensagemId, url),
+              onTap: temAudio ? () => _alternarReproducaoAudio(mensagemId, msg) : null,
               child: Icon(
                 tocando ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded,
                 color: isMinha ? Colors.white : corPrimaria,
@@ -488,7 +617,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             ),
             const SizedBox(width: 8),
             Text(
-              'Mensagem de voz',
+              duracao == null ? 'Mensagem de voz' : 'Mensagem de voz · ${_formatarDuracao(duracao)}',
               style: TextStyle(color: isMinha ? Colors.white : (isDark ? Colors.white : Colors.black87)),
             ),
           ],
@@ -547,7 +676,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                             children: [
                               const Icon(Icons.fiber_manual_record_rounded, color: corErro, size: 16),
                               const SizedBox(width: 8),
-                              Text('Gravando áudio...', style: TextStyle(color: isDark ? Colors.white70 : Colors.black87)),
+                              Text(
+                                'Gravando ${_formatarDuracao(_segundosGravando)} / ${_formatarDuracao(_duracaoMaximaAudio)}',
+                                style: TextStyle(color: isDark ? Colors.white70 : Colors.black87),
+                              ),
                             ],
                           )
                         : TextField(

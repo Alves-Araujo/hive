@@ -8,7 +8,7 @@ class ImgbbService {
   ImgbbService._();
   static final ImgbbService instance = ImgbbService._();
 
-  static const String _apiKey = 'e40e46c0ec8806fc210a96e82842971b';
+  static const String _apiKey = 'a68f19850179cfd6cf7c02e8ef771012';
   static final Uri _apiUrl = Uri.parse('https://api.imgbb.com/1/upload?key=$_apiKey');
 
   Future<String> enviarImagem(XFile imagem) async {
