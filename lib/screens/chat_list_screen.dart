@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import '../utils/texto.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../main.dart';
-import '../models/imovel.dart';
+import '../models/chat.dart';
+import '../models/perfil_publico.dart';
 import '../services/busca_global_service.dart';
+import '../services/chat_service.dart';
+import '../services/perfil_publico_service.dart';
+import '../utils/tempo.dart';
 import '../widgets/avatar_widget.dart';
 import '../widgets/cabecalho_tela.dart';
 import 'chat_detail_screen.dart';
@@ -23,6 +26,12 @@ class _TelaListaChatsState extends State<TelaListaChats> {
   Timer? _debounce;
   List<ResultadoBuscaGlobal> _resultados = [];
   bool _buscando = false;
+
+  // nome e foto de quem esta do outro lado de cada conversa. Fica em cache
+  // porque a lista se redesenha a cada mensagem nova, e sem isso cada
+  // redesenho refaria uma leitura no firestore por conversa
+  final Map<String, PerfilPublico> _contatos = {};
+  final Set<String> _buscandoContato = {};
 
   @override
   void initState() {
@@ -122,144 +131,153 @@ class _TelaListaChatsState extends State<TelaListaChats> {
     );
   }
 
+  // So as MINHAS conversas. Antes esta lista era a colecao "imoveis" inteira,
+  // com um stream da ultima mensagem de cada anuncio -- ou seja, todo usuario
+  // via a previa da conversa de todo mundo e entrava em qualquer uma delas
   Widget _buildListaDeChats(bool isDark) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('imoveis').snapshots(),
+    final meuUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (meuUid.isEmpty) return _vazio(isDark, 'Entre na sua conta para ver suas conversas.');
+
+    return StreamBuilder<List<Chat>>(
+      stream: ChatService.instance.conversasDe(meuUid),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator(color: corPrimaria));
         }
 
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.chat_bubble_outline, size: 56, color: isDark ? Colors.white24 : Colors.grey.shade300),
-                const SizedBox(height: 12),
-                Text('Nenhuma conversa encontrada.', style: TextStyle(color: isDark ? Colors.white38 : Colors.grey)),
-              ],
-            ),
-          );
+        final conversas = snapshot.data ?? const <Chat>[];
+        if (conversas.isEmpty) {
+          return _vazio(isDark, 'Nenhuma conversa ainda.\nFale com um anunciante para começar.');
         }
-
-        final imoveis = snapshot.data!.docs
-            .map((doc) => Imovel.fromMap(doc.data() as Map<String, dynamic>, doc.id))
-            .toList();
 
         return ListView.separated(
           padding: const EdgeInsets.symmetric(vertical: 8),
-          itemCount: imoveis.length,
+          itemCount: conversas.length,
           separatorBuilder: (context, index) => Divider(
             height: 1,
             indent: 76,
             color: isDark ? Colors.white.withAlpha(10) : Colors.grey.withAlpha(20),
           ),
           itemBuilder: (context, index) {
-            final imovel = imoveis[index];
-            return _ItemConversaStream(imovel: imovel, isDark: isDark);
+            final chat = conversas[index];
+            final contatoUid = chat.contatoUid(meuUid);
+            _carregarContato(contatoUid);
+            return _ItemConversa(
+              chat: chat,
+              contatoUid: contatoUid,
+              contato: _contatos[contatoUid],
+              isDark: isDark,
+            );
           },
         );
       },
     );
   }
+
+  // uma busca por pessoa, guardada pro resto da sessao da tela
+  void _carregarContato(String uid) {
+    if (uid.isEmpty || _contatos.containsKey(uid) || _buscandoContato.contains(uid)) return;
+    _buscandoContato.add(uid);
+    PerfilPublicoService.instance.buscarPorUid(uid).then((perfil) {
+      if (perfil != null && mounted) setState(() => _contatos[uid] = perfil);
+    });
+  }
+
+  Widget _vazio(bool isDark, String mensagem) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.chat_bubble_outline, size: 56, color: isDark ? Colors.white24 : Colors.grey.shade300),
+          const SizedBox(height: 12),
+          Text(
+            mensagem,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: isDark ? Colors.white38 : Colors.grey),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-class _ItemConversaStream extends StatelessWidget {
-  final Imovel imovel;
+// Um item da caixa de entrada. A previa e o horario saem do proprio
+// documento da conversa: antes cada item abria um stream da subcolecao de
+// mensagens, o que so funcionava porque a leitura era liberada pra todos
+class _ItemConversa extends StatelessWidget {
+  final Chat chat;
+  final String contatoUid;
+
+  // nulo enquanto o perfil ainda esta sendo buscado
+  final PerfilPublico? contato;
   final bool isDark;
 
-  const _ItemConversaStream({required this.imovel, required this.isDark});
+  const _ItemConversa({
+    required this.chat,
+    required this.contatoUid,
+    required this.contato,
+    required this.isDark,
+  });
 
   @override
   Widget build(BuildContext context) {
-    // escuta a ultima mensagem da subcolecao em tempo real
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('chats')
-          .doc(imovel.id)
-          .collection('mensagens')
-          .orderBy('timestamp', descending: true)
-          .limit(1)
-          .snapshots(),
-      builder: (context, snapshot) {
-        String ultimaMensagem = 'Toque para iniciar a conversa.';
-        String horario = '';
-        bool temMensagem = false;
+    final temMensagem = chat.ultimaMensagem.isNotEmpty;
+    // o nome e a foto sao do outro lado da conversa, nao do anuncio
+    final nome = (contato?.nome.isNotEmpty ?? false) ? contato!.nome : 'Usuário Hive';
 
-        if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
-          final doc = snapshot.data!.docs.first;
-          final data = doc.data() as Map<String, dynamic>;
-          ultimaMensagem = switch (data['tipo']) {
-            'imagem' => '📷 Foto',
-            'audio' => '🎤 Áudio',
-            _ => normalizarTracosOuVazio(data['texto']),
-          };
-          temMensagem = true;
-
-          if (data['timestamp'] != null) {
-            final dt = (data['timestamp'] as Timestamp).toDate();
-            horario = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-          }
-        }
-
-        return ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-          leading: Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              image: imovel.fotos.isNotEmpty
-                  ? DecorationImage(image: NetworkImage(imovel.fotos.first), fit: BoxFit.cover)
-                  : null,
-              gradient: imovel.fotos.isEmpty
-                  ? const LinearGradient(colors: [corPrimaria, corPrimaria2], begin: Alignment.topLeft, end: Alignment.bottomRight)
-                  : null,
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+      leading: AvatarWidget(nome: nome, fotoUrl: contato?.fotoUrl, size: 48),
+      title: Text(
+        nome,
+        style: TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: 15,
+          color: isDark ? Colors.white : Colors.black87,
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // qual anuncio gerou a conversa -- o chat direto nao tem
+          if (chat.imovelTitulo.isNotEmpty)
+            Text(
+              'Ref: ${chat.imovelTitulo}',
+              style: const TextStyle(fontSize: 11, color: corPrimaria),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-            child: imovel.fotos.isEmpty
-                ? const Icon(Icons.home_rounded, color: Colors.white, size: 22)
-                : null,
-          ),
-          title: Text(
-            imovel.titulo,
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          subtitle: Text(
-            ultimaMensagem,
+          Text(
+            temMensagem ? chat.ultimaMensagem : 'Toque para abrir a conversa.',
             style: TextStyle(
               fontSize: 13,
-              color: temMensagem ? (isDark ? Colors.white70 : Colors.black87) : (isDark ? Colors.white38 : Colors.grey),
+              color: temMensagem
+                  ? (isDark ? Colors.white70 : Colors.black87)
+                  : (isDark ? Colors.white38 : Colors.grey),
               fontWeight: temMensagem ? FontWeight.w500 : FontWeight.normal,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
-          trailing: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              if (horario.isNotEmpty)
-                Text(
-                  horario,
-                  style: TextStyle(fontSize: 12, color: isDark ? Colors.white38 : Colors.grey),
-                ),
-            ],
+        ],
+      ),
+      trailing: Text(
+        formatarTempoRelativo(chat.atualizadoEm),
+        style: TextStyle(fontSize: 12, color: isDark ? Colors.white38 : Colors.grey),
+      ),
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ChatDetailScreen(
+              chatId: chat.id,
+              contatoUid: contatoUid,
+              imovelId: chat.imovelId,
+              imovelTitulo: chat.imovelTitulo,
+            ),
           ),
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => ChatDetailScreen(
-                  imovelTitulo: imovel.titulo,
-                  imovelId: imovel.id,
-                  donoUid: imovel.donoUid,
-                ),
-              ),
-            );
-          },
         );
       },
     );

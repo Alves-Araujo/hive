@@ -14,7 +14,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
-        android:label="moradia_app"
+        android:label="Hive"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 

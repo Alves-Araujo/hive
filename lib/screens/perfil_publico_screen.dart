@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../main.dart';
 import '../models/avaliacao.dart';
+import '../models/chat.dart';
 import '../models/imobiliaria.dart';
 import '../models/imovel.dart';
 import '../models/perfil_publico.dart';
@@ -70,11 +71,12 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
   void _enviarMensagem() {
     final meuUid = FirebaseAuth.instance.currentUser?.uid;
     if (meuUid == null || widget.pessoa == null) return;
-    final chatId = gerarIdParUsuarios('direto', meuUid, widget.pessoa!.uid);
+    // sem imovelId: e a conversa entre as duas pessoas, nao a de um anuncio
+    final chatId = gerarIdChat(imovelId: '', uidA: meuUid, uidB: widget.pessoa!.uid);
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ChatDetailScreen(imovelId: chatId, imovelTitulo: '', donoUid: widget.pessoa!.uid),
+        builder: (_) => ChatDetailScreen(chatId: chatId, contatoUid: widget.pessoa!.uid),
       ),
     );
   }

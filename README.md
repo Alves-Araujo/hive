@@ -30,7 +30,7 @@ O **Hive** resolve um problema concreto de cidade universitária: encontrar mora
 - Anúncio liberado apenas para quem completou o perfil
 
 **Comunicação**
-- Chat por imóvel, entre interessado e anunciante
+- Chat privado entre o interessado e o anunciante, uma conversa por interessado
 - Envio de fotos e **mensagens de áudio** dentro da conversa
 - **Chamada de voz e vídeo** integrada
 
@@ -63,7 +63,18 @@ As permissões ficam nas regras do Firebase, versionadas junto com o código em 
 - Perfil público separado do privado, para busca e chat não exporem dado pessoal
 - Anúncio só pode ser criado por quem completou o perfil, e só o dono edita ou apaga
 - Avaliação não pode ser publicada em nome de outra pessoa
+- **Conversa só é lida e escrita pelas duas pessoas dela**, e ninguém assina mensagem em nome de outra
 - Upload no chat limitado a 32 MB por arquivo
+
+As regras do chat são as mais fáceis de quebrar sem perceber, porque o app
+continua funcionando para quem participa da conversa mesmo quando ela está
+aberta para todo mundo. Por isso elas têm teste próprio, rodado contra o
+emulador do Firestore:
+
+```bash
+cd test/rules && npm install && cd ../..
+firebase emulators:exec --only firestore "node test/rules/chats.test.mjs"
+```
 
 ---
 

@@ -185,7 +185,10 @@ class NotificacaoService {
     );
   }
 
-  // contatoUid e com quem o DESTINATARIO conversa ao abrir o aviso
+  // contatoUid e com quem o DESTINATARIO conversa ao abrir o aviso -- ou
+  // seja, eu. Hoje a conversa e sempre entre duas pessoas, entao
+  // destinatarios traz so o outro lado; continua sendo lista porque o metodo
+  // ja filtra uid vazio e o proprio autor
   Future<void> avisarNovaMensagem({
     required Iterable<String> destinatarios,
     required String remetenteNome,

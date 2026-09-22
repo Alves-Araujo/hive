@@ -65,10 +65,11 @@ Future<void> abrirNotificacao(BuildContext context, Notificacao n) async {
       navigator.push(MaterialPageRoute(builder: (_) => PerfilPublicoScreen(imobiliaria: imobiliaria)));
     case TipoNotificacao.novaMensagem:
       navigator.push(MaterialPageRoute(
+        // alvoId e o chatId, e contatoUid e quem mandou a mensagem
         builder: (_) => ChatDetailScreen(
-          imovelId: n.alvoId,
+          chatId: n.alvoId,
+          contatoUid: n.contatoUid,
           imovelTitulo: n.imovelTitulo,
-          donoUid: n.contatoUid,
         ),
       ));
     case TipoNotificacao.novaAvaliacao:

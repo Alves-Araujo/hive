@@ -10,6 +10,9 @@
 analyzer:
   exclude:
     - build/**
+    # dependencias dos testes das regras do firestore -- o firebase-tools traz
+    # templates .dart que nao compilam fora do contexto dele
+    - test/rules/node_modules/**
     - android/**
     - ios/**
     - web/**

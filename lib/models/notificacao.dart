@@ -10,6 +10,12 @@ enum TipoNotificacao { novaMoradia, novoEvento, novaImobiliaria, novaMensagem, n
 // - avisos pra UMA pessoa (mensagem, avaliacao) ficam em
 //   "usuarios/{uid}/notificacoes", que so o dono le
 // Separar evita indice composto no firestore: cada consulta e so um orderBy
+//
+// Quem recebe o aviso de uma mensagem nao precisa mais ser calculado: toda
+// conversa e entre duas pessoas (ver models/chat.dart), entao o destinatario
+// e sempre o outro lado. Antes o chat de anuncio juntava todos os
+// interessados numa sala so, e era preciso descobrir a quem avisar
+
 class Notificacao {
   final String id;
   final TipoNotificacao tipo;
@@ -20,8 +26,8 @@ class Notificacao {
   // id do que abrir ao tocar: imovel, imobiliaria ou chat, conforme o tipo
   final String alvoId;
 
-  // so pra mensagem: com quem a conversa e (o "donoUid" da ChatDetailScreen)
-  // e o titulo do anuncio, quando o chat e de um anuncio
+  // so pra mensagem: com quem o DESTINATARIO conversa ao abrir o aviso (ou
+  // seja, quem mandou) e o titulo do anuncio, quando o chat e de um anuncio
   final String contatoUid;
   final String imovelTitulo;
 

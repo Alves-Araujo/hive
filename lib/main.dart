@@ -327,7 +327,7 @@ class MeuAppEstudantil extends StatelessWidget {
         ));
 
         return MaterialApp(
-          title: 'Hive Moradias',
+          title: 'Hive',
           debugShowCheckedModeBanner: false,
           locale: const Locale('pt', 'BR'),
           localizationsDelegates: const [

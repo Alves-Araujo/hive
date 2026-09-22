@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../main.dart';
 import '../models/avaliacao.dart';
+import '../models/chat.dart';
 import '../models/imovel.dart';
 import '../models/perfil_publico.dart';
 import '../services/avaliacao_service.dart';
@@ -57,6 +59,27 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
   void dispose() {
     _fotoController.dispose();
     super.dispose();
+  }
+
+  String get _meuUid => FirebaseAuth.instance.currentUser?.uid ?? '';
+
+  // Uma conversa por interessado: o id junta o anuncio e as duas pessoas.
+  // Antes o id era so o imovelId, entao todo mundo que escrevia naquele
+  // anuncio caia na mesma sala e lia o que os outros mandaram
+  void _abrirConversaComDono(Imovel imovel) {
+    final meuUid = _meuUid;
+    if (meuUid.isEmpty) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatDetailScreen(
+          chatId: gerarIdChat(imovelId: imovel.id, uidA: meuUid, uidB: imovel.donoUid),
+          contatoUid: imovel.donoUid,
+          imovelId: imovel.id,
+          imovelTitulo: imovel.titulo,
+        ),
+      ),
+    );
   }
 
   void _dispararRotaEVoltar({required LatLng origem, required LatLng destino, required String nomeDestino}) {
@@ -709,23 +732,14 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
                   onTap: _abrirModalDeRota,
                 ),
               ),
-              if (!isEvento) ...[
+              // o dono nao conversa com o proprio anuncio -- antes o botao
+              // aparecia pra ele tambem e abria um chat consigo mesmo
+              if (!isEvento && imovel.donoUid.isNotEmpty && imovel.donoUid != _meuUid) ...[
                 const SizedBox(width: AppSpacing.md),
                 // so o icone: dois botoes de largura cheia lado a lado nao
                 // cabem, e "Calcular Rota" e a acao principal aqui
                 Pressionavel(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => ChatDetailScreen(
-                          imovelTitulo: imovel.titulo,
-                          imovelId: imovel.id,
-                          donoUid: imovel.donoUid,
-                        ),
-                      ),
-                    );
-                  },
+                  onTap: () => _abrirConversaComDono(imovel),
                   child: Container(
                     width: 56,
                     height: 56,

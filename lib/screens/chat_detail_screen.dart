@@ -13,6 +13,7 @@ import '../utils/texto.dart';
 import '../main.dart';
 import '../models/perfil_publico.dart';
 import '../models/usuario.dart';
+import '../services/chat_service.dart';
 import '../services/notificacao_service.dart';
 import '../services/perfil_publico_service.dart';
 import '../services/usuario_service.dart';
@@ -21,16 +22,26 @@ import '../widgets/avatar_widget.dart';
 import 'concluir_perfil_screen.dart';
 import 'perfil_publico_screen.dart';
 
+// Uma conversa e sempre entre duas pessoas: eu e o contato. O chatId ja vem
+// pronto de quem abriu a tela (montado por gerarIdChat), porque os dois lados
+// precisam chegar ao mesmo id sozinhos
 class ChatDetailScreen extends StatefulWidget {
-  final String imovelTitulo;
+  final String chatId;
+
+  // o outro lado da conversa: o dono do anuncio, quando o interessado abre;
+  // o interessado, quando o dono responde pela caixa de entrada
+  final String contatoUid;
+
+  // vazios no chat direto (perfil -> perfil)
   final String imovelId;
-  final String donoUid;
+  final String imovelTitulo;
 
   const ChatDetailScreen({
     super.key,
-    required this.imovelTitulo,
-    required this.imovelId,
-    required this.donoUid,
+    required this.chatId,
+    required this.contatoUid,
+    this.imovelId = '',
+    this.imovelTitulo = '',
   });
 
   @override
@@ -42,13 +53,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   final ImagePicker _picker = ImagePicker();
   final AudioRecorder _recorder = AudioRecorder();
   final AudioPlayer _player = AudioPlayer();
-
-  // cache de perfis dos remetentes, pra mostrar o avatar ao lado das mensagens
-  final Map<String, PerfilPublico> _perfisCache = {};
-  final Set<String> _buscandoPerfil = {};
-
-  // todo mundo que ja escreveu aqui (preenchido pelo stream de mensagens)
-  final Set<String> _participantes = {};
 
   Usuario? _meuPerfil;
   PerfilPublico? _contato;
@@ -73,12 +77,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   // gravacao (que da setState pra atualizar o cronometro) recriava o stream
   // e o chat piscava voltando pro loading
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _mensagensStream =
-      _mensagensRef.orderBy('timestamp', descending: true).snapshots();
+      ChatService.instance.mensagensRecentes(widget.chatId);
 
   @override
   void initState() {
     super.initState();
-    NotificacaoService.instance.chatAberto = widget.imovelId;
+    NotificacaoService.instance.chatAberto = widget.chatId;
     _carregarMeuPerfil();
     _carregarContato();
 
@@ -97,66 +101,43 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     if (perfil != null && mounted) setState(() => _meuPerfil = perfil);
   }
 
+  // le da colecao publica, ja que "usuarios" so o proprio dono pode ler. Como
+  // a conversa e entre duas pessoas, esse mesmo perfil serve pro cabecalho e
+  // pro avatar de toda mensagem recebida
   Future<void> _carregarContato() async {
-    if (widget.donoUid.isEmpty) return;
-    final perfil = await PerfilPublicoService.instance.buscarPorUid(widget.donoUid);
+    if (widget.contatoUid.isEmpty) return;
+    final perfil = await PerfilPublicoService.instance.buscarPorUid(widget.contatoUid);
     if (perfil != null && mounted) setState(() => _contato = perfil);
   }
 
-  // busca sob demanda o perfil de quem mandou a mensagem (uma vez por uid) --
-  // le da colecao publica, ja que "usuarios" so o proprio dono pode ler
-  void _carregarPerfilRemetente(String uid) {
-    if (uid.isEmpty || _perfisCache.containsKey(uid) || _buscandoPerfil.contains(uid)) return;
-    _buscandoPerfil.add(uid);
-    PerfilPublicoService.instance.buscarPorUid(uid).then((perfil) {
-      if (perfil != null && mounted) {
-        setState(() => _perfisCache[uid] = perfil);
-      }
-    });
-  }
-
-  CollectionReference<Map<String, dynamic>> get _mensagensRef => FirebaseFirestore.instance
-      .collection('chats')
-      .doc(widget.imovelId)
-      .collection('mensagens');
-
   Future<void> _enviarDocumentoMensagem(Map<String, dynamic> dados) async {
-    final user = FirebaseAuth.instance.currentUser;
-    await _mensagensRef.add({
-      ...dados,
-      'remetente': user?.email ?? 'anonimo',
-      'remetenteUid': user?.uid ?? '',
-      'timestamp': FieldValue.serverTimestamp(),
-    });
-    _avisarDestinatarios(dados, user?.uid ?? '');
-  }
-
-  // Quem recebe o aviso depende do tipo de chat:
-  // - direto (perfil -> perfil): a outra pessoa, que e o donoUid daqui
-  // - de anuncio: se quem escreve e interessado, o dono do anuncio; se e o
-  //   dono respondendo, todo mundo que ja escreveu nessa conversa
-  void _avisarDestinatarios(Map<String, dynamic> dados, String meuUid) {
-    final ehDireto = widget.imovelId.startsWith('direto_');
-    final Iterable<String> destinatarios;
-    if (ehDireto || meuUid != widget.donoUid) {
-      destinatarios = [widget.donoUid];
-    } else {
-      destinatarios = _participantes;
-    }
+    final meuUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (meuUid.isEmpty || widget.contatoUid.isEmpty) return;
 
     final String previa = switch (dados['tipo']) {
       'imagem' => 'Enviou uma foto',
       'audio' => 'Enviou um áudio',
       _ => dados['texto'] as String? ?? '',
     };
+    final resumo = previa.length > 120 ? '${previa.substring(0, 120)}...' : previa;
 
+    await ChatService.instance.enviarMensagem(
+      chatId: widget.chatId,
+      dados: dados,
+      meuUid: meuUid,
+      contatoUid: widget.contatoUid,
+      previa: resumo,
+      imovelId: widget.imovelId,
+      imovelTitulo: widget.imovelTitulo,
+    );
+
+    // o aviso vai sempre pro outro lado, e quem recebe abre a conversa comigo
     NotificacaoService.instance.avisarNovaMensagem(
-      destinatarios: destinatarios,
+      destinatarios: [widget.contatoUid],
       remetenteNome: (_meuPerfil?.nome.isNotEmpty ?? false) ? _meuPerfil!.nome : 'Usuário Hive',
-      previa: previa.length > 120 ? '${previa.substring(0, 120)}...' : previa,
-      chatId: widget.imovelId,
-      // quem recebe abre a conversa com: no direto, eu; no de anuncio, o dono
-      contatoUid: ehDireto ? meuUid : widget.donoUid,
+      previa: resumo,
+      chatId: widget.chatId,
+      contatoUid: meuUid,
       imovelTitulo: widget.imovelTitulo,
     );
   }
@@ -377,7 +358,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   void _iniciarChamadaDeVoz() {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? 'anonimo';
     final nome = (_meuPerfil?.nome.isNotEmpty ?? false) ? _meuPerfil!.nome : 'Usuário Hive';
-    iniciarChamadaDeVoz(context, meuUid: uid, meuNome: nome, outroUid: widget.donoUid);
+    iniciarChamadaDeVoz(context, meuUid: uid, meuNome: nome, outroUid: widget.contatoUid);
   }
 
   void _abrirPerfilDoContato() {
@@ -401,7 +382,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   @override
   void dispose() {
-    if (NotificacaoService.instance.chatAberto == widget.imovelId) {
+    if (NotificacaoService.instance.chatAberto == widget.chatId) {
       NotificacaoService.instance.chatAberto = null;
     }
     _timerGravacao?.cancel();
@@ -414,7 +395,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final emailUsuario = FirebaseAuth.instance.currentUser?.email ?? 'anonimo';
+    final meuUid = FirebaseAuth.instance.currentUser?.uid ?? '';
     final double larguraMaxima = MediaQuery.of(context).size.width * 0.7;
 
     return Scaffold(
@@ -491,11 +472,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 }
 
                 final mensagens = snapshot.data!.docs;
-                // guardado pra saber quem avisar quando o dono responder
-                for (final doc in mensagens) {
-                  final uid = doc.data()['remetenteUid'] as String? ?? '';
-                  if (uid.isNotEmpty) _participantes.add(uid);
-                }
 
                 return ListView.builder(
                   reverse: true,
@@ -504,15 +480,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   itemBuilder: (context, index) {
                     final doc = mensagens[index];
                     final msg = doc.data();
-                    final bool isMinha = msg['remetente'] == emailUsuario;
-                    final remetenteUid = msg['remetenteUid'] as String? ?? '';
+                    // pelo uid, nao pelo e-mail: o e-mail da conta pode mudar,
+                    // e as mensagens antigas ficariam do lado errado da tela
+                    final bool isMinha = (msg['remetenteUid'] as String? ?? '') == meuUid;
                     final tipo = msg['tipo'] as String? ?? 'texto';
-
-                    PerfilPublico? perfilRemetente;
-                    if (!isMinha && remetenteUid.isNotEmpty) {
-                      _carregarPerfilRemetente(remetenteUid);
-                      perfilRemetente = _perfisCache[remetenteUid];
-                    }
 
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 8),
@@ -523,9 +494,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             if (!isMinha) ...[
+                              // so o contato escreve do outro lado, entao o
+                              // perfil do cabecalho serve pra toda mensagem
                               AvatarWidget(
-                                nome: (perfilRemetente?.nome.isNotEmpty ?? false) ? perfilRemetente!.nome : '?',
-                                fotoUrl: perfilRemetente?.fotoUrl,
+                                nome: (_contato?.nome.isNotEmpty ?? false) ? _contato!.nome : '?',
+                                fotoUrl: _contato?.fotoUrl,
                                 size: 28,
                               ),
                               const SizedBox(width: 8),

@@ -1,0 +1,10 @@
+{
+  "name": "moradia-rules-test",
+  "private": true,
+  "type": "module",
+  "description": "Testes das regras do firestore -- conferem que a conversa so abre pra quem participa dela",
+  "dependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "firebase-tools": "^15.30.2"
+  }
+}

@@ -128,10 +128,63 @@ service cloud.firestore {
       && resource.data.donoUid == request.auth.uid;
     }
 
-    // chat -- qualquer logado pode ler, mas so quem completou o perfil manda mensagem
-    match /chats/{imovelId}/mensagens/{mensagemId} {
-      allow read: if request.auth != null;
-      allow create: if perfilCompleto();
+    // Chat. Conversa e sempre entre DUAS pessoas, e quem manda nisso e o
+    // documento pai chats/{chatId}, com o campo participantes. Antes a regra
+    // era "qualquer logado le", e o id do chat de anuncio era o proprio
+    // imovelId -- entao todo mundo lia a conversa de todo mundo, e os
+    // interessados num mesmo anuncio caiam todos na mesma sala
+    match /chats/{chatId} {
+      function participantes() {
+        return get(/databases/$(database)/documents/chats/$(chatId)).data.participantes;
+      }
+      function souParticipante() {
+        return request.auth != null && request.auth.uid in participantes();
+      }
+
+      // O id do chat TEM que ser o id derivado dos participantes:
+      // "direto_<uid>_<uid>" no chat de perfil, "<imovelId>_<uid>_<uid>" no de
+      // anuncio. Sem isso, bastava criar o pai de um chat antigo (id =
+      // imovelId), se pondo como participante, pra destrancar justamente o
+      // historico que essa mudanca fecha
+      function idDerivado() {
+        let p = request.resource.data.participantes;
+        // o chat direto nao grava imovelId -- dai o get() com padrao vazio
+        let imovel = request.resource.data.get('imovelId', '');
+        let prefixo = imovel == '' ? 'direto' : imovel;
+        return prefixo + '_' + p[0] + '_' + p[1];
+      }
+      function paiValido() {
+        let p = request.resource.data.participantes;
+        // p[0] < p[1] cobre as duas coisas: ordenados (pros dois lados
+        // chegarem ao mesmo id) e sem conversa de alguem consigo mesmo
+        return p is list && p.size() == 2 && p[0] < p[1]
+        && request.auth.uid in p
+        && chatId == idDerivado();
+      }
+
+      allow get: if souParticipante();
+
+      // a caixa de entrada consulta where('participantes', arrayContains: meu
+      // uid), e o firestore so aceita a consulta que garante esse filtro --
+      // por isso list fica separado de get, olhando resource.data
+      allow list: if request.auth != null && request.auth.uid in resource.data.participantes;
+
+      allow create: if perfilCompleto() && paiValido();
+
+      // so a previa/horario mudam depois; trocar os participantes seria
+      // entrar numa conversa alheia
+      allow update: if souParticipante() && perfilCompleto()
+      && request.resource.data.participantes == resource.data.participantes;
+
+      // quem le e escreve e so quem esta no pai. A regra olha o PAI, nao a
+      // mensagem: regra sobre resource.data da mensagem reprovaria a consulta
+      // orderBy('timestamp') inteira. Sem update e sem delete -- ninguem
+      // reescreve nem apaga o que ja foi dito
+      match /mensagens/{mensagemId} {
+        allow read: if souParticipante();
+        allow create: if souParticipante() && perfilCompleto()
+        && request.resource.data.remetenteUid == request.auth.uid;
+      }
     }
 
     // estrutura pronta pras monitorias futuras
