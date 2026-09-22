@@ -16,7 +16,13 @@ const List<String> tiposImovelDisponiveis = ['Casa', 'Apartamento', 'República'
 const String tagPertoDaFaculdade = 'Perto da Faculdade';
 const String _tagPertoDaFaculdadeAntiga = 'Perto da Facul';
 
-const List<String> tagsPositivas = ['Mobiliado', 'Garagem', 'Com Wi-Fi', 'Suíte', 'Elevador', tagPertoDaFaculdade];
+// "Com Wi-Fi" deixou de ser tag: o Wi-Fi ja e um campo proprio (incluiWifi,
+// em "Contas inclusas"), e a tela mostrava a mesma informacao duas vezes.
+// Anuncio antigo com a tag gravada tem ela convertida em incluiWifi na
+// leitura (ver fromMap)
+const String _tagWifiAntiga = 'Com Wi-Fi';
+
+const List<String> tagsPositivas = ['Mobiliado', 'Garagem', 'Suíte', 'Elevador', tagPertoDaFaculdade];
 
 // converte tag gravada no banco pro nome atual
 String tagCompativel(String tag) =>
@@ -25,6 +31,11 @@ const List<String> tagsNegativas = ['Sem elevador'];
 const List<String> tagsPreferenciaGenero = ['Exclusivo para Mulheres', 'Exclusivo para Homens'];
 
 const List<String> tagsDisponiveis = [...tagsPositivas, ...tagsNegativas, ...tagsPreferenciaGenero];
+
+// o filtro do mapa continua oferecendo Wi-Fi, mas casando com o campo
+// incluiWifi em vez de uma tag (ver Imovel.atendeFiltro)
+const String filtroWifiIncluso = 'Wi-Fi incluso';
+const List<String> opcoesDeFiltro = [...tagsDisponiveis, filtroWifiIncluso];
 
 // siglas dos estados brasileiros, usadas no campo "Estado" do endereco estruturado
 const List<String> estadosBrasileiros = [
@@ -107,6 +118,9 @@ class Imovel {
       }
     }
 
+    final List<String> tagsGravadas = List<String>.from(map['tags'] ?? []).map(normalizarTracos).toList();
+    final bool tinhaTagWifi = tagsGravadas.contains(_tagWifiAntiga);
+
     return Imovel(
       id: docId,
       // texto que veio do banco passa por normalizarTracos -- anuncios
@@ -117,7 +131,7 @@ class Imovel {
       preco: (map['preco'] ?? 0.0).toDouble(),
       posicao: LatLng(lat, lng),
       tipo: (map['tipo'] ?? '') == 'evento' ? TipoListing.evento : TipoListing.moradia,
-      tags: List<String>.from(map['tags'] ?? []).map(normalizarTracos).map(tagCompativel).toList(),
+      tags: tagsGravadas.where((t) => t != _tagWifiAntiga).map(tagCompativel).toList(),
       endereco: normalizarTracosOuVazio(map['endereco']),
       fotos: List<String>.from(map['fotos'] ?? []),
       donoUid: map['donoUid'] ?? '',
@@ -135,9 +149,13 @@ class Imovel {
       iptuComprovanteUrl: map['iptuComprovanteUrl'] ?? '',
       incluiLuz: map['incluiLuz'] ?? false,
       incluiAgua: map['incluiAgua'] ?? false,
-      incluiWifi: map['incluiWifi'] ?? false,
+      incluiWifi: (map['incluiWifi'] ?? false) || tinhaTagWifi,
     );
   }
+
+  // uma opcao do filtro do mapa: tag normal, ou o Wi-Fi que vem do campo
+  bool atendeFiltro(String opcao) =>
+      opcao == filtroWifiIncluso ? incluiWifi : tags.contains(opcao);
 
   Map<String, dynamic> toMap() {
     return {

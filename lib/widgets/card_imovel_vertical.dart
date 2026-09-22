@@ -20,7 +20,6 @@ class CardImovelVertical extends StatelessWidget {
       case 'Mobiliado': return Icons.chair_rounded;
       case tagPertoDaFaculdade: return Icons.school_rounded;
       case 'Garagem': return Icons.garage_rounded;
-      case 'Com Wi-Fi': return Icons.wifi_rounded;
       case 'Exclusivo para Mulheres': return Icons.woman_rounded;
       default: return Icons.label_rounded;
     }

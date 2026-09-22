@@ -19,6 +19,7 @@ import '../services/auth_service.dart';
 import '../services/busca_service.dart';
 import '../services/imobiliaria_service.dart';
 import '../services/localizacao_service.dart';
+import '../services/lugares_service.dart';
 import '../services/notificacao_service.dart';
 import '../services/rota_service.dart';
 import '../services/usuario_service.dart';
@@ -30,6 +31,7 @@ import '../widgets/avatar_widget.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/painel_inatel.dart';
 import '../widgets/painel_localizacao.dart';
+import '../widgets/painel_lugar.dart';
 import '../widgets/pressionavel.dart';
 import '../widgets/animated_gradient_button.dart';
 
@@ -102,6 +104,15 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   List<Imobiliaria> _imobiliarias = [];
   Set<Marker> _marcadoresImobiliarias = {};
   StreamSubscription<List<Imobiliaria>>? _inscricaoImobiliarias;
+
+  // mercado, farmacia, posto, hotel e hospital mais perto de cada moradia
+  // (Google Places). Por id do Google: duas republicas vizinhas costumam ter
+  // a mesma farmacia como a mais perto, e o pin sairia duplicado
+  Map<String, Lugar> _lugares = {};
+  Set<Marker> _marcadoresLugares = {};
+  // posicoes de moradia ja consultadas -- o snapshot dos imoveis dispara a
+  // cada mudanca no banco, e sem isso cada edicao de anuncio refaria tudo
+  String _chaveLugaresConsultados = '';
 
   // --- modo navegacao ("Ir") ---
   bool _navegando = false;
@@ -227,6 +238,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
               .toList();
         });
         _atualizarMarcadoresFiltrados();
+        _carregarLugaresProximos();
       }
     });
 
@@ -398,8 +410,71 @@ class _CentroDoMapaState extends State<CentroDoMapa>
 
       _atualizarMarcadorInatel();
       _atualizarMarcadoresImobiliarias();
+      _atualizarMarcadoresLugares();
     });
     _atualizarMarcadoresFiltrados();
+  }
+
+  // busca os estabelecimentos perto de cada moradia. As buscas correm em
+  // paralelo e o servico guarda o resultado da sessao, entao voltar pro mapa
+  // nao repete nada
+  Future<void> _carregarLugaresProximos() async {
+    final moradias = _imoveisDoBanco.where((i) => i.tipo != TipoListing.evento).toList();
+    final chave = (moradias.map((i) =>
+            '${i.posicao.latitude.toStringAsFixed(4)},${i.posicao.longitude.toStringAsFixed(4)}').toList()
+          ..sort())
+        .join('|');
+    if (chave == _chaveLugaresConsultados) return;
+    _chaveLugaresConsultados = chave;
+
+    final porMoradia = await Future.wait(
+      moradias.map((i) => LugaresService.instance.proximosDe(i.posicao)),
+    );
+    // outra leva de imoveis chegou no meio do caminho: essa resposta e velha
+    if (!mounted || chave != _chaveLugaresConsultados) return;
+
+    final lugares = <String, Lugar>{};
+    for (final lista in porMoradia) {
+      for (final l in lista) {
+        lugares[l.lugar.id] = l.lugar;
+      }
+    }
+    // nada veio (API fora ou desligada): libera pra tentar de novo na
+    // proxima mudanca, em vez de ficar sem pins a sessao inteira
+    if (lugares.isEmpty) _chaveLugaresConsultados = '';
+    setState(() {
+      _lugares = lugares;
+      _atualizarMarcadoresLugares();
+    });
+  }
+
+  // pins dos estabelecimentos -- fora de _marcadores pelo mesmo motivo das
+  // imobiliarias: nao sao anuncio, o filtro de preco e tag nao se aplica
+  void _atualizarMarcadoresLugares() {
+    final rota = rotaAtivaGlobal.value;
+    _marcadoresLugares = _lugares.values.map((lugar) {
+      final pins = _pinsAnuncio[lugar.categoria.pin];
+      BitmapDescriptor? icone = pins?.$1;
+      if (rota != null && lugar.posicao == rota.destino) icone = pins?.$3;
+      return Marker(
+        markerId: MarkerId('lugar_${lugar.id}'),
+        position: lugar.posicao,
+        icon: icone ?? BitmapDescriptor.defaultMarker,
+        // abaixo das moradias: quando um pin cai em cima do outro, o anuncio
+        // e que tem que ficar por cima
+        zIndexInt: -1,
+        // sem infoWindow, igual o Inatel: o toque abre o painel completo
+        onTap: () => _abrirPainelLugar(lugar),
+      );
+    }).toSet();
+  }
+
+  void _abrirPainelLugar(Lugar lugar) {
+    PainelLugar.mostrar(
+      context,
+      lugar,
+      aoTracarRota: () => _tracarRotaAte(destino: lugar.posicao, nomeDestino: lugar.nome),
+    );
   }
 
   // pins das imobiliarias -- ficam FORA de _marcadores de proposito, igual o
@@ -646,6 +721,13 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     final TipoGeometria tipoEfetivo =
         temGeometria ? sugestao.tipoGeometria : TipoGeometria.ponto;
 
+    // local que ja tem pin proprio no mapa (moradia, lugar, imobiliaria,
+    // Inatel): o pin roxo da busca caia por cima e escondia o original. Nesse
+    // caso nao desenha destaque nenhum, so abre o balao do pin que ja existe
+    final Marker? pinExistente = tipoEfetivo == TipoGeometria.ponto
+        ? _pinExistenteEm(sugestao.destino)
+        : null;
+
     setState(() {
       // fecha a lista: escolheu, nao precisa mais das opcoes
       _sugestoesLocais = [];
@@ -688,6 +770,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
             ),
           };
         case TipoGeometria.ponto:
+          if (pinExistente != null) break;
           _destaquePoiBusca = Marker(
             markerId: const MarkerId('destaque_busca'),
             position: sugestao.destino,
@@ -708,6 +791,31 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     } else {
       _mapController?.animateCamera(CameraUpdate.newLatLngZoom(sugestao.destino, 16));
     }
+
+    if (pinExistente != null) {
+      _mapController?.showMarkerInfoWindow(pinExistente.markerId);
+    }
+  }
+
+  // pin ja desenhado no mapa a poucos metros do ponto. A tolerancia cobre a
+  // diferenca entre a coordenada da busca (lista de locais conhecidos,
+  // Nominatim) e a coordenada cadastrada do anuncio
+  Marker? _pinExistenteEm(LatLng ponto) {
+    for (final m in [
+      ?_marcadorInatel,
+      ..._marcadoresImobiliarias,
+      ..._marcadoresLugares,
+      ..._marcadores,
+    ]) {
+      final metros = Geolocator.distanceBetween(
+        ponto.latitude,
+        ponto.longitude,
+        m.position.latitude,
+        m.position.longitude,
+      );
+      if (metros <= 30) return m;
+    }
+    return null;
   }
 
   // reage na hora se o usuario trocar o modo escuro/claro do celular
@@ -758,7 +866,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       }
       if (_filtroState.tagsSelecionadas.isNotEmpty) {
         final temTodasAsTags = _filtroState.tagsSelecionadas
-            .every((tag) => item.tags.contains(tag));
+            .every(item.atendeFiltro);
         if (!temTodasAsTags) return false;
       }
       if (cidadeFiltroGlobal.value != null && item.cidade != cidadeFiltroGlobal.value) {
@@ -821,12 +929,14 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       _marcadoresRota = {};
       _atualizarMarcadoresFiltrados();
       _atualizarMarcadorInatel();
+      _atualizarMarcadoresLugares();
       return;
     }
     
     // Atualiza as cores dos pins que ja existem no mapa (moradias, eventos, inatel)
     _atualizarMarcadoresFiltrados();
     _atualizarMarcadorInatel();
+    _atualizarMarcadoresLugares();
 
     // desenha todas as alternativas: as nao escolhidas em cinza e por baixo
     // (zIndex menor), clicaveis pra virar a ativa; a escolhida em destaque por
@@ -1993,7 +2103,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: tagsDisponiveis.map((tag) {
+                    children: opcoesDeFiltro.map((tag) {
                       bool selecionado = tagsTemp.contains(tag);
                       return GestureDetector(
                         onTap: () {
@@ -2419,6 +2529,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
             IgnorePointer(
               child: FutureBuilder<Color?>(
                 future: (!pendente && fotoUrl.isNotEmpty) ? corDaFoto(fotoUrl) : null,
+                initialData: pendente ? null : corDaFotoSalva(fotoUrl),
                 builder: (context, snapshot) {
                   final corAnel = pendente ? corAtencao : (snapshot.data ?? corSucesso);
                   return Container(
@@ -2529,9 +2640,18 @@ class _CentroDoMapaState extends State<CentroDoMapa>
             // encerrar -- o logo do Google tem que ficar acima dele
             bottom: _navegando
                 ? MediaQuery.of(context).padding.bottom + 96
-                : acimaDaBarra + alturaCardLocal,
+                // o plugin ja poe uma margem propria em volta do logo; sem
+                // o card, tirar 6 faz ele encostar na barra em vez de flutuar
+                // solto no mapa, ainda sem ficar coberto por ela
+                : acimaDaBarra + (_mostrandoCardLocal ? alturaCardLocal : -6),
           ),
           zoomControlsEnabled: false,
+          // a bussola nativa aparecia no canto superior esquerdo, atras do
+          // avatar do perfil, e a barrinha do Google Maps (rota/abrir no app)
+          // surgia no canto inferior direito ao tocar num pin, atras do botao
+          // de centralizar. O app ja tem botoes proprios pra essas funcoes
+          compassEnabled: false,
+          mapToolbarEnabled: false,
           markers: {
             // seta direcional -- substitui o ponto azul padrao durante a
             // navegacao (myLocationEnabled desliga logo abaixo)
@@ -2552,6 +2672,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
             // por preco, tag ou cidade
             ?_marcadorInatel,
             if (!_navegando) ..._marcadoresImobiliarias,
+            if (!_navegando) ..._marcadoresLugares,
             // navegando, o mapa fica so com o trajeto, a seta e o destino.
             // Os pins de anuncios e o destaque da busca viram poluicao visual
             // exatamente quando o usuario tem menos tempo pra olhar a tela

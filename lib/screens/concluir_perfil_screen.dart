@@ -160,7 +160,9 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
   }
 
   Future<void> _trocarFoto() async {
-    final imagem = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
+    // foto de perfil so aparece em circulos pequenos -- 512px sobra e evita
+    // subir (e todo mundo baixar depois) a foto na resolucao cheia da camera
+    final imagem = await _picker.pickImage(source: ImageSource.gallery, maxWidth: 512, maxHeight: 512, imageQuality: 80);
     if (imagem == null) return;
     setState(() => _enviandoFoto = true);
     try {

@@ -92,6 +92,7 @@ class _TelaResumoState extends State<TelaResumo> with SingleTickerProviderStateM
                   // orna com a cor da propria foto em vez do branco fixo
                   FutureBuilder<Color?>(
                     future: widget.perfil.fotoUrl.isNotEmpty ? corDaFoto(widget.perfil.fotoUrl) : null,
+                    initialData: corDaFotoSalva(widget.perfil.fotoUrl),
                     builder: (context, snapshot) {
                       final corBorda = snapshot.data ?? (isDark ? Colors.white.withAlpha(40) : Colors.white);
                       return Container(
@@ -105,9 +106,10 @@ class _TelaResumoState extends State<TelaResumo> with SingleTickerProviderStateM
                         ),
                         child: ClipOval(
                           child: widget.perfil.fotoUrl.isNotEmpty
-                              ? Image.network(
-                                  widget.perfil.fotoUrl,
+                              ? Image(
+                                  image: fotoAvatar(widget.perfil.fotoUrl, 48, MediaQuery.devicePixelRatioOf(context)),
                                   fit: BoxFit.cover,
+                                  gaplessPlayback: true,
                                   errorBuilder: (context, error, stackTrace) => const Icon(Icons.person_rounded, color: Colors.white),
                                 )
                               : const Icon(Icons.person_rounded, color: Colors.white, size: 24),

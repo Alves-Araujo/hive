@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../main.dart';
+import '../utils/cor_foto.dart';
 
 // widget de avatar com as iniciais do nome
 // gera um gradiente diferente pra cada nome
@@ -83,11 +84,12 @@ class AvatarWidget extends StatelessWidget {
           ),
           child: (fotoUrl != null && fotoUrl!.isNotEmpty)
               ? ClipOval(
-                  child: Image.network(
-                    fotoUrl!,
+                  child: Image(
+                    image: fotoAvatar(fotoUrl!, size, MediaQuery.devicePixelRatioOf(context)),
                     width: size,
                     height: size,
                     fit: BoxFit.cover,
+                    gaplessPlayback: true,
                     errorBuilder: (context, error, stackTrace) => _buildConteudoPadrao(),
                   ),
                 )

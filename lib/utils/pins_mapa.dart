@@ -21,9 +21,12 @@ import '../models/imovel.dart';
 // Cada tipo de anuncio tem icone proprio; a cor so separa moradia fixa do
 // resto (hotel, mercado, farmacia, evento, faculdade, imobiliaria) -- entre
 // casa, apartamento, kitnet, republica e pensao quem diferencia de perto e o
-// icone, a cor e a mesma pros cinco. Hotel, mercado e farmacia ainda nao tem
-// cadastro, mas o pin ja existe -- quando o tipo for criado basta gravar o
-// nome em tipoImovel que tipoPinDoImovel() resolve sozinho.
+// icone, a cor e a mesma pros cinco.
+//
+// Hotel, mercado, farmacia, posto e hospital sao os estabelecimentos perto
+// das moradias (Google Places, ver lugares_service.dart) -- saem um pouco
+// menores que os anuncios pra nao disputar atencao com o que a pessoa veio
+// procurar. Um anuncio cadastrado com tipoImovel "Hotel" usaria o mesmo pin.
 enum TipoPin {
   casa,
   apartamento,
@@ -33,10 +36,21 @@ enum TipoPin {
   hotel,
   mercado,
   farmacia,
+  posto,
+  hospital,
   evento,
   faculdade,
   imobiliaria,
 }
+
+// os pins que marcam estabelecimento, nao anuncio
+const Set<TipoPin> pinsDeEstabelecimento = {
+  TipoPin.hotel,
+  TipoPin.mercado,
+  TipoPin.farmacia,
+  TipoPin.posto,
+  TipoPin.hospital,
+};
 
 // escolhe o pin pelo campo "Tipo" do anuncio. Compara sem acento e sem
 // caixa porque o valor vem do banco e anuncio antigo pode ter sido gravado
@@ -97,6 +111,10 @@ class PinsMapa {
   // moradia fixa (hotel, mercado, farmacia, evento, faculdade, imobiliaria).
   static const _corMoradia = [Color(0xFF1C5A8F), Color(0xFF12294A)];
 
+  // o degrade do pin, pra quem quer repetir a cor fora do mapa (o painel do
+  // estabelecimento usa no icone, e assim o painel "combina" com o pin tocado)
+  static List<Color> cores(TipoPin tipo) => _estilo(tipo).$1;
+
   static (List<Color>, IconData, double) _estilo(TipoPin tipo) => switch (tipo) {
         TipoPin.casa => (
             _corMoradia,
@@ -127,21 +145,36 @@ class PinsMapa {
         TipoPin.hotel => (
             const [Color(0xFF8F7418), Color(0xFF3D3000)],
             Icons.hotel_rounded,
-            1.0,
+            0.85,
           ),
         // mercado: verde-oliva. Nao usa o verde puro porque esse e o pin de
         // origem da rota
         TipoPin.mercado => (
             const [Color(0xFF52752B), Color(0xFF223512)],
             Icons.shopping_cart_rounded,
-            1.0,
+            0.85,
           ),
         // farmacia: vermelho fechado, puxando a cor das redes de farmacia. Bem
         // mais escuro que o vermelho vivo do pin de destino
         TipoPin.farmacia => (
             const [Color(0xFF9E3030), Color(0xFF450F0F)],
             Icons.local_pharmacy_rounded,
-            1.0,
+            0.85,
+          ),
+        // posto: laranja queimado, a cor de combustivel/alerta sem virar o
+        // amarelo do hotel
+        TipoPin.posto => (
+            const [Color(0xFFB35C00), Color(0xFF4D2600)],
+            Icons.local_gas_station_rounded,
+            0.85,
+          ),
+        // hospital: rosa-framboesa. Vermelho seria o natural, mas ja e da
+        // farmacia (fechado) e do destino da rota (vivo) -- tres vermelhos no
+        // mesmo mapa ninguem separa
+        TipoPin.hospital => (
+            const [Color(0xFFC2185B), Color(0xFF560027)],
+            Icons.local_hospital_rounded,
+            0.85,
           ),
         // evento: roxo escuro. Distingue de moradia sem berrar como o
         // ambar/vermelho anterior, que puxava atencao demais pro que e

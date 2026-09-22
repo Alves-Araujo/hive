@@ -144,7 +144,11 @@ class PainelInatel extends StatelessWidget {
 
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-              child: _Galeria(isDark: isDark),
+              child: GaleriaFotos(
+                fotos: fotosInatel,
+                isDark: isDark,
+                iconeReserva: Icons.school_rounded,
+              ),
             ),
 
             Padding(
@@ -243,7 +247,7 @@ class PainelInatel extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.xl),
 
-                  _BotaoLink(
+                  BotaoPainel(
                     isDark: isDark,
                     icone: Icons.school_outlined,
                     titulo: 'Vestibular',
@@ -252,7 +256,7 @@ class PainelInatel extends StatelessWidget {
                     onTap: () => _abrir(context, vestibularInatel),
                   ),
                   const SizedBox(height: AppSpacing.md),
-                  _BotaoLink(
+                  BotaoPainel(
                     isDark: isDark,
                     icone: Icons.language_rounded,
                     titulo: 'Site do Inatel',
@@ -262,7 +266,7 @@ class PainelInatel extends StatelessWidget {
 
                   if (aoTracarRota != null) ...[
                     const SizedBox(height: AppSpacing.md),
-                    _BotaoLink(
+                    BotaoPainel(
                       isDark: isDark,
                       icone: Icons.directions_rounded,
                       titulo: 'Traçar rota até aqui',
@@ -336,16 +340,28 @@ class _ChipCurso extends StatelessWidget {
   }
 }
 
-// carrossel das fotos, com os pontinhos de posicao
-class _Galeria extends StatefulWidget {
+// carrossel das fotos, com os pontinhos de posicao. Publico porque o painel
+// dos estabelecimentos (painel_lugar.dart) usa o mesmo
+class GaleriaFotos extends StatefulWidget {
+  final List<FotoInatel> fotos;
   final bool isDark;
-  const _Galeria({required this.isDark});
+  // icone do fundo que aparece enquanto a foto carrega ou quando ela falha
+  final IconData iconeReserva;
+  final Gradient gradienteReserva;
+
+  const GaleriaFotos({
+    super.key,
+    required this.fotos,
+    required this.isDark,
+    required this.iconeReserva,
+    this.gradienteReserva = gradientePrincipal,
+  });
 
   @override
-  State<_Galeria> createState() => _GaleriaState();
+  State<GaleriaFotos> createState() => _GaleriaFotosState();
 }
 
-class _GaleriaState extends State<_Galeria> {
+class _GaleriaFotosState extends State<GaleriaFotos> {
   final PageController _controller = PageController();
   int _atual = 0;
 
@@ -357,7 +373,8 @@ class _GaleriaState extends State<_Galeria> {
 
   @override
   Widget build(BuildContext context) {
-    if (fotosInatel.isEmpty) return const SizedBox.shrink();
+    final fotos = widget.fotos;
+    if (fotos.isEmpty) return const SizedBox.shrink();
 
     return Column(
       children: [
@@ -367,10 +384,10 @@ class _GaleriaState extends State<_Galeria> {
             height: 190,
             child: PageView.builder(
               controller: _controller,
-              itemCount: fotosInatel.length,
+              itemCount: fotos.length,
               onPageChanged: (i) => setState(() => _atual = i),
               itemBuilder: (context, i) {
-                final foto = fotosInatel[i];
+                final foto = fotos[i];
                 return Stack(
                   fit: StackFit.expand,
                   children: [
@@ -378,11 +395,11 @@ class _GaleriaState extends State<_Galeria> {
                       foto.url,
                       fit: BoxFit.cover,
                       loadingBuilder: (context, filho, progresso) =>
-                          progresso == null ? filho : _Reserva(mostrarSpinner: true),
+                          progresso == null ? filho : _reserva(mostrarSpinner: true),
                       // foto fora do ar nao pode derrubar o painel: cai no
                       // fundo de marca, que e o mesmo do resto do app
                       errorBuilder: (context, erro, pilha) =>
-                          _Reserva(mostrarSpinner: false),
+                          _reserva(mostrarSpinner: false),
                     ),
                     if (foto.credito != null)
                       Positioned(
@@ -408,12 +425,12 @@ class _GaleriaState extends State<_Galeria> {
             ),
           ),
         ),
-        if (fotosInatel.length > 1) ...[
+        if (fotos.length > 1) ...[
           const SizedBox(height: AppSpacing.md),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              for (var i = 0; i < fotosInatel.length; i++)
+              for (var i = 0; i < fotos.length; i++)
                 AnimatedContainer(
                   duration: AppMotion.rapida,
                   margin: const EdgeInsets.symmetric(horizontal: 3),
@@ -432,17 +449,25 @@ class _GaleriaState extends State<_Galeria> {
       ],
     );
   }
+
+  Widget _reserva({required bool mostrarSpinner}) => _Reserva(
+        mostrarSpinner: mostrarSpinner,
+        icone: widget.iconeReserva,
+        gradiente: widget.gradienteReserva,
+      );
 }
 
 // fundo que ocupa o lugar da foto enquanto ela carrega ou quando ela falha
 class _Reserva extends StatelessWidget {
   final bool mostrarSpinner;
-  const _Reserva({required this.mostrarSpinner});
+  final IconData icone;
+  final Gradient gradiente;
+  const _Reserva({required this.mostrarSpinner, required this.icone, required this.gradiente});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(gradient: gradientePrincipal),
+      decoration: BoxDecoration(gradient: gradiente),
       child: Center(
         child: mostrarSpinner
             ? const SizedBox(
@@ -451,14 +476,15 @@ class _Reserva extends StatelessWidget {
                 child: CircularProgressIndicator(
                     strokeWidth: 2, color: Colors.white70),
               )
-            : const Icon(Icons.school_rounded, color: Colors.white38, size: 40),
+            : Icon(icone, color: Colors.white38, size: 40),
       ),
     );
   }
 }
 
-// linha de acao do painel -- icone, titulo, apoio e a seta de "abre fora"
-class _BotaoLink extends StatelessWidget {
+// linha de acao do painel -- icone, titulo, apoio e a seta de "abre fora".
+// Publica porque o painel dos estabelecimentos usa a mesma
+class BotaoPainel extends StatelessWidget {
   final bool isDark;
   final IconData icone;
   final String titulo;
@@ -470,7 +496,8 @@ class _BotaoLink extends StatelessWidget {
   final bool externo;
   final VoidCallback onTap;
 
-  const _BotaoLink({
+  const BotaoPainel({
+    super.key,
     required this.isDark,
     required this.icone,
     required this.titulo,

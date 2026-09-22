@@ -18,6 +18,7 @@ import 'screens/resumo_screen.dart';
 import 'screens/chat_list_screen.dart';
 import 'services/notificacao_service.dart';
 import 'services/rota_service.dart';
+import 'utils/cor_foto.dart';
 
 // true enquanto o modo "Ir" esta ativo. A barra de navegacao inferior some
 // nesse estado: navegacao e um modo que toma a tela, e trocar de aba no meio
@@ -276,9 +277,12 @@ class AppMotion {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Future.wait([
+    Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform),
+    // cores salvas do anel do avatar -- carregadas antes da primeira tela
+    // pra o anel ja abrir com a cor da foto
+    iniciarCorFoto(),
+  ]);
 
   // tela cheia: esconde a barra de status e a de navegacao do sistema.
   // "sticky" faz elas reaparecerem temporariamente ao deslizar da borda e

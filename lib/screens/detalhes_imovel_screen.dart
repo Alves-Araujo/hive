@@ -10,6 +10,7 @@ import '../services/avaliacao_service.dart';
 import '../services/busca_service.dart';
 import '../services/localizacao_service.dart';
 import '../services/perfil_publico_service.dart';
+import '../services/lugares_service.dart';
 import '../services/rota_service.dart';
 import '../utils/distancia.dart';
 import '../utils/moeda.dart';
@@ -17,6 +18,7 @@ import '../utils/tempo.dart';
 import '../widgets/animated_gradient_button.dart';
 import '../widgets/avatar_widget.dart';
 import '../widgets/painel_localizacao.dart';
+import '../widgets/painel_lugar.dart';
 import '../widgets/pressionavel.dart';
 import 'chat_detail_screen.dart';
 import 'perfil_publico_screen.dart';
@@ -38,6 +40,18 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
   // carrossel do cabecalho
   final PageController _fotoController = PageController();
   int _fotoAtual = 0;
+
+  // mercado, farmacia, posto... perto do imovel. Guardado no state pra
+  // busca nao repetir a cada rebuild (o carrossel da setState a cada foto)
+  late final Future<List<LugarProximo>> _lugaresProximos;
+
+  @override
+  void initState() {
+    super.initState();
+    _lugaresProximos = widget.imovel.tipo == TipoListing.evento
+        ? Future.value(const [])
+        : LugaresService.instance.proximosDe(widget.imovel.posicao);
+  }
 
   @override
   void dispose() {
@@ -325,24 +339,7 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
                           ),
                         ],
 
-                        if (imovel.tags.isNotEmpty) ...[
-                          const SizedBox(height: AppSpacing.xl),
-                          Wrap(
-                            spacing: AppSpacing.sm,
-                            runSpacing: AppSpacing.sm,
-                            // a tag de faculdade vira a distancia real medida ate o Inatel --
-                            // "Perto da Faculdade" e opiniao de quem anunciou,
-                            // "320 m da faculdade" e verificavel
-                            children: imovel.tags
-                                .map((tag) => _pilula(
-                                      tag == tagPertoDaFaculdade
-                                          ? rotuloDistanciaFaculdade(imovel.posicao)
-                                          : tag,
-                                      isDark,
-                                    ))
-                                .toList(),
-                          ),
-                        ],
+                        _proximidadeETags(imovel, isDark),
 
                         if (!isEvento) ...[
                           const SizedBox(height: AppSpacing.xl),
@@ -590,7 +587,69 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
     );
   }
 
-  Widget _pilula(String texto, bool isDark) {
+  // distancias medidas primeiro (faculdade, mercado, farmacia...), depois as
+  // tags do anuncio. A tag de faculdade vira a distancia real ate o Inatel --
+  // "Perto da Faculdade" e opiniao de quem anunciou, "320 m da faculdade" e
+  // verificavel. Os lugares proximos chegam depois (Google Places) e entram
+  // na mesma fileira quando chegam; se a busca falhar, simplesmente nao
+  // aparecem. Tocar num deles abre o painel com fotos e endereco
+  Widget _proximidadeETags(Imovel imovel, bool isDark) {
+    final bool pertoDaFacul = imovel.tags.contains(tagPertoDaFaculdade);
+    final outrasTags = imovel.tags.where((t) => t != tagPertoDaFaculdade);
+
+    return FutureBuilder<List<LugarProximo>>(
+      future: _lugaresProximos,
+      builder: (context, snap) {
+        final lugares = snap.data ?? const <LugarProximo>[];
+        final pilulas = [
+          if (pertoDaFacul)
+            _pilula(rotuloDistanciaFaculdade(imovel.posicao), isDark, icone: Icons.school_rounded),
+          // hotel fica de fora aqui: so aparece no mapa (ver CategoriaLugar)
+          for (final l in lugares.where((l) => l.lugar.categoria.naFichaDoAnuncio))
+            Pressionavel(
+              onTap: () => _abrirLugar(l),
+              child: _pilula(
+                '${formatarDistancia(l.metros)} ${l.lugar.categoria.sufixo}',
+                isDark,
+                icone: l.lugar.categoria.icone,
+                tocavel: true,
+              ),
+            ),
+          for (final t in outrasTags) _pilula(t, isDark),
+        ];
+        if (pilulas.isEmpty) return const SizedBox.shrink();
+
+        return Padding(
+          padding: const EdgeInsets.only(top: AppSpacing.xl),
+          child: Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            children: pilulas,
+          ),
+        );
+      },
+    );
+  }
+
+  // painel do estabelecimento. A rota aqui sai DA MORADIA, nao de onde a
+  // pessoa esta: quem olha o anuncio quer saber o caminho de casa ate o
+  // mercado, nao do lugar onde esta sentado agora
+  void _abrirLugar(LugarProximo l) {
+    PainelLugar.mostrar(
+      context,
+      l.lugar,
+      metros: l.metros,
+      rotuloRota: 'Saindo desta moradia',
+      aoTracarRota: () => _dispararRotaEVoltar(
+        origem: widget.imovel.posicao,
+        destino: l.lugar.posicao,
+        nomeDestino: l.lugar.nome,
+      ),
+    );
+  }
+
+  Widget _pilula(String texto, bool isDark, {IconData? icone, bool tocavel = false}) {
+    final cor = isDark ? Colors.white70 : corPrimaria;
     return Container(
       padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.md + 2, vertical: AppSpacing.sm),
@@ -601,12 +660,23 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
           color: isDark ? Colors.white.withAlpha(14) : corPrimaria.withAlpha(28),
         ),
       ),
-      child: Text(
-        texto,
-        style: AppTextStyles.captionBold.copyWith(
-          fontSize: 12,
-          color: isDark ? Colors.white70 : corPrimaria,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icone != null) ...[
+            Icon(icone, size: 14, color: cor),
+            const SizedBox(width: AppSpacing.xs + 1),
+          ],
+          Text(
+            texto,
+            style: AppTextStyles.captionBold.copyWith(fontSize: 12, color: cor),
+          ),
+          // seta pequena: sinaliza que essa pilula abre algo, as de tag nao
+          if (tocavel) ...[
+            const SizedBox(width: 2),
+            Icon(Icons.chevron_right_rounded, size: 14, color: cor),
+          ],
+        ],
       ),
     );
   }
@@ -686,62 +756,121 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
 
   // contas inclusas -- campos que o modelo Imovel sempre teve e a tela nunca
   // mostrou. Exibe os tres com estado ligado/desligado em vez de so os
-  // inclusos: saber que a luz NAO esta inclusa e tao util quanto o contrario
+  // inclusos: saber que a luz NAO esta inclusa e tao util quanto o contrario.
+  //
+  // Fica num cartao proprio, com o incluso em verde CHEIO: antes era verde a
+  // 8% de opacidade e o nao incluso cinza claro, e a secao inteira parecia
+  // desabilitada -- justo uma das informacoes que mais pesa no preco final
   Widget _secaoInclusos(Imovel imovel, bool isDark) {
     final itens = [
       ('Luz', Icons.bolt_rounded, imovel.incluiLuz),
       ('Água', Icons.water_drop_rounded, imovel.incluiAgua),
       ('Wi-Fi', Icons.wifi_rounded, imovel.incluiWifi),
     ];
+    final int qtdInclusas = itens.where((i) => i.$3).length;
+    final corApagada = isDark ? Colors.white60 : Colors.black54;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _tituloSecao('Contas inclusas', isDark),
-        const SizedBox(height: AppSpacing.md),
-        Row(
-          children: [
-            for (final (rotulo, icone, incluso) in itens) ...[
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white.withAlpha(8) : Colors.white,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        boxShadow: AppShadows.nivel1(isDark),
+        border: Border.all(
+          color: isDark ? Colors.white.withAlpha(14) : corPrimaria.withAlpha(20),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.receipt_long_rounded, size: 18, color: isDark ? Colors.white : corPrimaria),
+              const SizedBox(width: AppSpacing.sm),
               Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.md + 2),
-                  decoration: BoxDecoration(
-                    color: incluso
-                        ? corSucesso.withAlpha(isDark ? 32 : 20)
-                        : (isDark ? Colors.white.withAlpha(8) : Colors.grey.withAlpha(18)),
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                    border: Border.all(
-                      color: incluso
-                          ? corSucesso.withAlpha(70)
-                          : (isDark ? Colors.white.withAlpha(12) : Colors.grey.withAlpha(35)),
-                    ),
-                  ),
-                  child: Column(
-                    children: [
-                      Icon(
-                        icone,
-                        size: 20,
-                        color: incluso ? corSucesso : (isDark ? Colors.white30 : Colors.grey),
-                      ),
-                      const SizedBox(height: AppSpacing.xs + 2),
-                      Text(
-                        rotulo,
-                        style: AppTextStyles.label.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: incluso
-                              ? corSucesso
-                              : (isDark ? Colors.white30 : Colors.grey),
-                        ),
-                      ),
-                    ],
+                child: Text(
+                  'Contas inclusas',
+                  style: AppTextStyles.heading3.copyWith(
+                    fontSize: 16,
+                    color: isDark ? Colors.white : Colors.black87,
                   ),
                 ),
               ),
-              if (rotulo != 'Wi-Fi') const SizedBox(width: AppSpacing.sm),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs),
+                decoration: BoxDecoration(
+                  color: qtdInclusas > 0
+                      ? corSucesso.withAlpha(isDark ? 50 : 30)
+                      : (isDark ? Colors.white.withAlpha(12) : Colors.black.withAlpha(8)),
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                ),
+                child: Text(
+                  qtdInclusas == 0 ? 'Nenhuma' : '$qtdInclusas de 3',
+                  style: AppTextStyles.captionBold.copyWith(
+                    fontSize: 12,
+                    color: qtdInclusas > 0 ? corSucesso : corApagada,
+                  ),
+                ),
+              ),
             ],
-          ],
-        ),
-      ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            children: [
+              for (final (rotulo, icone, incluso) in itens) ...[
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: AppSpacing.md + 2),
+                    decoration: BoxDecoration(
+                      color: incluso
+                          ? corSucesso
+                          : (isDark ? Colors.white.withAlpha(10) : Colors.black.withAlpha(6)),
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      border: incluso
+                          ? null
+                          : Border.all(color: isDark ? Colors.white.withAlpha(18) : Colors.black.withAlpha(14)),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(icone, size: 22, color: incluso ? Colors.white : corApagada),
+                        const SizedBox(height: AppSpacing.xs + 2),
+                        Text(
+                          rotulo,
+                          style: AppTextStyles.label.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: incluso ? Colors.white : corApagada,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              incluso ? Icons.check_circle_rounded : Icons.remove_circle_outline_rounded,
+                              size: 12,
+                              color: incluso ? Colors.white : corApagada,
+                            ),
+                            const SizedBox(width: 3),
+                            Text(
+                              incluso ? 'Incluso' : 'À parte',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: incluso ? Colors.white : corApagada,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                if (rotulo != 'Wi-Fi') const SizedBox(width: AppSpacing.sm),
+              ],
+            ],
+          ),
+        ],
+      ),
     );
   }
 
