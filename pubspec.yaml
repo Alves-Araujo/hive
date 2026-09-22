@@ -63,4 +63,5 @@ flutter:
   assets:
     - assets/images/logo_claro.png
     - assets/images/logo_escuro.png
+    - assets/papel_parede/
     - assets/map_styles/

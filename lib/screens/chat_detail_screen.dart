@@ -394,7 +394,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     return Scaffold(
       backgroundColor: isDark ? corFundoEscuro : corFundoClaro,
       appBar: _buildCabecalho(isDark),
-      body: PapelDeParedeChat(
+      body: PapelDeParedeConversa(
         child: Column(
           children: [
             if (widget.imovelTitulo.isNotEmpty) _buildFaixaImovel(isDark),

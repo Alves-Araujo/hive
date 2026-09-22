@@ -123,12 +123,10 @@ class _TelaListaChatsState extends State<TelaListaChats> {
             dica: 'Buscar alunos, corretores, imobiliárias...',
           ),
         ),
-        // o mesmo padrao da conversa, so que bem mais fraco: aqui os cards
-        // cobrem quase tudo e o fundo so precisa dar continuidade entre as
-        // duas telas, nao aparecer
+        // textura fina, nao a arte da conversa: aqui os cards cobrem quase
+        // tudo e o fundo so aparece nas frestas entre eles
         Expanded(
-          child: PapelDeParedeChat(
-            intensidade: 0.55,
+          child: PapelDeParedeMiudo(
             child: pesquisando ? _buildResultadosBusca(isDark) : _buildListaDeChats(isDark),
           ),
         ),
