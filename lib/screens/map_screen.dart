@@ -31,6 +31,7 @@ import '../widgets/avatar_widget.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/map_glass_surface.dart';
 import '../widgets/filtros_mapa_sheet.dart';
+import '../widgets/folha_vinculos_pendentes.dart';
 import '../widgets/painel_inatel.dart';
 import '../widgets/painel_localizacao.dart';
 import '../widgets/painel_lugar.dart';
@@ -685,77 +686,53 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
       final perfil = await UsuarioService.instance.buscarPorUid(user.uid);
-      if (perfil != null && mounted) {
-        setState(() => _perfilAtual = perfil);
+      if (perfil == null) return;
+      // a resposta da imobiliaria ao pedido de vinculo e escrita por OUTRA
+      // conta, na colecao publica -- e aqui que ela chega neste perfil e o
+      // botao de anunciar aparece pra um corretor recem-aprovado
+      final atualizado = await UsuarioService.instance.sincronizarVinculo(perfil);
+      if (mounted) {
+        setState(() => _perfilAtual = atualizado);
       }
     } catch (e) {
       debugPrint("Erro ao carregar dados do usuário: $e");
     }
   }
 
-  // se o e-mail dessa conta bate com o de uma imobiliaria ainda pendente
-  // (algum corretor se vinculou a ela), oferece a confirmacao aqui
+  // Pedidos de vinculo esperando resposta desta conta.
+  //
+  // A imobiliaria nao e um tipo de conta: ela e identificada pelo e-mail, e
+  // quem entra com esse e-mail e quem responde pelos corretores dela. Antes a
+  // folha so aparecia enquanto a imobiliaria estava NAO confirmada e
+  // confirmava todo mundo de uma vez -- depois do primeiro "confirmar", os
+  // corretores que pedissem vinculo dali pra frente nao apareciam pra
+  // ninguem e ficavam pendentes pra sempre. Agora a pergunta e por pessoa, e
+  // aparece sempre que houver pedido em aberto
   Future<void> _verificarVinculoPendente() async {
     final email = FirebaseAuth.instance.currentUser?.email;
     if (email == null) return;
-    final pendente = await ImobiliariaService.instance.buscarPendentePorEmail(
-      email,
+
+    final imobiliaria = await ImobiliariaService.instance.buscarPorEmail(email);
+    if (imobiliaria == null) return;
+
+    final pendentes = await ImobiliariaService.instance.vinculosPendentes(
+      imobiliaria.id,
     );
-    if (pendente == null || !mounted) return;
+    if (pendentes.isEmpty || !mounted) return;
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: isDark ? superficieEscura : superficieClara,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
       ),
-      builder: (sheetContext) {
-        return Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Icon(Icons.apartment_rounded, color: corPrimaria, size: 40),
-              const SizedBox(height: 16),
-              Text(
-                'Você é responsável por "${pendente.nome}"?',
-                style: AppTextStyles.heading3.copyWith(
-                  color: isDark ? Colors.white : Colors.black87,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Um ou mais corretores pediram vínculo com essa imobiliária usando esse e-mail. Confirme pra liberar o perfil público deles.',
-                style: AppTextStyles.caption.copyWith(
-                  color: isDark ? Colors.white54 : Colors.grey,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 20),
-              AnimatedGradientButton(
-                label: 'Confirmar vínculo',
-                onTap: () async {
-                  await ImobiliariaService.instance.confirmar(pendente.id);
-                  if (sheetContext.mounted) Navigator.pop(sheetContext);
-                },
-              ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: () => Navigator.pop(sheetContext),
-                child: Text(
-                  'Agora não',
-                  style: TextStyle(
-                    color: isDark ? Colors.white38 : Colors.grey,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
+      builder: (sheetContext) => FolhaVinculosPendentes(
+        imobiliaria: imobiliaria,
+        pendentes: pendentes,
+        isDark: isDark,
+      ),
     );
   }
 
@@ -2345,168 +2322,177 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                 color: isDark ? superficieEscura : superficieClara,
                 // sem isScrollControlled a folha ficava com altura fixa e o
                 // conteudo (com a secao de localizacao) estourava por baixo
-                // -- SingleChildScrollView + SafeArea garantem que ela sempre
-                // caiba, mesmo com fonte grande ou aparelho baixo
-                child: SafeArea(
-                  top: false,
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(24.0),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Center(
-                          child: Container(
-                            width: 40,
-                            height: 4,
-                            decoration: BoxDecoration(
-                              color: isDark
-                                  ? Colors.white.withAlpha(40)
-                                  : Colors.grey.shade400,
-                              borderRadius: BorderRadius.circular(
-                                AppRadius.pill,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-
-                        Text(
-                          'Configurações',
-                          textAlign: TextAlign.center,
-                          style: AppTextStyles.heading3.copyWith(
-                            color: isDark ? Colors.white : Colors.black87,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-
-                        Container(
-                          padding: const EdgeInsets.all(4),
+                // -- o SingleChildScrollView garante que ela sempre caiba,
+                // mesmo com fonte grande ou aparelho baixo.
+                //
+                // O respiro do fim vem do viewPadding (barra de gestos), nao
+                // de um SafeArea: "Sair da conta" era o ultimo item e ficava
+                // colado na borda -- em aparelho com barra de navegacao por
+                // gestos, atras dela. Somando aqui, a rolagem chega ao fim com
+                // o botao inteiro visivel. viewPadding em vez de padding
+                // porque este ultimo pode chegar zerado dentro da folha
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(
+                    24.0,
+                    24.0,
+                    24.0,
+                    24.0 + MediaQuery.viewPaddingOf(context).bottom,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
                           decoration: BoxDecoration(
                             color: isDark
-                                ? Colors.white.withAlpha(12)
-                                : Colors.white,
-                            borderRadius: BorderRadius.circular(AppRadius.md),
-                            border: Border.all(
-                              color: isDark
-                                  ? Colors.white.withAlpha(16)
-                                  : corPrimaria.withAlpha(20),
-                            ),
-                            boxShadow: AppShadows.nivel1(isDark),
-                          ),
-                          child: ListTile(
-                            leading: Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                gradient: gradientePrincipal,
-                                borderRadius: BorderRadius.circular(
-                                  AppRadius.sm,
-                                ),
-                                boxShadow: AppShadows.marca(forca: 0.35),
-                              ),
-                              child: const Icon(
-                                Icons.dark_mode_rounded,
-                                color: Colors.white,
-                                size: 20,
-                              ),
-                            ),
-                            title: Text(
-                              'Tema do Sistema',
-                              style: AppTextStyles.bodyBold.copyWith(
-                                color: isDark ? Colors.white : Colors.black87,
-                              ),
-                            ),
-                            trailing: DropdownButton<ThemeMode>(
-                              value: temaGlobal.value,
-                              underline: const SizedBox(),
-                              borderRadius: BorderRadius.circular(AppRadius.sm),
-                              dropdownColor: isDark
-                                  ? superficieEscura
-                                  : superficieClara,
-                              items: const [
-                                DropdownMenuItem(
-                                  value: ThemeMode.system,
-                                  child: Text('Sistema'),
-                                ),
-                                DropdownMenuItem(
-                                  value: ThemeMode.light,
-                                  child: Text('Claro'),
-                                ),
-                                DropdownMenuItem(
-                                  value: ThemeMode.dark,
-                                  child: Text('Escuro'),
-                                ),
-                              ],
-                              onChanged: (ThemeMode? novoModo) {
-                                if (novoModo != null) {
-                                  setModalState(
-                                    () => temaGlobal.value = novoModo,
-                                  );
-                                }
-                              },
+                                ? Colors.white.withAlpha(40)
+                                : Colors.grey.shade400,
+                            borderRadius: BorderRadius.circular(
+                              AppRadius.pill,
                             ),
                           ),
                         ),
-                        const SizedBox(height: 12),
-                        _linhaLocalizacao(isDark, setModalState),
-                        const SizedBox(height: 20),
+                      ),
+                      const SizedBox(height: 20),
 
-                        Text(
-                          'Estilo Visual do Mapa',
-                          style: AppTextStyles.captionBold.copyWith(
-                            color: isDark ? Colors.white70 : Colors.black87,
-                          ),
+                      Text(
+                        'Configurações',
+                        textAlign: TextAlign.center,
+                        style: AppTextStyles.heading3.copyWith(
+                          color: isDark ? Colors.white : Colors.black87,
                         ),
-                        const SizedBox(height: 12),
+                      ),
+                      const SizedBox(height: 24),
 
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _botaoModoMapa(
-                                'Normal',
-                                Icons.map_outlined,
-                                isDark,
-                                setModalState,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _botaoModoMapa(
-                                'Satélite',
-                                Icons.satellite_alt_rounded,
-                                isDark,
-                                setModalState,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 24),
-                        Divider(
+                      Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
                           color: isDark
-                              ? Colors.white.withAlpha(10)
-                              : Colors.grey.withAlpha(20),
-                        ),
-                        const SizedBox(height: 8),
-                        TextButton.icon(
-                          onPressed: () {
-                            Navigator.pop(context);
-                            _confirmarLogout();
-                          },
-                          icon: const Icon(
-                            Icons.logout_rounded,
-                            color: corErro,
-                            size: 18,
+                              ? Colors.white.withAlpha(12)
+                              : Colors.white,
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                          border: Border.all(
+                            color: isDark
+                                ? Colors.white.withAlpha(16)
+                                : corPrimaria.withAlpha(20),
                           ),
-                          label: const Text(
-                            'Sair da conta',
-                            style: TextStyle(
-                              color: corErro,
-                              fontWeight: FontWeight.w600,
+                          boxShadow: AppShadows.nivel1(isDark),
+                        ),
+                        child: ListTile(
+                          leading: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              gradient: gradientePrincipal,
+                              borderRadius: BorderRadius.circular(
+                                AppRadius.sm,
+                              ),
+                              boxShadow: AppShadows.marca(forca: 0.35),
+                            ),
+                            child: const Icon(
+                              Icons.dark_mode_rounded,
+                              color: Colors.white,
+                              size: 20,
                             ),
                           ),
+                          title: Text(
+                            'Tema do Sistema',
+                            style: AppTextStyles.bodyBold.copyWith(
+                              color: isDark ? Colors.white : Colors.black87,
+                            ),
+                          ),
+                          trailing: DropdownButton<ThemeMode>(
+                            value: temaGlobal.value,
+                            underline: const SizedBox(),
+                            borderRadius: BorderRadius.circular(AppRadius.sm),
+                            dropdownColor: isDark
+                                ? superficieEscura
+                                : superficieClara,
+                            items: const [
+                              DropdownMenuItem(
+                                value: ThemeMode.system,
+                                child: Text('Sistema'),
+                              ),
+                              DropdownMenuItem(
+                                value: ThemeMode.light,
+                                child: Text('Claro'),
+                              ),
+                              DropdownMenuItem(
+                                value: ThemeMode.dark,
+                                child: Text('Escuro'),
+                              ),
+                            ],
+                            onChanged: (ThemeMode? novoModo) {
+                              if (novoModo != null) {
+                                setModalState(
+                                  () => temaGlobal.value = novoModo,
+                                );
+                              }
+                            },
+                          ),
                         ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(height: 12),
+                      _linhaLocalizacao(isDark, setModalState),
+                      const SizedBox(height: 20),
+
+                      Text(
+                        'Estilo Visual do Mapa',
+                        style: AppTextStyles.captionBold.copyWith(
+                          color: isDark ? Colors.white70 : Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _botaoModoMapa(
+                              'Normal',
+                              Icons.map_outlined,
+                              isDark,
+                              setModalState,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _botaoModoMapa(
+                              'Satélite',
+                              Icons.satellite_alt_rounded,
+                              isDark,
+                              setModalState,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+                      Divider(
+                        color: isDark
+                            ? Colors.white.withAlpha(10)
+                            : Colors.grey.withAlpha(20),
+                      ),
+                      const SizedBox(height: 8),
+                      TextButton.icon(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _confirmarLogout();
+                        },
+                        icon: const Icon(
+                          Icons.logout_rounded,
+                          color: corErro,
+                          size: 18,
+                        ),
+                        label: const Text(
+                          'Sair da conta',
+                          style: TextStyle(
+                            color: corErro,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -2732,9 +2718,10 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     // porque sobrava o espaco que a barra de status ocupava antes
     final double recuoTopo = MediaQuery.of(context).padding.top;
     final double topOffset = (recuoTopo > 0 ? recuoTopo : 12) + 8;
-    final bool podeAnunciar =
-        _perfilAtual.perfilCompleto &&
-        _perfilAtual.tipoUsuario.toLowerCase() == 'proprietario';
+    // corretor tambem anuncia (o de empresa, depois da imobiliaria aprovar o
+    // vinculo) -- antes a regra era so "proprietario" e o botao simplesmente
+    // nao existia pra quem se cadastrou como corretor. Ver Usuario.podeAnunciar
+    final bool podeAnunciar = _perfilAtual.podeAnunciar;
 
     // altura aproximada que o card do local buscado ocupa na base da tela --
     // usada pra levantar o FAB de localizacao e o botao de anunciar
@@ -3309,7 +3296,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => const NovoAnuncioScreen(),
+                        builder: (context) => NovoAnuncioScreen(
+                          imobiliariaId: _perfilAtual.imobiliariaId,
+                        ),
                       ),
                     );
                   },
@@ -3372,6 +3361,24 @@ class _PerfilPreview extends StatelessWidget {
       default:
         return 'Tipo de conta não definido';
     }
+  }
+
+  Widget _seloVinculo(bool recusado) {
+    final cor = recusado ? corErro : corAtencao;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: cor.withAlpha(25),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        recusado
+            ? 'Vínculo recusado pela imobiliária'
+            : 'Pendente de aprovação da imobiliária',
+        textAlign: TextAlign.center,
+        style: TextStyle(color: cor, fontWeight: FontWeight.w700, fontSize: 12),
+      ),
+    );
   }
 
   @override
@@ -3447,6 +3454,13 @@ class _PerfilPreview extends StatelessWidget {
                     ),
                   ),
                 ),
+                // corretor de empresa fica "pendente" ate a imobiliaria
+                // responder -- sem dizer isso aqui, ele so notaria pela
+                // ausencia do botao de anunciar, sem entender o motivo
+                if (perfil.vinculoPendente || perfil.vinculoRecusado) ...[
+                  const SizedBox(height: 8),
+                  _seloVinculo(perfil.vinculoRecusado),
+                ],
               ],
             ),
           ),

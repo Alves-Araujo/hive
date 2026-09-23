@@ -296,6 +296,32 @@ class NotificacaoService {
         .map((uid) => _gravar(_colecaoPessoal(uid), aviso)));
   }
 
+  // resposta da imobiliaria ao pedido de vinculo do corretor. Vai pra colecao
+  // pessoal dele: e assunto de uma pessoa so, nao novidade pro app inteiro
+  Future<void> avisarRespostaDeVinculo({
+    required String corretorUid,
+    required String imobiliariaId,
+    required String nomeImobiliaria,
+    required bool aprovado,
+  }) {
+    if (corretorUid.isEmpty || corretorUid == _meuUid) return Future.value();
+    return _gravar(
+      _colecaoPessoal(corretorUid),
+      Notificacao(
+        id: '',
+        tipo: TipoNotificacao.vinculoRespondido,
+        titulo: aprovado
+            ? 'Vínculo aprovado por $nomeImobiliaria'
+            : 'Vínculo recusado por $nomeImobiliaria',
+        corpo: aprovado
+            ? 'Você já pode anunciar imóveis pela imobiliária.'
+            : 'Fale com a imobiliária ou escolha outra no seu perfil.',
+        autorUid: _meuUid,
+        alvoId: imobiliariaId,
+      ),
+    );
+  }
+
   Future<void> avisarNovaAvaliacao({
     required String avaliadoUid,
     required String avaliadorNome,

@@ -25,6 +25,8 @@ IconData iconeNotificacao(TipoNotificacao tipo) {
       return Icons.chat_bubble_rounded;
     case TipoNotificacao.novaAvaliacao:
       return Icons.star_rounded;
+    case TipoNotificacao.vinculoRespondido:
+      return Icons.verified_rounded;
   }
 }
 
@@ -76,6 +78,12 @@ Future<void> abrirNotificacao(BuildContext context, Notificacao n) async {
       final perfil = await PerfilPublicoService.instance.buscarPorUid(n.alvoId);
       if (perfil == null) return;
       navigator.push(MaterialPageRoute(builder: (_) => PerfilPublicoScreen(pessoa: perfil)));
+    case TipoNotificacao.vinculoRespondido:
+      // alvoId e a imobiliaria que respondeu: abre a ficha dela, que e onde a
+      // pessoa confere com quem ficou (ou nao) vinculada
+      final imobiliaria = await ImobiliariaService.instance.buscarPorId(n.alvoId);
+      if (imobiliaria == null) return indisponivel('Essa imobiliária não está mais disponível.');
+      navigator.push(MaterialPageRoute(builder: (_) => PerfilPublicoScreen(imobiliaria: imobiliaria)));
   }
 }
 

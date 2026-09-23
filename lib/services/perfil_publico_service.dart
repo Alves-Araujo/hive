@@ -10,7 +10,19 @@ class PerfilPublicoService {
 
   final _colecao = FirebaseFirestore.instance.collection('perfisPublicos');
 
-  Future<void> sincronizar(Usuario usuario) {
+  // A resposta da imobiliaria ao pedido de vinculo vive AQUI, e quem a escreve
+  // e ela, nao o corretor. Entao a sincronizacao nao pode simplesmente mandar
+  // o que o perfil local acha: um corretor recem-aprovado que salvasse o
+  // perfil antes do app puxar a resposta apagaria a propria aprovacao.
+  //
+  // Continuando na mesma imobiliaria, o que vale e o que ja esta gravado aqui;
+  // trocando de imobiliaria, a resposta da anterior e descartada -- aprovacao
+  // vale pra quem aprovou, nao pra qualquer empresa que a pessoa escolher
+  Future<void> sincronizar(Usuario usuario) async {
+    final atual = await buscarPorUid(usuario.uid);
+    final mesmaImobiliaria =
+        atual != null && atual.imobiliariaId == usuario.imobiliariaId;
+
     return _colecao.doc(usuario.uid).set({
       'nome': usuario.nome,
       'nomeBusca': usuario.nomeBusca,
@@ -19,7 +31,8 @@ class PerfilPublicoService {
       'subtipoCorretor': usuario.subtipoCorretor,
       'cidade': usuario.cidade,
       'imobiliariaId': usuario.imobiliariaId,
-      'vinculoConfirmado': usuario.vinculoConfirmado,
+      'vinculoConfirmado': mesmaImobiliaria && atual.vinculoConfirmado,
+      'vinculoRecusado': mesmaImobiliaria && atual.vinculoRecusado,
     }, SetOptions(merge: true));
   }
 

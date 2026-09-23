@@ -21,6 +21,12 @@ String formatarPreco(double valor) {
       '${centavos.toString().padLeft(2, '0')}';
 }
 
+// preco de anuncio pra exibicao. Zero vira "Gratuito": so evento pode ser
+// gravado sem valor (o formulario exige valor na moradia), e "R$0,00" num
+// evento parece campo que ninguem preencheu, nao entrada franca
+String formatarPrecoOuGratuito(double valor) =>
+    valor > 0 ? formatarPreco(valor) : 'Gratuito';
+
 // o MESMO formato, sem o "R$" -- e o que vai DENTRO do campo de texto, ja que
 // ali o cifrao fica no prefixo da decoracao. Usado pra preencher o campo na
 // edicao de um anuncio ja salvo

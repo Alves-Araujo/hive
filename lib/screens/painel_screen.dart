@@ -310,8 +310,12 @@ class _ItemPainel extends StatelessWidget {
                 ],
               ),
             ),
-            if (!isEvento)
-              Text(formatarPreco(imovel.preco), style: AppTextStyles.bodyBold.copyWith(color: corPrimaria)),
+            // o preco aparece tambem no evento (como "Gratuito" quando nao tem
+            // valor): quem publicou precisa conferir dali o que anunciou
+            Text(
+              formatarPrecoOuGratuito(imovel.preco),
+              style: AppTextStyles.bodyBold.copyWith(color: isEvento ? corEvento : corPrimaria),
+            ),
             // os tres pontinhos: e o que diz que o card abre acoes ao ser tocado
             const SizedBox(width: AppSpacing.xs),
             Icon(Icons.more_vert_rounded, size: 20, color: isDark ? Colors.white38 : Colors.grey),

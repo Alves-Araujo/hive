@@ -368,10 +368,11 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
                           _chipBairro(imovel, isDark),
                         ],
 
-                        if (!isEvento) ...[
-                          const SizedBox(height: AppSpacing.xl),
-                          _cartaoPreco(imovel, isDark),
-                        ],
+                        // o preco aparece nos DOIS tipos. No evento ele nunca
+                        // era mostrado -- quem abria a ficha nao tinha como
+                        // saber se pagava algo, nem quanto
+                        const SizedBox(height: AppSpacing.xl),
+                        _cartaoPreco(imovel, isDark),
 
                         if (imovel.descricao.isNotEmpty) ...[
                           const SizedBox(height: AppSpacing.xl),
@@ -592,16 +593,22 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
     );
   }
 
+  // moradia: "Aluguel mensal R$X/mês". Evento: "Entrada" com o valor, ou
+  // "Gratuito" quando foi publicado sem preco
   Widget _cartaoPreco(Imovel imovel, bool isDark) {
+    final String valor = _ehEvento
+        ? formatarPrecoOuGratuito(imovel.preco)
+        : '${formatarPreco(imovel.preco)}/mês';
+
     return Container(
       padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.xl, vertical: AppSpacing.lg),
       decoration: BoxDecoration(
-        color: isDark ? corSuperficieEscura : Colors.white,
+        color: _corCartao(isDark),
         borderRadius: BorderRadius.circular(99.0),
         boxShadow: AppShadows.nivel1(isDark),
         border: Border.all(
-          color: isDark ? Colors.white.withAlpha(14) : corPrimaria.withAlpha(20),
+          color: isDark ? Colors.white.withAlpha(14) : _corAcento.withAlpha(20),
         ),
       ),
       child: Row(
@@ -609,15 +616,17 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Text(
-            'Aluguel mensal',
+            _ehEvento ? 'Entrada' : 'Aluguel mensal',
             style: AppTextStyles.caption.copyWith(
               color: isDark ? Colors.white38 : Colors.grey,
             ),
           ),
           ShaderMask(
+            // gradienteSecundario mesmo no evento: ele e o destaque de PRECO
+            // do app inteiro, nao a cor de um tipo de anuncio (ver main.dart)
             shaderCallback: (bounds) => gradienteSecundario.createShader(bounds),
             child: Text(
-              '${formatarPreco(imovel.preco)}/mês',
+              valor,
               style: const TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.w800,
@@ -754,9 +763,11 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
                   onTap: _abrirModalDeRota,
                 ),
               ),
-              // o dono nao conversa com o proprio anuncio -- antes o botao
-              // aparecia pra ele tambem e abria um chat consigo mesmo
-              if (!isEvento && imovel.donoUid.isNotEmpty && imovel.donoUid != _meuUid) ...[
+              // Falar com quem publicou vale nos DOIS tipos: no evento o botao
+              // nao existia, e nao havia como perguntar nada a quem organiza.
+              // O dono continua de fora -- antes o botao aparecia pra ele
+              // tambem e abria um chat consigo mesmo
+              if (imovel.donoUid.isNotEmpty && imovel.donoUid != _meuUid) ...[
                 const SizedBox(width: AppSpacing.md),
                 // so o icone: dois botoes de largura cheia lado a lado nao
                 // cabem, e "Calcular Rota" e a acao principal aqui
@@ -766,13 +777,13 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
                     width: 56,
                     height: 56,
                     decoration: BoxDecoration(
-                      color: isDark ? Colors.white.withAlpha(14) : corPrimaria.withAlpha(14),
+                      color: isDark ? Colors.white.withAlpha(14) : _corAcento.withAlpha(14),
                       borderRadius: BorderRadius.circular(99.0),
                       border: Border.all(
-                        color: isDark ? Colors.white.withAlpha(20) : corPrimaria.withAlpha(34),
+                        color: isDark ? Colors.white.withAlpha(20) : _corAcento.withAlpha(34),
                       ),
                     ),
-                    child: Icon(Icons.chat_bubble_outline_rounded, color: corPrimaria, size: 22),
+                    child: Icon(Icons.chat_bubble_outline_rounded, color: _corAcento, size: 22),
                   ),
                 ),
               ],

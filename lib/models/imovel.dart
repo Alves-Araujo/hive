@@ -75,6 +75,11 @@ class Imovel {
   final List<String> fotos;
   final String donoUid;
 
+  // imobiliaria do corretor que publicou. Vazio em anuncio de proprietario ou
+  // de corretor autonomo -- e o que liga o imovel a empresa em nome de quem
+  // ele foi anunciado
+  final String imobiliariaId;
+
   // endereco estruturado (exigido por completo no formulario, exceto complemento)
   final String cep;
   final String logradouro;
@@ -105,6 +110,7 @@ class Imovel {
     required this.endereco,
     this.fotos = const [],
     this.donoUid = '',
+    this.imobiliariaId = '',
     this.cep = '',
     this.logradouro = '',
     this.numero = '',
@@ -158,6 +164,7 @@ class Imovel {
       endereco: normalizarTracosOuVazio(map['endereco']),
       fotos: List<String>.from(map['fotos'] ?? []),
       donoUid: map['donoUid'] ?? '',
+      imobiliariaId: map['imobiliariaId'] ?? '',
       cep: map['cep'] ?? '',
       logradouro: normalizarTracosOuVazio(map['logradouro']),
       numero: map['numero'] ?? '',
@@ -197,6 +204,7 @@ class Imovel {
       'endereco': normalizarTracos(endereco),
       'fotos': fotos,
       'donoUid': donoUid,
+      'imobiliariaId': imobiliariaId,
       'cep': cep,
       'logradouro': normalizarTracos(logradouro),
       'numero': numero,

@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import '../models/usuario.dart';
 import '../utils/moderacao.dart';
 import 'perfil_publico_service.dart';
@@ -73,21 +74,59 @@ class UsuarioService {
 
   // grava o formulario inteiro de "concluir perfil" de uma vez.
   //
-  // CPF e CNPJ de quem ja finalizou o cadastro nunca vao no update: o
-  // documento e imutavel dali em diante (as regras do Firestore recusariam o
-  // update inteiro), entao o que estiver gravado prevalece sobre o que veio
-  // do formulario -- a tela ja bloqueia os campos, isto e a rede de seguranca
+  // O que ja foi definido no cadastro nunca vai no update de quem ja
+  // finalizou: CPF/CNPJ porque sao identidade, tipo de conta e subtipo porque
+  // decidem o que a conta pode fazer (anunciar, vincular imobiliaria) e ja
+  // circularam em anuncio, chat e avaliacao. As regras do Firestore recusariam
+  // o update inteiro -- entao o que esta gravado prevalece sobre o que veio do
+  // formulario. A tela ja bloqueia os campos, isto e a rede de seguranca
+  static const List<String> _camposImutaveis = [
+    'cpf', 'cnpj', 'tipoUsuario', 'subtipoCorretor',
+  ];
+
   Future<void> completarPerfil(Usuario usuario) async {
     final dados = usuario.toMap();
     final anterior = (await _colecao.doc(usuario.uid).get()).data();
     if (anterior != null && anterior['perfilCompleto'] == true) {
-      for (final campo in ['cpf', 'cnpj']) {
+      for (final campo in _camposImutaveis) {
         final salvo = anterior[campo];
         if (salvo is String && salvo.isNotEmpty) dados[campo] = salvo;
       }
     }
     await _colecao.doc(usuario.uid).update(dados);
     await PerfilPublicoService.instance.sincronizar(usuario);
+  }
+
+  // Traz de volta a resposta da imobiliaria ao pedido de vinculo.
+  //
+  // Quem aprova (ou recusa) e OUTRA pessoa, e ela so alcanca "perfisPublicos"
+  // -- as regras nao deixam ninguem escrever no documento de "usuarios" de
+  // quem nao e ele mesmo. Entao o perfil do proprio corretor e que vem buscar
+  // a resposta, na abertura do app: sem isso ele continuaria "pendente" pra
+  // sempre do lado de ca, e o botao de anunciar nunca apareceria.
+  //
+  // Devolve o perfil atualizado (ou o mesmo, quando nao mudou nada)
+  Future<Usuario> sincronizarVinculo(Usuario perfil) async {
+    if (!perfil.ehCorretorDeEmpresa || perfil.imobiliariaId.isEmpty) return perfil;
+
+    final publico = await PerfilPublicoService.instance.buscarPorUid(perfil.uid);
+    if (publico == null || publico.imobiliariaId != perfil.imobiliariaId) return perfil;
+    if (publico.vinculoConfirmado == perfil.vinculoConfirmado &&
+        publico.vinculoRecusado == perfil.vinculoRecusado) {
+      return perfil;
+    }
+
+    try {
+      await _colecao.doc(perfil.uid).update({
+        'vinculoConfirmado': publico.vinculoConfirmado,
+        'vinculoRecusado': publico.vinculoRecusado,
+      });
+    } catch (e) {
+      // sem a gravacao o app segue com o valor lido -- na proxima abertura
+      // tenta de novo. Nao vale travar a tela do mapa por causa disso
+      debugPrint('Não foi possível sincronizar o vínculo: $e');
+    }
+    return await buscarPorUid(perfil.uid) ?? perfil;
   }
 
   // marca "visto por ultimo agora" -- usado pro indicador de atividade

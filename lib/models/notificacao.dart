@@ -2,7 +2,18 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../utils/texto.dart';
 
 // o que aconteceu -- decide o icone, a cor e pra onde o toque leva
-enum TipoNotificacao { novaMoradia, novoEvento, novaImobiliaria, novaMensagem, novaAvaliacao }
+enum TipoNotificacao {
+  novaMoradia,
+  novoEvento,
+  novaImobiliaria,
+  novaMensagem,
+  novaAvaliacao,
+  // a imobiliaria aprovou (ou recusou) o pedido de vinculo -- chega so pro
+  // corretor que pediu. O pedido no sentido contrario nao vira aviso gravado:
+  // a imobiliaria nao e uma conta, e identificada pelo e-mail, entao quem
+  // administra recebe os pedidos ao entrar (ver map_screen)
+  vinculoRespondido,
+}
 
 // Existem dois tipos de destino, gravados em lugares diferentes:
 // - avisos pra TODO mundo (anuncio novo, imobiliaria nova) ficam na colecao

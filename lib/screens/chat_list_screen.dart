@@ -115,6 +115,17 @@ class _TelaListaChatsState extends State<TelaListaChats> {
       children: [
         CabecalhoTela(
           padronizarAltura: true,
+          inicio: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: corPrimaria.withAlpha(isDark ? 70 : 18),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: corPrimaria2.withAlpha(55)),
+            ),
+            child: Icon(Icons.forum_outlined, size: 21,
+                color: isDark ? const Color(0xFF65B0FF) : corPrimaria),
+          ),
           titulo: 'Caixa de Entrada',
           subtitulo: 'Anunciantes, corretores e colegas',
           acao: _buildSeloNaoLidas(),
@@ -122,7 +133,7 @@ class _TelaListaChatsState extends State<TelaListaChats> {
             compacto: true,
             controller: _buscaController,
             focusNode: _buscaFocusNode,
-            dica: 'Buscar alunos, corretores, imobiliárias...',
+            dica: 'Buscar pessoas e imobiliárias',
           ),
         ),
         // textura fina, nao a arte da conversa: aqui os cards cobrem quase

@@ -24,7 +24,13 @@ const int _limiteTamanhoImagemBytes = 32 * 1024 * 1024; // 32MB por foto
 // comprovantes) condenada a divergir dele
 class NovoAnuncioScreen extends StatefulWidget {
   final Imovel? imovel;
-  const NovoAnuncioScreen({super.key, this.imovel});
+
+  // imobiliaria de quem esta publicando (so corretor de empresa tem uma). O
+  // anuncio ja nasce ligado a ela: na edicao vale a que ficou gravada, senao
+  // um corretor que trocou de imobiliaria levaria os anuncios antigos junto
+  final String imobiliariaId;
+
+  const NovoAnuncioScreen({super.key, this.imovel, this.imobiliariaId = ''});
 
   @override
   State<NovoAnuncioScreen> createState() => _NovoAnuncioScreenState();
@@ -76,6 +82,7 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
   final List<String> _fotosJaSalvas = [];
 
   bool get _editando => widget.imovel != null;
+  bool get _ehEvento => _tipoSelecionado == TipoListing.evento;
   bool get _ehApartamento => _tipoImovelSelecionado == 'Apartamento';
 
   // na edicao, um comprovante ja enviado continua valendo se a pessoa nao
@@ -249,7 +256,11 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
       return;
     }
 
-    final ehMoradia = _tipoSelecionado == TipoListing.moradia;
+    // na edicao vale o tipo GRAVADO, nunca o estado da tela: o seletor esta
+    // desligado, e isto e a rede de seguranca do lado do app (as regras do
+    // firestore recusam a troca do campo `tipo` no update)
+    final tipoFinal = widget.imovel?.tipo ?? _tipoSelecionado;
+    final ehMoradia = tipoFinal == TipoListing.moradia;
     if (ehMoradia) {
       if (_tipoImovelSelecionado.isEmpty) {
         _mostrarErro('Selecione o tipo do imóvel.');
@@ -330,13 +341,14 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
         descricao: _descricaoController.text.trim(),
         preco: valorDoCampo(_precoController.text),
         posicao: LatLng(lat, lng),
-        tipo: _tipoSelecionado,
+        tipo: tipoFinal,
         tags: tagsFinal,
         endereco: enderecoFormatado,
         fotos: urlsImagens,
         // na edicao o dono continua sendo quem publicou: as regras do
         // firestore comparam esse campo com quem esta autenticado
         donoUid: widget.imovel?.donoUid ?? FirebaseAuth.instance.currentUser?.uid ?? '',
+        imobiliariaId: widget.imovel?.imobiliariaId ?? widget.imobiliariaId,
         cep: _cepController.text.trim(),
         logradouro: _logradouroController.text.trim(),
         numero: _numeroController.text.trim(),
@@ -405,6 +417,11 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
               _buildSeletorDeFotos(isDark),
               const SizedBox(height: 24),
 
+              // categoria e imutavel depois de publicado: um anuncio que vira
+              // do outro tipo deixa pra tras campos que so o tipo antigo usa
+              // (IPTU, comprovante, tipo do imovel) e some da aba onde as
+              // pessoas ja o encontravam. Na edicao o seletor fica desligado e
+              // _salvarAnuncio grava o tipo que ja esta no banco, nao este estado
               RadioGroup<TipoListing>(
                 groupValue: _tipoSelecionado,
                 onChanged: (val) => setState(() => _tipoSelecionado = val!),
@@ -415,6 +432,7 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
                         title: const Text('Moradia'),
                         value: TipoListing.moradia,
                         activeColor: corPrimaria,
+                        enabled: !_editando,
                       ),
                     ),
                     Expanded(
@@ -422,11 +440,28 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
                         title: const Text('Evento'),
                         value: TipoListing.evento,
                         activeColor: corAtencao,
+                        enabled: !_editando,
                       ),
                     ),
                   ],
                 ),
               ),
+              if (_editando) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(Icons.lock_outline_rounded, size: 14, color: isDark ? Colors.white38 : Colors.grey),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'A categoria do anúncio não muda depois de publicado. '
+                        'Se errou, apague este e publique de novo.',
+                        style: AppTextStyles.caption.copyWith(color: isDark ? Colors.white38 : Colors.grey),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 20),
 
               _buildTextField(
@@ -541,17 +576,34 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
               ),
               const SizedBox(height: 16),
 
+              // evento pode ser de graca: campo vazio vale como preco zero e a
+              // ficha mostra "Gratuito". Moradia continua exigindo valor --
+              // aluguel sem preco nao e anuncio de aluguel
               _buildTextField(
                 controller: _precoController,
-                label: 'Preço',
+                label: _ehEvento ? 'Preço (deixe vazio se for gratuito)' : 'Preço',
                 icon: Icons.attach_money_rounded,
                 isDark: isDark,
                 campoDeDinheiro: true,
                 validator: (val) {
+                  if (_ehEvento) return null;
                   if (val == null || val.isEmpty) return 'Informe o preço';
                   return valorDoCampo(val) > 0 ? null : 'Informe um valor maior que zero';
                 },
               ),
+              if (_ehEvento) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.celebration_rounded, size: 14, color: corEvento),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Sem valor, o evento aparece como "Gratuito".',
+                      style: AppTextStyles.caption.copyWith(color: isDark ? Colors.white38 : Colors.grey),
+                    ),
+                  ],
+                ),
+              ],
 
               if (_tipoSelecionado == TipoListing.moradia) ...[
                 const SizedBox(height: 24),

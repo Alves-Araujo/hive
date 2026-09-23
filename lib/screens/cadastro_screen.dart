@@ -108,6 +108,10 @@ class _TelaCadastroState extends State<TelaCadastro>
       _mostrarErro('Informe seu nome completo.');
       return;
     }
+    if (!nomeTemCaracteresValidos(nome)) {
+      _mostrarErro('Use só letras no nome (acentos são bem-vindos).');
+      return;
+    }
     if (!temNomeESobrenome(nome)) {
       _mostrarErro('Informe nome e sobrenome.');
       return;

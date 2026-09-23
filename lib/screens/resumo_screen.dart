@@ -6,6 +6,7 @@ import '../models/usuario.dart';
 import '../utils/cor_foto.dart';
 import '../widgets/card_imovel_vertical.dart';
 import '../widgets/cabecalho_tela.dart';
+import '../widgets/seletor_tipo_resumo.dart';
 import '../widgets/papel_parede_resumo.dart';
 
 class TelaResumo extends StatefulWidget {
@@ -98,51 +99,9 @@ class _TelaResumoState extends State<TelaResumo>
                     ),
             ),
           ),
-          rodape: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
-            child: Container(
-              padding: const EdgeInsets.all(2),
-              decoration: BoxDecoration(
-                color: isDark
-                    ? Colors.black.withAlpha(35)
-                    : corPrimaria.withAlpha(10),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: isDark
-                      ? Colors.white.withAlpha(12)
-                      : corPrimaria.withAlpha(15),
-                ),
-              ),
-              child: Row(
-                children: [
-                  _FiltroChip(
-                    label: 'Todos',
-                    icon: Icons.apps_rounded,
-                    selected: _filtroTipo == 'Todos',
-                    onTap: () => _mudarFiltro('Todos'),
-                    isDark: isDark,
-                  ),
-                  const SizedBox(width: 2),
-                  _FiltroChip(
-                    label: 'Moradias',
-                    icon: Icons.home_rounded,
-                    selected: _filtroTipo == 'Moradias',
-                    onTap: () => _mudarFiltro('Moradias'),
-                    isDark: isDark,
-                  ),
-                  const SizedBox(width: 2),
-                  _FiltroChip(
-                    label: 'Eventos',
-                    icon: Icons.celebration_rounded,
-                    selected: _filtroTipo == 'Eventos',
-                    onTap: () => _mudarFiltro('Eventos'),
-                    isDark: isDark,
-                    isEvento: true,
-                  ),
-                ],
-              ),
-            ),
+          rodape: SeletorTipoResumo(
+            selecionado: _filtroTipo,
+            onChanged: _mudarFiltro,
           ),
         ),
 
@@ -275,69 +234,3 @@ class _TelaResumoState extends State<TelaResumo>
     );
   }
 }
-
-class _FiltroChip extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool selected;
-  final VoidCallback onTap;
-  final bool isDark;
-  final bool isEvento;
-
-  const _FiltroChip({
-    required this.label,
-    required this.icon,
-    required this.selected,
-    required this.onTap,
-    required this.isDark,
-    this.isEvento = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: AppMotion.rapida,
-        constraints: const BoxConstraints(minHeight: 42),
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md,
-          vertical: 6,
-        ),
-        decoration: BoxDecoration(
-          gradient: selected
-              ? (isEvento ? gradienteEvento : gradientePrincipal)
-              : null,
-          color: selected ? null : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 16,
-              color: selected
-                  ? Colors.white
-                  : (isDark ? Colors.white60 : Colors.black54),
-            ),
-            const SizedBox(width: AppSpacing.xs),
-            Text(
-              label,
-              style: TextStyle(
-                color: selected
-                    ? Colors.white
-                    : (isDark ? Colors.white60 : Colors.black87),
-                fontSize: 13,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// card vertical estilo premium — imagem grande no topo, info em baixo,
-// com preco flutuando sobre a imagem

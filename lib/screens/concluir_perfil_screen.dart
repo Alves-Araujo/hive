@@ -6,6 +6,7 @@ import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../main.dart';
 import '../widgets/campo_formulario.dart';
 import '../models/endereco.dart';
+import '../models/imobiliaria.dart';
 import '../models/usuario.dart';
 import '../services/imgbb_service.dart';
 import '../services/imobiliaria_service.dart';
@@ -15,6 +16,7 @@ import '../utils/moderacao.dart';
 import '../widgets/animated_gradient_button.dart';
 import '../widgets/avatar_widget.dart';
 import '../widgets/campo_endereco.dart';
+import '../widgets/seletor_imobiliaria.dart';
 import '../widgets/seletor_tipo_usuario.dart';
 
 const List<String> generosDisponiveis = [
@@ -66,6 +68,13 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
   bool _salvando = false;
   bool _aceitouTermos = false;
 
+  // vinculo do corretor de empresa: ou ele escolhe uma imobiliaria ja
+  // cadastrada, ou pede pra cadastrar uma nova e preenche o formulario da
+  // empresa. Um dos dois e obrigatorio pra concluir o cadastro
+  Imobiliaria? _imobiliariaSelecionada;
+  bool _cadastrandoNovaImobiliaria = false;
+  bool _carregandoImobiliaria = false;
+
   // proprietario e corretor autonomo podem escolher CPF ou CNPJ; corretor de
   // empresa tem o CNPJ na secao da empresa, entao o documento pessoal dele e sempre CPF
   bool get _permiteEscolherCnpj =>
@@ -88,11 +97,17 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
   bool get _cpfResponsavelBloqueado =>
       widget.perfil.perfilCompleto && widget.perfil.responsavelCpf.isNotEmpty;
 
-  // conta cadastrada com CNPJ tentando virar um tipo que so aceita CPF
-  // (estudante, corretor de empresa) -- como o documento nao pode mais mudar,
-  // a troca de tipo nao tem como ser salva
-  bool get _tipoConflitaComDocumento =>
-      _documentoBloqueado && widget.perfil.cnpj.isNotEmpty && !_permiteEscolherCnpj;
+  // tipo de conta e escolha de cadastro, nao preferencia: ele decide o que a
+  // conta pode fazer (anunciar, vincular imobiliaria) e ja rendeu anuncio,
+  // chat e avaliacao com esse papel. Depois de finalizado nao muda mais --
+  // aqui e no update do Firestore (ver UsuarioService.completarPerfil)
+  bool get _tipoDeContaBloqueado =>
+      widget.perfil.perfilCompleto && widget.perfil.tipoUsuario.isNotEmpty;
+
+  // o subtipo anda junto: se desse pra trocar "empresa" por "autonomo", o
+  // corretor fugiria da aprovacao da imobiliaria e anunciaria assim mesmo
+  bool get _subtipoBloqueado =>
+      _tipoDeContaBloqueado && widget.perfil.subtipoCorretor.isNotEmpty;
 
   int? get _idade => _dataNascimento != null ? calcularIdade(_dataNascimento!) : null;
 
@@ -100,6 +115,17 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
       _tipoSelecionado == 'estudante' && _idade != null && _idade! < 18;
 
   bool get _mostraSecaoEmpresa => _tipoSelecionado == 'corretor' && _subtipoCorretor == 'empresa';
+
+  // os dados da empresa (nome, CNPJ, endereco, e-mail) so sao pedidos pra
+  // quem esta CADASTRANDO uma imobiliaria nova. Escolhendo uma que ja existe,
+  // esses dados ja estao no cadastro dela -- pedir de novo so daria chance de
+  // divergirem
+  bool get _mostraFormularioDeEmpresa => _mostraSecaoEmpresa && _cadastrandoNovaImobiliaria;
+
+  bool get _vinculoJaConfirmado =>
+      widget.perfil.vinculoConfirmado &&
+      widget.perfil.imobiliariaId.isNotEmpty &&
+      widget.perfil.imobiliariaId == _imobiliariaSelecionada?.id;
 
   @override
   void initState() {
@@ -133,6 +159,24 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
     _respEnderecoControllers.preencher(p.responsavelEndereco);
     _respCpfController.text = p.responsavelCpf;
     _respEmailController.text = p.responsavelEmail;
+
+    // quem ja tem vinculo reabre a tela com a imobiliaria dele carregada, pra
+    // nao parecer que precisa escolher tudo de novo
+    if (p.imobiliariaId.isNotEmpty) {
+      // o flag vai direto, sem setState: ainda estamos em initState e o
+      // primeiro build nem aconteceu
+      _carregandoImobiliaria = true;
+      _carregarImobiliariaDoPerfil(p.imobiliariaId);
+    }
+  }
+
+  Future<void> _carregarImobiliariaDoPerfil(String id) async {
+    final imobiliaria = await ImobiliariaService.instance.buscarPorId(id);
+    if (!mounted) return;
+    setState(() {
+      _imobiliariaSelecionada = imobiliaria;
+      _carregandoImobiliaria = false;
+    });
   }
 
   @override
@@ -225,11 +269,6 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
 
     if (_dataNascimento == null) return 'Informe a data de nascimento.';
 
-    if (_tipoConflitaComDocumento) {
-      return 'Sua conta está cadastrada com CNPJ e esse tipo de conta exige CPF. '
-          'O documento não pode ser alterado depois do cadastro.';
-    }
-
     final documento = _documentoController.text.trim();
     if (documento.isEmpty) return 'Informe o CPF${_permiteEscolherCnpj ? ' ou CNPJ' : ''}.';
     if (_documentoEhCnpj) {
@@ -242,9 +281,14 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
     // campo pelo proprio Form via CampoEndereco -- aqui so o que nao tem
     // TextFormField.validator
     if (_mostraSecaoEmpresa) {
-      if (_nomeEmpresaController.text.trim().isEmpty) return 'Informe o nome da empresa.';
-      if (!validarCNPJ(_cnpjEmpresaController.text.trim())) return 'CNPJ da empresa inválido.';
-      if (!_emailEmpresaController.text.trim().contains('@')) return 'Informe um e-mail válido da empresa.';
+      if (_imobiliariaSelecionada == null && !_cadastrandoNovaImobiliaria) {
+        return 'Selecione a imobiliária em que você trabalha.';
+      }
+      if (_mostraFormularioDeEmpresa) {
+        if (_nomeEmpresaController.text.trim().isEmpty) return 'Informe o nome da empresa.';
+        if (!validarCNPJ(_cnpjEmpresaController.text.trim())) return 'CNPJ da empresa inválido.';
+        if (!_emailEmpresaController.text.trim().contains('@')) return 'Informe um e-mail válido da empresa.';
+      }
     }
 
     if (_tipoSelecionado == 'corretor' && _subtipoCorretor.isEmpty) {
@@ -268,6 +312,10 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     final nome = _nomeController.text.trim();
+    if (!nomeTemCaracteresValidos(nome)) {
+      _mostrarErro('Use só letras no nome (acentos são bem-vindos).');
+      return;
+    }
     if (!temNomeESobrenome(nome)) {
       _mostrarErro('Informe nome e sobrenome.');
       return;
@@ -303,21 +351,31 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
       final cpfResponsavel = _cpfResponsavelBloqueado
           ? widget.perfil.responsavelCpf
           : _respCpfController.text.trim();
+      final tipoUsuario = _tipoDeContaBloqueado ? widget.perfil.tipoUsuario : _tipoSelecionado!;
+      final subtipoCorretor = _subtipoBloqueado
+          ? widget.perfil.subtipoCorretor
+          : (tipoUsuario == 'corretor' ? _subtipoCorretor : '');
 
-      // se for corretor de empresa, acha (ou cria) a imobiliaria pelo cnpj --
-      // o vinculo so fica confirmado quando alguem que loga com o e-mail da
-      // imobiliaria aceitar, la na tela do mapa
+      // corretor de empresa: ou o id da imobiliaria que ele escolheu, ou o da
+      // que ele acabou de cadastrar. O vinculo NASCE pendente -- quem aprova e
+      // quem entra com o e-mail da imobiliaria (ver map_screen)
       String imobiliariaId = '';
       bool vinculoConfirmado = false;
+      bool vinculoRecusado = false;
       if (_mostraSecaoEmpresa) {
-        imobiliariaId = await ImobiliariaService.instance.encontrarOuCriar(
-          nome: _nomeEmpresaController.text.trim(),
-          cnpj: cnpjEmpresa,
-          email: _emailEmpresaController.text.trim(),
-          endereco: _enderecoEmpresaControllers.valor.formatado,
-        );
-        // se ja estava vinculado a essa mesma imobiliaria, mantem o status
-        vinculoConfirmado = widget.perfil.imobiliariaId == imobiliariaId && widget.perfil.vinculoConfirmado;
+        imobiliariaId = _cadastrandoNovaImobiliaria
+            ? await ImobiliariaService.instance.encontrarOuCriar(
+                nome: _nomeEmpresaController.text.trim(),
+                cnpj: cnpjEmpresa,
+                email: _emailEmpresaController.text.trim(),
+                endereco: _enderecoEmpresaControllers.valor.formatado,
+              )
+            : _imobiliariaSelecionada!.id;
+        // trocar de imobiliaria zera a resposta da anterior: aprovacao vale
+        // pra quem aprovou, nao pra qualquer empresa que a pessoa escolher
+        final mesmaDeAntes = widget.perfil.imobiliariaId == imobiliariaId;
+        vinculoConfirmado = mesmaDeAntes && widget.perfil.vinculoConfirmado;
+        vinculoRecusado = mesmaDeAntes && widget.perfil.vinculoRecusado;
       }
 
       final atualizado = Usuario(
@@ -325,8 +383,8 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
         nome: nome,
         nomeBusca: normalizarNome(nome),
         email: widget.perfil.email,
-        tipoUsuario: _tipoSelecionado!,
-        subtipoCorretor: _tipoSelecionado == 'corretor' ? _subtipoCorretor : '',
+        tipoUsuario: tipoUsuario,
+        subtipoCorretor: subtipoCorretor,
         fotoUrl: _fotoUrl,
         perfilCompleto: true,
         genero: _generoSelecionado == 'Outro' ? _generoOutroController.text.trim() : _generoSelecionado,
@@ -342,13 +400,20 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
         responsavelCpf: _mostraSecaoResponsavel ? cpfResponsavel : '',
         responsavelEmail: _mostraSecaoResponsavel ? _respEmailController.text.trim() : '',
         responsavelEmailVerificado: false,
-        nomeEmpresa: _mostraSecaoEmpresa ? _nomeEmpresaController.text.trim() : '',
-        cnpjEmpresa: _mostraSecaoEmpresa ? cnpjEmpresa : '',
-        enderecoEmpresa: _mostraSecaoEmpresa ? _enderecoEmpresaControllers.valor : const Endereco(),
-        emailEmpresa: _mostraSecaoEmpresa ? _emailEmpresaController.text.trim() : '',
+        // os dados da empresa so ficam no perfil de quem CADASTROU a
+        // imobiliaria. Escolhendo uma que ja existe, eles moram no cadastro
+        // dela e o perfil guarda so o vinculo (imobiliariaId) -- copiar aqui
+        // criaria uma segunda versao dos mesmos dados pra divergir depois, e
+        // esbarraria na regra que trava o CNPJ da empresa ja gravado
+        nomeEmpresa: _mostraFormularioDeEmpresa ? _nomeEmpresaController.text.trim() : '',
+        cnpjEmpresa: _mostraFormularioDeEmpresa ? cnpjEmpresa : '',
+        enderecoEmpresa:
+            _mostraFormularioDeEmpresa ? _enderecoEmpresaControllers.valor : const Endereco(),
+        emailEmpresa: _mostraFormularioDeEmpresa ? _emailEmpresaController.text.trim() : '',
         emailEmpresaVerificado: false,
         imobiliariaId: imobiliariaId,
         vinculoConfirmado: vinculoConfirmado,
+        vinculoRecusado: vinculoRecusado,
       );
 
       await UsuarioService.instance.completarPerfil(atualizado);
@@ -484,6 +549,7 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
                 SeletorTipoUsuario(
                   valorSelecionado: _tipoSelecionado,
                   isDark: isDark,
+                  bloqueado: _tipoDeContaBloqueado,
                   onSelecionar: (valor) => setState(() {
                     _tipoSelecionado = valor;
                     if (valor != 'corretor') _subtipoCorretor = '';
@@ -503,6 +569,7 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
                           isDark: isDark,
                           selecionado: _subtipoCorretor == 'autonomo',
                           label: 'Autônomo',
+                          bloqueado: _subtipoBloqueado,
                           onTap: () => setState(() => _subtipoCorretor = 'autonomo'),
                         ),
                       ),
@@ -512,6 +579,7 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
                           isDark: isDark,
                           selecionado: _subtipoCorretor == 'empresa',
                           label: 'Empresa',
+                          bloqueado: _subtipoBloqueado,
                           onTap: () => setState(() {
                             _subtipoCorretor = 'empresa';
                             if (!_documentoBloqueado) {
@@ -522,6 +590,14 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
                         ),
                       ),
                     ],
+                  ),
+                ],
+                if (_tipoDeContaBloqueado) ...[
+                  const SizedBox(height: 10),
+                  _avisoBloqueado(
+                    isDark,
+                    'O tipo de conta é definido no cadastro e não muda depois. '
+                    'Se escolheu errado, fale com o suporte.',
                   ),
                 ],
               ],
@@ -582,14 +658,6 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
                       'cadastro é finalizado. Se o número estiver errado, fale com o suporte.',
                     ),
                   ],
-                  if (_tipoConflitaComDocumento) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      'Sua conta foi finalizada com CNPJ, e esse tipo de conta exige CPF. '
-                      'Como o documento não pode mudar, escolha Proprietário ou Corretor autônomo.',
-                      style: AppTextStyles.caption.copyWith(color: corErro),
-                    ),
-                  ],
                 ],
               ),
 
@@ -597,8 +665,51 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
               const SizedBox(height: 20),
               _secao(
                 isDark: isDark,
-                titulo: 'Dados da empresa',
+                titulo: 'Imobiliária',
                 icone: Icons.apartment_rounded,
+                filhos: [
+                  if (_carregandoImobiliaria)
+                    const Center(child: CircularProgressIndicator(color: corPrimaria))
+                  else
+                    SeletorImobiliaria(
+                      selecionada: _imobiliariaSelecionada,
+                      isDark: isDark,
+                      cadastrandoNova: _cadastrandoNovaImobiliaria,
+                      onSelecionar: (imobiliaria) => setState(() {
+                        _imobiliariaSelecionada = imobiliaria;
+                        _cadastrandoNovaImobiliaria = false;
+                      }),
+                      onCadastrarNova: () => setState(() {
+                        _cadastrandoNovaImobiliaria = true;
+                        _imobiliariaSelecionada = null;
+                      }),
+                      onLimpar: () => setState(() {
+                        _imobiliariaSelecionada = null;
+                        _cadastrandoNovaImobiliaria = false;
+                      }),
+                    ),
+                  const SizedBox(height: 10),
+                  Text(
+                    _vinculoJaConfirmado
+                        ? 'Seu vínculo com essa imobiliária já foi aprovado.'
+                        : 'Seu cadastro fica como "pendente de aprovação" até a imobiliária '
+                            'confirmar o vínculo. Até lá você não anuncia imóveis por ela.',
+                    style: AppTextStyles.caption.copyWith(
+                      color: _vinculoJaConfirmado
+                          ? corSucesso
+                          : (isDark ? Colors.white38 : Colors.grey),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+
+            if (_mostraFormularioDeEmpresa) ...[
+              const SizedBox(height: 20),
+              _secao(
+                isDark: isDark,
+                titulo: 'Dados da empresa',
+                icone: Icons.store_rounded,
                 filhos: [
                   _campo(controller: _nomeEmpresaController, label: 'Nome da empresa', icon: Icons.store_outlined, isDark: isDark),
                   const SizedBox(height: 14),
@@ -779,24 +890,28 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
     required bool selecionado,
     required String label,
     required VoidCallback onTap,
+    bool bloqueado = false,
   }) {
     return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          gradient: selecionado ? gradientePrincipal : null,
-          color: selecionado ? null : (isDark ? Colors.white.withAlpha(8) : Colors.grey.withAlpha(15)),
-          borderRadius: BorderRadius.circular(99.0),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selecionado ? Colors.white : (isDark ? Colors.white70 : Colors.black87),
-            fontWeight: FontWeight.w700,
-            fontSize: 13,
+      onTap: bloqueado ? null : onTap,
+      child: Opacity(
+        opacity: bloqueado && !selecionado ? 0.45 : 1,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            gradient: selecionado ? gradientePrincipal : null,
+            color: selecionado ? null : (isDark ? Colors.white.withAlpha(8) : Colors.grey.withAlpha(15)),
+            borderRadius: BorderRadius.circular(99.0),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selecionado ? Colors.white : (isDark ? Colors.white70 : Colors.black87),
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+            ),
           ),
         ),
       ),

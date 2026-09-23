@@ -35,9 +35,13 @@ class Usuario {
   final String emailEmpresa;
   final bool emailEmpresaVerificado;
 
-  // vinculo com a imobiliaria (so corretor de empresa)
+  // vinculo com a imobiliaria (so corretor de empresa). Os dois estados sao
+  // decididos por QUEM RECEBE o pedido, entao chegam pela colecao publica (a
+  // imobiliaria nao escreve em "usuarios" de ninguem) -- ver
+  // UsuarioService.sincronizarVinculo
   final String imobiliariaId;
   final bool vinculoConfirmado;
+  final bool vinculoRecusado;
 
   Usuario({
     required this.uid,
@@ -67,7 +71,30 @@ class Usuario {
     this.emailEmpresaVerificado = false,
     this.imobiliariaId = '',
     this.vinculoConfirmado = false,
+    this.vinculoRecusado = false,
   });
+
+  // em minusculo porque cadastro antigo gravou o tipo com a caixa que veio da
+  // tela -- o resto do app ja compara assim (ver _rotuloTipo em map_screen)
+  String get _tipo => tipoUsuario.toLowerCase();
+
+  bool get ehCorretorDeEmpresa => _tipo == 'corretor' && subtipoCorretor == 'empresa';
+
+  // corretor de empresa entra como "pendente de aprovacao": quem responde e a
+  // imobiliaria que ele escolheu
+  bool get vinculoPendente =>
+      ehCorretorDeEmpresa && !vinculoConfirmado && !vinculoRecusado;
+
+  // quem pode publicar anuncio. Proprietario e corretor autonomo dependem so
+  // do cadastro; corretor de EMPRESA espera a imobiliaria aprovar o vinculo --
+  // anunciar em nome de uma imobiliaria que nunca disse que ele trabalha la e
+  // exatamente o que a aprovacao existe pra impedir
+  bool get podeAnunciar {
+    if (!perfilCompleto) return false;
+    if (_tipo == 'proprietario') return true;
+    if (_tipo != 'corretor') return false;
+    return ehCorretorDeEmpresa ? vinculoConfirmado : true;
+  }
 
   factory Usuario.fromMap(Map<String, dynamic> map, String uid) {
     return Usuario(
@@ -100,6 +127,7 @@ class Usuario {
       emailEmpresaVerificado: map['emailEmpresaVerificado'] ?? false,
       imobiliariaId: map['imobiliariaId'] ?? '',
       vinculoConfirmado: map['vinculoConfirmado'] ?? false,
+      vinculoRecusado: map['vinculoRecusado'] ?? false,
     );
   }
 
@@ -131,6 +159,7 @@ class Usuario {
       'emailEmpresaVerificado': emailEmpresaVerificado,
       'imobiliariaId': imobiliariaId,
       'vinculoConfirmado': vinculoConfirmado,
+      'vinculoRecusado': vinculoRecusado,
     };
   }
 }
