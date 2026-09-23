@@ -119,7 +119,8 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   // se a folha de perfil oferece editar o cadastro da empresa
   Imobiliaria? _imobiliariaDaConta;
 
-  // mercado, farmacia, posto, hotel e hospital mais perto de cada moradia
+  // mercado, farmacia, restaurante, posto, hotel e hospital mais perto de
+  // cada moradia
   // (Google Places). Por id do Google: duas republicas vizinhas costumam ter
   // a mesma farmacia como a mais perto, e o pin sairia duplicado
   Map<String, Lugar> _lugares = {};
@@ -130,7 +131,8 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   // os estabelecimentos da cidade inteira (ver LugaresService.naCidade). Sao
   // eles que dao ao mapa as farmacias, os postos e os hospitais: o campo
   // _lugares acima so tem o que esta perto de algum ANUNCIO, entao sem
-  // anuncio carregado ele vem vazio e sobravam so os mercados de _lugaresFixos
+  // anuncio carregado ele vem vazio e sobra so o que _lugaresFixos garante
+  // (os mercados e os restaurantes)
   Map<String, Lugar> _lugaresCidade = {};
   Set<Marker> _marcadoresLugares = {};
   // o que cada moradia tem por perto, por id do anuncio -- e o que o grupo

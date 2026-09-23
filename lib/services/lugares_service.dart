@@ -32,6 +32,30 @@ enum CategoriaLugar {
       // 1 km e nao 800 m: exigindo farmacia de verdade COM foto, a mais perto
       // da republica do Centro ficou a 945 m -- com 800 nenhuma aparecia
       ['pharmacy', 'drugstore'], ['farma', 'drog'], 1000, true),
+  // o tipo principal de restaurante no Google e picado: o mesmo quarteirao
+  // da Joao de Camargo tem 'bar' (Brazza), 'hamburger_restaurant' (Don
+  // Rafoni), 'snack_bar' (Chaves) e 'restaurant' (do Ba). Pedindo so
+  // 'restaurant' a busca perdia quase todos, entao a lista cobre os tipos
+  // que a cidade realmente usa.
+  //
+  // 1 km igual farmacia: comer fora e ida e volta a pe depois da aula, e a
+  // curadoria (_idsPermitidos) e curta -- com 800 m a maioria dos anuncios
+  // ficava sem nenhum
+  restaurante('Restaurante', 'Restaurantes', 'do restaurante', Icons.restaurant_rounded,
+      TipoPin.restaurante,
+      [
+        'restaurant',
+        'bar',
+        'hamburger_restaurant',
+        'japanese_restaurant',
+        'snack_bar',
+        'pizza_restaurant',
+        'brazilian_restaurant',
+        'steak_house',
+      ],
+      [],
+      1000,
+      true),
   posto('Posto de combustível', 'Postos', 'do posto', Icons.local_gas_station_rounded, TipoPin.posto,
       ['gas_station'], [], 1000, true),
   hotel('Hotel', 'Hotéis', 'do hotel', Icons.hotel_rounded, TipoPin.hotel,
@@ -169,6 +193,19 @@ class LugaresService {
   static const String _idMaristelaInatel = 'ChIJcbDcH5mjy5QR7WpUlv780Ww';
   static const String _idUnissul = 'ChIJaQy3zv2iy5QRGVQXUvu_vt0';
 
+  // os restaurantes ganharam lista fixa pelo mesmo motivo dos mercados, so
+  // que mais forte: a varredura da cidade traz no maximo 20 por categoria
+  // ordenados por distancia do Inatel, e como quase tudo que serve comida em
+  // Santa Rita esta na Joao de Camargo, esses 20 acabam antes de chegar nos
+  // bairros -- o Ba, que e a 2,4 km, nunca aparecia
+  static const String _idBrazza = 'ChIJDx2XW3ejy5QRm7tHWL_bBxk';
+  static const String _idDonRafoni = 'ChIJtcOlvWejy5QRvKh0T45ngTo';
+  static const String _idBarDoBa = 'ChIJmcIeR0WNoQARKv9kwX8m4iU';
+  static const String _idTexasBurger = 'ChIJLYkG8Kyjy5QRX1QT_tOaPKg';
+  static const String _idPandasSushi = 'ChIJrTTrRQCjy5QRlKrkJJ5vkdg';
+  static const String _idChips = 'ChIJQyspuz6jy5QRxYJ1YJSVhz8';
+  static const String _idChavesBurguer = 'ChIJt-p-zE-jy5QRTeJ3G1owTxE';
+
   static const Map<String, CategoriaLugar> _idsFixos = {
     // Supermercados Alvorada -- R. Comendador Custodio Ribeiro, Centro
     _idAlvorada: CategoriaLugar.mercado,
@@ -178,6 +215,20 @@ class LugaresService {
     _idMaristelaInatel: CategoriaLugar.mercado,
     // Supermercado Avenida Unissul -- Av. Sinha Moreira, Centro
     _idUnissul: CategoriaLugar.mercado,
+    // Brazza Espeto Bar -- Av. Joao de Camargo, 450, quase em frente ao Inatel
+    _idBrazza: CategoriaLugar.restaurante,
+    // Don Rafoni Smoke House -- Av. Joao de Camargo, 120, Vista Alegre
+    _idDonRafoni: CategoriaLugar.restaurante,
+    // Bar e Restaurante do Ba -- Av. Sapucai, 77, Jardim das Palmeiras
+    _idBarDoBa: CategoriaLugar.restaurante,
+    // Texas Burger Gourmet -- R. Ver. Celso Henrique Borsato, Monte Verde
+    _idTexasBurger: CategoriaLugar.restaurante,
+    // Panda's Sushi -- R. Abraao Elias Kalas, Monte Libano
+    _idPandasSushi: CategoriaLugar.restaurante,
+    // Chip's Bar e Restaurante -- R. Godofredo de Luna, Jardim Santo Antonio
+    _idChips: CategoriaLugar.restaurante,
+    // Chaves Burguer -- Av. Joao de Camargo, 350, colado no Inatel
+    _idChavesBurguer: CategoriaLugar.restaurante,
   };
 
   // categorias em que SO estes lugares valem. Lista branca, e nao o contrario
@@ -189,6 +240,13 @@ class LugaresService {
   // que o Google marcou como grocery_store: adega, banca de jornal, loja de
   // tamaras. Em Santa Rita a curadoria e curta: os mercados abaixo.
   //
+  // Restaurante tem o mesmo problema de nome ("Brazza", "Pastello") e ainda
+  // um pior: a busca devolve trailer de lanche, bar de fundo de quintal e
+  // cadastro chamado "." -- todos com tipo principal legitimo. Entao aqui
+  // tambem vale lista branca, com quem tem cozinha aberta, foto e reputacao
+  // no Google. Fechado em definitivo ou temporariamente sai da lista (foi o
+  // caso da Pastello).
+  //
   // Categoria que nao esta neste mapa continua aceitando o que a busca achar
   static const Map<CategoriaLugar, Set<String>> _idsPermitidos = {
     CategoriaLugar.mercado: {
@@ -196,6 +254,15 @@ class LugaresService {
       _idMaristelaBairro,
       _idMaristelaInatel,
       _idUnissul,
+    },
+    CategoriaLugar.restaurante: {
+      _idBrazza,
+      _idDonRafoni,
+      _idBarDoBa,
+      _idTexasBurger,
+      _idPandasSushi,
+      _idChips,
+      _idChavesBurguer,
     },
   };
 
@@ -246,8 +313,8 @@ class LugaresService {
   // que nao dependem de anuncio nenhum. Era exatamente o que acontecia --
   // mapa com quatro mercados e mais nada.
   //
-  // Sao 5 chamadas por sessao, guardadas em memoria. Menos que antes, que
-  // fazia 5 POR ANUNCIO
+  // E uma chamada por categoria por sessao, guardadas em memoria. Menos que
+  // antes, que fazia uma por categoria POR ANUNCIO
   Future<List<Lugar>> naCidade() {
     return _cacheCidade ??= Future.wait(
       CategoriaLugar.values.map(_naCidadeDe),

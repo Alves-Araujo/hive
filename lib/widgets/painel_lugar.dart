@@ -7,9 +7,10 @@ import '../utils/distancia.dart';
 import '../utils/pins_mapa.dart';
 import 'painel_inatel.dart';
 
-// painel de um estabelecimento perto das moradias (mercado, farmacia, posto,
-// hotel, hospital) -- abre ao tocar no pin do mapa ou na etiqueta "320 m da
-// farmacia" dos detalhes do anuncio. Mesma estrutura do painel do Inatel:
+// painel de um estabelecimento perto das moradias (mercado, farmacia,
+// restaurante, posto, hotel, hospital) -- abre ao tocar no pin do mapa ou na
+// etiqueta "320 m da farmacia" dos detalhes do anuncio. Mesma estrutura do
+// painel do Inatel:
 // fotos em cima, nome e endereco, acoes embaixo
 class PainelLugar extends StatelessWidget {
   final Lugar lugar;

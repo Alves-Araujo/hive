@@ -23,10 +23,11 @@ import '../models/imovel.dart';
 // casa, apartamento, kitnet, republica e pensao quem diferencia de perto e o
 // icone, a cor e a mesma pros cinco.
 //
-// Hotel, mercado, farmacia, posto e hospital sao os estabelecimentos perto
-// das moradias (Google Places, ver lugares_service.dart) -- saem um pouco
-// menores que os anuncios pra nao disputar atencao com o que a pessoa veio
-// procurar. Um anuncio cadastrado com tipoImovel "Hotel" usaria o mesmo pin.
+// Hotel, mercado, farmacia, restaurante, posto e hospital sao os
+// estabelecimentos perto das moradias (Google Places, ver
+// lugares_service.dart) -- saem um pouco menores que os anuncios pra nao
+// disputar atencao com o que a pessoa veio procurar. Um anuncio cadastrado
+// com tipoImovel "Hotel" usaria o mesmo pin.
 enum TipoPin {
   casa,
   apartamento,
@@ -36,6 +37,7 @@ enum TipoPin {
   hotel,
   mercado,
   farmacia,
+  restaurante,
   posto,
   hospital,
   evento,
@@ -48,6 +50,7 @@ const Set<TipoPin> pinsDeEstabelecimento = {
   TipoPin.hotel,
   TipoPin.mercado,
   TipoPin.farmacia,
+  TipoPin.restaurante,
   TipoPin.posto,
   TipoPin.hospital,
 };
@@ -159,6 +162,17 @@ class PinsMapa {
         TipoPin.farmacia => (
             const [Color(0xFF9E3030), Color(0xFF450F0F)],
             Icons.local_pharmacy_rounded,
+            0.85,
+          ),
+        // restaurante: marrom cacau. A cor obvia de comida em mapa e o
+        // laranja, mas esse e o posto. Um marrom qualquer nao resolve: o
+        // primeiro que tentei (0xFF6B4226) ainda puxava pro laranja e os dois
+        // pins lado a lado liam igual. Este e bem mais dessaturado -- fica
+        // claramente "marrom", nao "laranja escuro". Um tom mais fechado e o
+        // vermelho da farmacia, um mais aberto e o posto de novo
+        TipoPin.restaurante => (
+            const [Color(0xFF5C4033), Color(0xFF241812)],
+            Icons.restaurant_rounded,
             0.85,
           ),
         // posto: laranja queimado, a cor de combustivel/alerta sem virar o

@@ -108,6 +108,23 @@ void main() {
     );
   });
 
+  // A categoria nasce em CategoriaLugar e se espalha sozinha pelas duas
+  // listas de filtro. O teste existe pra isso nao regredir em silencio: uma
+  // categoria com naFichaDoAnuncio errado some da aba "Perto do imóvel" sem
+  // quebrar nada, e ninguem percebe ate abrir a folha no aparelho
+  test('restaurante entra nas duas listas de filtro', () {
+    expect(opcoesCategoria.map((o) => o.id), contains('restaurante'));
+    expect(opcoesLocalidade.map((o) => o.id), contains('restaurante'));
+
+    final soComRestaurante = FiltrosMapa(localidades: ['restaurante']);
+    expect(aceita(soComRestaurante, anuncio(), perto: {'restaurante'}), isTrue);
+    expect(aceita(soComRestaurante, anuncio(), perto: {'mercado'}), isFalse);
+
+    final semPins = FiltrosMapa(categoriasOcultas: ['restaurante']);
+    expect(semPins.mostraCategoria('restaurante'), isFalse);
+    expect(semPins.mostraCategoria('mercado'), isTrue);
+  });
+
   test('proximidade exige todos os locais e independe dos pins visíveis', () {
     final filtro = FiltrosMapa(
       localidades: ['mercado', localidadeFaculdade],
