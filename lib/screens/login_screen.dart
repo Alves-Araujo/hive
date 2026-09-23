@@ -140,18 +140,56 @@ class _TelaLoginState extends State<TelaLogin> with TickerProviderStateMixin {
     }
   }
 
+  // abre a folha de redefinicao de senha. Ja leva o que a pessoa digitou no
+  // campo de e-mail -- quem chegou aqui errando a senha quase sempre ja tem
+  // o e-mail certo preenchido
+  Future<void> _abrirRecuperarSenha() async {
+    final emailEnviado = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).brightness == Brightness.dark
+          ? corCardEscuro
+          : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
+      ),
+      builder: (_) => _FolhaRecuperarSenha(emailInicial: _emailController.text.trim()),
+    );
+
+    if (emailEnviado == null || !mounted) return;
+
+    // a confirmacao aparece depois da folha fechar, senao o snackbar ficaria
+    // escondido atras dela
+    _mostrarAviso(
+      'Se existir uma conta com $emailEnviado, o link de redefinição chega em instantes.',
+      cor: corSucesso,
+      icone: Icons.mark_email_read_outlined,
+      duracao: const Duration(seconds: 6),
+    );
+  }
+
   void _mostrarErro(String msg) {
+    _mostrarAviso(msg, cor: corErro, icone: Icons.error_outline);
+  }
+
+  void _mostrarAviso(
+    String msg, {
+    required Color cor,
+    required IconData icone,
+    Duration duracao = const Duration(seconds: 4),
+  }) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
           children: [
-            const Icon(Icons.error_outline, color: Colors.white, size: 20),
+            Icon(icone, color: Colors.white, size: 20),
             const SizedBox(width: 10),
             Expanded(child: Text(msg)),
           ],
         ),
-        backgroundColor: corErro,
+        backgroundColor: cor,
         behavior: SnackBarBehavior.floating,
+        duration: duracao,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         margin: const EdgeInsets.all(16),
       ),
@@ -254,23 +292,23 @@ class _TelaLoginState extends State<TelaLogin> with TickerProviderStateMixin {
                         onPressed: () => setState(() => _senhaVisivel = !_senhaVisivel),
                       ),
                     )),
-                    Align(
+                    _animarElemento(3, Align(
                       alignment: Alignment.centerRight,
                       child: TextButton(
-                        onPressed: () {},
+                        onPressed: _abrirRecuperarSenha,
                         style: TextButton.styleFrom(
                           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
                         ),
                         child: Text(
                           'Esqueceu a senha?',
                           style: TextStyle(
-                            color: corPrimaria.withAlpha(200),
+                            color: isDark ? corDestaque.withAlpha(220) : corPrimaria.withAlpha(200),
                             fontWeight: FontWeight.w600,
                             fontSize: 13,
                           ),
                         ),
                       ),
-                    ),
+                    )),
                     const SizedBox(height: 8),
                     _animarElemento(4, AnimatedGradientButton(
                       label: 'Entrar',
@@ -395,6 +433,190 @@ class _TelaLoginState extends State<TelaLogin> with TickerProviderStateMixin {
         rotulo: label,
         icone: icon,
         sufixo: suffixIcon,
+      ),
+    );
+  }
+}
+
+// folha de "esqueceu a senha": pede o e-mail e dispara o link de redefinicao
+// do proprio Firebase.
+//
+// E uma folha, e nao uma tela empilhada, porque a pessoa esta no meio de uma
+// tentativa de login -- ela volta pro mesmo formulario, com o que ja tinha
+// digitado, assim que o link sai.
+class _FolhaRecuperarSenha extends StatefulWidget {
+  final String emailInicial;
+
+  const _FolhaRecuperarSenha({required this.emailInicial});
+
+  @override
+  State<_FolhaRecuperarSenha> createState() => _FolhaRecuperarSenhaState();
+}
+
+class _FolhaRecuperarSenhaState extends State<_FolhaRecuperarSenha> {
+  late final TextEditingController _emailController;
+  bool _enviando = false;
+
+  // o erro fica NO campo, nao num snackbar: snackbar sobre folha aberta
+  // aparece atras do teclado e some antes da pessoa corrigir
+  String? _erro;
+
+  @override
+  void initState() {
+    super.initState();
+    _emailController = TextEditingController(text: widget.emailInicial);
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _enviar() async {
+    final email = _emailController.text.trim();
+
+    if (email.isEmpty || !email.contains('@')) {
+      setState(() => _erro = 'Informe um e-mail válido.');
+      return;
+    }
+
+    setState(() {
+      _enviando = true;
+      _erro = null;
+    });
+
+    try {
+      await AuthService.instance.enviarEmailDeRedefinicaoDeSenha(email);
+      if (!mounted) return;
+      // quem abriu a folha mostra a confirmacao, ja com a folha fechada
+      Navigator.pop(context, email);
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      String msg = 'Não foi possível enviar o link agora.';
+      if (e.code == 'invalid-email') {
+        msg = 'Esse e-mail não parece válido.';
+      } else if (e.code == 'user-not-found') {
+        // so chega aqui com a protecao contra enumeracao desligada no projeto
+        msg = 'Nenhuma conta cadastrada com esse e-mail.';
+      } else if (e.code == 'too-many-requests') {
+        msg = 'Muitas tentativas seguidas. Aguarde alguns minutos.';
+      } else if (e.code == 'network-request-failed') {
+        msg = 'Sem conexão. Verifique a internet e tente de novo.';
+      }
+      setState(() {
+        _erro = msg;
+        _enviando = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _erro = 'Ocorreu um erro inesperado.';
+        _enviando = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Padding(
+      // sobe junto com o teclado, senao o campo fica embaixo dele
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.xxl,
+            AppSpacing.md,
+            AppSpacing.xxl,
+            AppSpacing.xxl,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white.withAlpha(30) : Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xxl),
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  gradient: gradientePrincipal,
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  boxShadow: AppShadows.marca(forca: 0.7),
+                ),
+                child: const Icon(
+                  Icons.lock_reset_rounded,
+                  color: Colors.white,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              Text(
+                'Recuperar senha',
+                style: AppTextStyles.heading2.copyWith(
+                  color: isDark ? Colors.white : Colors.black87,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'Enviamos um link pro seu e-mail pra você criar uma senha nova.',
+                style: AppTextStyles.caption.copyWith(
+                  color: isDark ? Colors.white54 : Colors.grey.shade600,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xl),
+              TextField(
+                controller: _emailController,
+                keyboardType: TextInputType.emailAddress,
+                autofocus: widget.emailInicial.isEmpty,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _enviando ? null : _enviar(),
+                onChanged: (_) {
+                  if (_erro != null) setState(() => _erro = null);
+                },
+                style: TextStyle(
+                  color: isDark ? Colors.white : Colors.black87,
+                  fontSize: 15,
+                ),
+                decoration: decoracaoCampo(
+                  isDark: isDark,
+                  rotulo: 'Email',
+                  icone: Icons.email_outlined,
+                ).copyWith(errorText: _erro),
+              ),
+              const SizedBox(height: AppSpacing.xl),
+              AnimatedGradientButton(
+                label: 'Enviar link',
+                isLoading: _enviando,
+                onTap: _enviando ? null : _enviar,
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Center(
+                child: TextButton(
+                  onPressed: _enviando ? null : () => Navigator.pop(context),
+                  child: Text(
+                    'Voltar pro login',
+                    style: AppTextStyles.captionBold.copyWith(
+                      color: isDark ? Colors.white54 : Colors.grey.shade600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

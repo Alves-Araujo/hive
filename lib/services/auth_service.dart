@@ -44,6 +44,17 @@ class AuthService {
     }
   }
 
+  // manda o e-mail com o link de redefinicao de senha.
+  //
+  // Com a protecao contra enumeracao de e-mail ligada (padrao dos projetos
+  // novos no Firebase), um e-mail SEM conta nao levanta 'user-not-found' --
+  // a chamada simplesmente passa. Por isso quem chama responde a mesma coisa
+  // nos dois casos, em vez de confirmar pra qualquer um se um e-mail tem
+  // cadastro aqui
+  Future<void> enviarEmailDeRedefinicaoDeSenha(String email) {
+    return _auth.sendPasswordResetEmail(email: email);
+  }
+
   Future<void> sair() async {
     await _auth.signOut();
     if (_googleSignInPronto) await GoogleSignIn.instance.signOut();
