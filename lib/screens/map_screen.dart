@@ -2352,6 +2352,138 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
+  // pede pra digitar "excluir" antes de seguir -- mesma ideia do github ao
+  // apagar um repositorio, pra ninguem apagar a conta sem querer com um toque
+  Future<void> _confirmarExclusaoConta() async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final controlador = TextEditingController();
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final habilitado = controlador.text.trim().toLowerCase() == 'excluir';
+            return AlertDialog(
+              backgroundColor: isDark ? superficieEscura : superficieClara,
+              title: const Text('Excluir conta?'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Essa ação é permanente. Seus anúncios, avisos e perfil são apagados e não tem como desfazer.',
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Pra confirmar, digite "excluir" abaixo:',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: controlador,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      hintText: 'excluir',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (_) => setDialogState(() {}),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Cancelar'),
+                ),
+                TextButton(
+                  onPressed: habilitado
+                      ? () => Navigator.pop(dialogContext, true)
+                      : null,
+                  child: const Text(
+                    'Excluir',
+                    style: TextStyle(color: corErro, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (confirmou != true || !mounted) return;
+
+    await _executarExclusaoConta();
+  }
+
+  // tenta excluir e, se o firebase pedir prova de login recente (quem entrou
+  // ha muito tempo), pede a reautenticacao e tenta de novo uma unica vez
+  Future<void> _executarExclusaoConta() async {
+    try {
+      await AuthService.instance.excluirConta();
+      if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      if (e.code == 'requires-recent-login') {
+        final reautenticou = await _pedirReautenticacao();
+        if (reautenticou && mounted) await _executarExclusaoConta();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Não foi possível excluir a conta: ${e.message}')),
+        );
+      }
+    }
+  }
+
+  Future<bool> _pedirReautenticacao() async {
+    if (!AuthService.instance.precisaSenhaPraReautenticar) {
+      try {
+        await AuthService.instance.reautenticar();
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final controladorSenha = TextEditingController();
+    final senha = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: isDark ? superficieEscura : superficieClara,
+        title: const Text('Confirme sua senha'),
+        content: TextField(
+          controller: controladorSenha,
+          obscureText: true,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Senha'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, controladorSenha.text),
+            child: const Text('Confirmar'),
+          ),
+        ],
+      ),
+    );
+    if (senha == null || senha.isEmpty || !mounted) return false;
+
+    try {
+      await AuthService.instance.reautenticar(senha: senha);
+      return true;
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Senha incorreta.')),
+        );
+      }
+      return false;
+    }
+  }
+
   void _mostrarConfiguracoes() {
     showModalBottomSheet(
       context: context,
@@ -2545,6 +2677,24 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                         ),
                         label: const Text(
                           'Sair da conta',
+                          style: TextStyle(
+                            color: corErro,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _confirmarExclusaoConta();
+                        },
+                        icon: const Icon(
+                          Icons.delete_forever_rounded,
+                          color: corErro,
+                          size: 18,
+                        ),
+                        label: const Text(
+                          'Excluir conta',
                           style: TextStyle(
                             color: corErro,
                             fontWeight: FontWeight.w600,

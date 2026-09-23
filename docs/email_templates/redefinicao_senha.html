@@ -1,0 +1,117 @@
+<!--
+  Modelo do e-mail de redefinicao de senha (Firebase Auth).
+
+  NAO e usado pelo codigo: o app so chama sendPasswordResetEmail() na folha
+  "Recuperar senha" do login e quem monta o e-mail e o Firebase. Este arquivo
+  e a fonte do texto que fica colado no console, em Authentication >
+  Templates > Redefinicao de senha > Mensagem. Mudou aqui, cola de novo la.
+
+  %LINK% e %EMAIL% sao trocados pelo Firebase no envio. %DISPLAY_NAME% nao
+  e usado: quem se cadastrou por e-mail pode nao ter nome e a saudacao sairia
+  "Ola, ,".
+
+  O texto fala "alguem pediu" e nao "voce pediu" de proposito: o link pode ter
+  sido pedido por outra pessoa que digitou esse e-mail, e o rodape precisa dar
+  uma saida clara pra esse caso.
+
+  Layout em tabela e estilo inline de proposito: cliente de e-mail (Gmail,
+  Outlook) ignora <style> e flex/grid. As cores sao as de lib/main.dart.
+
+  Acentos escritos como entidade (&#233; = e com acento) e nao como letra:
+  este e um trecho de HTML sem <meta charset>, e aberto num navegador ou
+  cliente que nao assume UTF-8 o acento saia como dois simbolos estranhos.
+  Com entidade o arquivo e ASCII puro e sai certo em qualquer lugar. Ao
+  editar o texto, escreva os acentos do mesmo jeito (a=&#225; a~=&#227;
+  e=&#233; e^=&#234; i=&#237; o=&#243; o~=&#245; u=&#250; c=&#231;).
+-->
+<div style="margin:0;padding:0;background-color:#EFF3F8;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF3F8;">
+  <tr>
+    <td align="center" style="padding:32px 16px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background-color:#FFFFFF;border-radius:20px;overflow:hidden;font-family:Inter,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+
+        <!-- cabecalho com o gradiente da marca -->
+        <tr>
+          <td style="background-color:#17456F;background-image:linear-gradient(135deg,#12294A 0%,#17456F 50%,#1C5A8F 100%);padding:36px 32px 32px 32px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="width:40px;height:40px;background-color:#007BFF;border-radius:12px;text-align:center;vertical-align:middle;font-size:20px;font-weight:800;color:#FFFFFF;">H</td>
+                <td style="padding-left:12px;font-size:20px;font-weight:800;color:#FFFFFF;letter-spacing:-0.3px;">Hive <span style="font-weight:500;color:#8FBEE8;">Moradias</span></td>
+              </tr>
+            </table>
+            <p style="margin:28px 0 0 0;font-size:26px;line-height:32px;font-weight:800;color:#FFFFFF;letter-spacing:-0.5px;">Vamos criar uma senha nova</p>
+            <p style="margin:10px 0 0 0;font-size:15px;line-height:22px;color:#C9DCEE;">Um toque no bot&#227;o e voc&#234; j&#225; volta pro mapa.</p>
+          </td>
+        </tr>
+
+        <!-- corpo -->
+        <tr>
+          <td style="padding:32px 32px 8px 32px;">
+            <p style="margin:0;font-size:16px;line-height:24px;color:#1B2A38;">Ol&#225;!</p>
+            <p style="margin:12px 0 0 0;font-size:16px;line-height:24px;color:#3D4B59;">Algu&#233;m pediu pra redefinir a senha da conta do Hive Moradias ligada ao e-mail <strong style="color:#1B2A38;">%EMAIL%</strong>. Se foi voc&#234;, &#233; s&#243; tocar no bot&#227;o abaixo:</p>
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding:24px 32px 8px 32px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td align="center" style="border-radius:14px;background-color:#1C5A8F;background-image:linear-gradient(90deg,#12294A 0%,#17456F 50%,#1C5A8F 100%);">
+                  <a href="%LINK%" target="_blank" style="display:inline-block;padding:16px 36px;font-size:16px;font-weight:700;color:#FFFFFF;text-decoration:none;border-radius:14px;">Criar senha nova</a>
+                </td>
+              </tr>
+            </table>
+            <p style="margin:14px 0 0 0;font-size:13px;line-height:20px;color:#6B7A88;">O link vale por <strong>1 hora</strong> e funciona uma vez s&#243;. Depois de trocar, volte pro app e entre com a senha nova.</p>
+          </td>
+        </tr>
+
+        <!-- dicas pra escolher a senha -->
+        <tr>
+          <td style="padding:28px 32px 8px 32px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F7FAFD;border:1px solid #E1E8F0;border-radius:16px;">
+              <tr>
+                <td style="padding:20px 20px 4px 20px;font-size:13px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;color:#1C5A8F;">Uma senha que segura</td>
+              </tr>
+              <tr>
+                <td style="padding:8px 20px 20px 20px;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td width="36" valign="top" style="padding:8px 0;"><div style="width:28px;height:28px;border-radius:9px;background-color:#1C5A8F;"></div></td>
+                      <td style="padding:8px 0 8px 8px;font-size:14px;line-height:21px;color:#3D4B59;"><strong style="color:#1B2A38;">Seis caracteres no m&#237;nimo.</strong> Esse &#233; o limite do sistema, mas quanto mais longa, mais dif&#237;cil de adivinhar.</td>
+                    </tr>
+                    <tr>
+                      <td width="36" valign="top" style="padding:8px 0;"><div style="width:28px;height:28px;border-radius:9px;background-color:#007BFF;"></div></td>
+                      <td style="padding:8px 0 8px 8px;font-size:14px;line-height:21px;color:#3D4B59;"><strong style="color:#1B2A38;">Misture letras, n&#250;meros e s&#237;mbolos.</strong> Fuja de nome, data de nascimento e sequ&#234;ncia tipo 123456.</td>
+                    </tr>
+                    <tr>
+                      <td width="36" valign="top" style="padding:8px 0;"><div style="width:28px;height:28px;border-radius:9px;background-color:#0E7C7B;"></div></td>
+                      <td style="padding:8px 0 8px 8px;font-size:14px;line-height:21px;color:#3D4B59;"><strong style="color:#1B2A38;">Diferente das outras.</strong> Repetir a senha de outro site significa que um vazamento l&#225; abre a sua conta aqui.</td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- link em texto, pra quando o botao nao abre -->
+        <tr>
+          <td style="padding:24px 32px 8px 32px;">
+            <p style="margin:0;font-size:13px;line-height:20px;color:#6B7A88;">O bot&#227;o n&#227;o funcionou? Copie e cole este link no navegador:</p>
+            <p style="margin:6px 0 0 0;font-size:12px;line-height:18px;word-break:break-all;"><a href="%LINK%" target="_blank" style="color:#1C5A8F;text-decoration:underline;">%LINK%</a></p>
+          </td>
+        </tr>
+
+        <!-- rodape -->
+        <tr>
+          <td style="padding:24px 32px 32px 32px;">
+            <div style="height:1px;background-color:#E1E8F0;line-height:1px;font-size:1px;">&nbsp;</div>
+            <p style="margin:20px 0 0 0;font-size:12px;line-height:18px;color:#8A9691;">N&#227;o foi voc&#234; que pediu essa troca? Pode ignorar este e-mail. Sua senha atual continua valendo e ningu&#233;m entra na conta sem abrir o link acima.</p>
+            <p style="margin:10px 0 0 0;font-size:12px;line-height:18px;color:#8A9691;">Hive Moradias &#183; Santa Rita do Sapuca&#237;, MG</p>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>
+</div>

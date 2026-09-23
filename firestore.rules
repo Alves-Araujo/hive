@@ -76,6 +76,11 @@ service cloud.firestore {
     match /perfisPublicos/{uid} {
       allow read: if request.auth != null;
 
+      // dono apaga o proprio -- usado ao excluir a conta (o perfil privado em
+      // /usuarios ja permitia delete; este nao tinha regra nenhuma pra isso,
+      // e sem allow explicito o firestore nega por padrao
+      allow delete: if request.auth != null && request.auth.uid == uid;
+
       // A resposta ao vinculo nao e escrita por quem pediu. O dono grava o
       // proprio perfil (sincronizar dados, ultimo acesso), mas nao LIGA esses
       // dois campos: bastava o corretor escrever vinculoConfirmado:true aqui

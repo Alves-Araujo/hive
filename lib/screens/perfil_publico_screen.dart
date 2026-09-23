@@ -16,6 +16,7 @@ import '../widgets/animated_gradient_button.dart';
 import '../widgets/avatar_widget.dart';
 import '../widgets/card_imovel_vertical.dart';
 import '../widgets/painel_inatel.dart' show FotoInatel, GaleriaFotos;
+import '../widgets/papel_parede_chat.dart';
 import 'chat_detail_screen.dart';
 
 // perfil publico de uma pessoa (aluno/corretor/proprietario) OU de uma
@@ -25,7 +26,10 @@ class PerfilPublicoScreen extends StatefulWidget {
   final Imobiliaria? imobiliaria;
 
   const PerfilPublicoScreen({super.key, this.pessoa, this.imobiliaria})
-      : assert(pessoa != null || imobiliaria != null, 'informe pessoa ou imobiliaria');
+    : assert(
+        pessoa != null || imobiliaria != null,
+        'informe pessoa ou imobiliaria',
+      );
 
   @override
   State<PerfilPublicoScreen> createState() => _PerfilPublicoScreenState();
@@ -47,7 +51,9 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
     if (_ehImobiliaria) return 'Imobiliária';
     switch (widget.pessoa!.tipoUsuario) {
       case 'corretor':
-        return widget.pessoa!.subtipoCorretor == 'empresa' ? 'Corretor (Empresa)' : 'Corretor Autônomo';
+        return widget.pessoa!.subtipoCorretor == 'empresa'
+            ? 'Corretor (Empresa)'
+            : 'Corretor Autônomo';
       case 'proprietario':
         return 'Proprietário';
       case 'estudante':
@@ -57,7 +63,8 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
     }
   }
 
-  bool get _mostraVitrine => _ehImobiliaria || widget.pessoa?.tipoUsuario == 'corretor';
+  bool get _mostraVitrine =>
+      _ehImobiliaria || widget.pessoa?.tipoUsuario == 'corretor';
 
   @override
   void dispose() {
@@ -66,18 +73,26 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
   }
 
   void _abrirPerfil(PerfilPublico pessoa) {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => PerfilPublicoScreen(pessoa: pessoa)));
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => PerfilPublicoScreen(pessoa: pessoa)),
+    );
   }
 
   void _enviarMensagem() {
     final meuUid = FirebaseAuth.instance.currentUser?.uid;
     if (meuUid == null || widget.pessoa == null) return;
     // sem imovelId: e a conversa entre as duas pessoas, nao a de um anuncio
-    final chatId = gerarIdChat(imovelId: '', uidA: meuUid, uidB: widget.pessoa!.uid);
+    final chatId = gerarIdChat(
+      imovelId: '',
+      uidA: meuUid,
+      uidB: widget.pessoa!.uid,
+    );
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ChatDetailScreen(chatId: chatId, contatoUid: widget.pessoa!.uid),
+        builder: (_) =>
+            ChatDetailScreen(chatId: chatId, contatoUid: widget.pessoa!.uid),
       ),
     );
   }
@@ -89,7 +104,9 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
     setState(() => _enviandoAvaliacao = true);
     try {
       final meuPerfil = await UsuarioService.instance.buscarPorUid(user.uid);
-      final meuNome = (meuPerfil?.nome.isNotEmpty ?? false) ? meuPerfil!.nome : 'Usuário Hive';
+      final meuNome = (meuPerfil?.nome.isNotEmpty ?? false)
+          ? meuPerfil!.nome
+          : 'Usuário Hive';
       final comentario = _comentarioController.text.trim();
       await AvaliacaoService.instance.enviarAvaliacao(
         colecaoPai: _colecaoPai,
@@ -125,92 +142,122 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Scaffold(
-      backgroundColor: isDark ? corSuperficieEscura : superficieClara,
-      appBar: AppBar(
+    return PapelDeParedeMiudo(
+      child: Scaffold(
         backgroundColor: Colors.transparent,
-        elevation: 0,
-        iconTheme: IconThemeData(color: isDark ? Colors.white : Colors.black87),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 40),
-        children: [
-          Center(
-            child: Column(
-              children: [
-                AvatarWidget(nome: _nome.isNotEmpty ? _nome : '?', fotoUrl: _fotoUrl, size: 96),
-                const SizedBox(height: 12),
-                Text(_nome, style: AppTextStyles.heading2.copyWith(color: isDark ? Colors.white : Colors.black87)),
-                const SizedBox(height: 4),
-                Text(_rotulo, style: AppTextStyles.captionBold.copyWith(color: corPrimaria)),
-                // descricao e telefone so existem pra imobiliaria, e so quando
-                // ela mesma preencheu (ver EditarImobiliariaScreen) -- cadastro
-                // criado por um corretor nasce sem os dois
-                if (_ehImobiliaria) ...[
-                  if (widget.imobiliaria!.descricao.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      widget.imobiliaria!.descricao,
-                      textAlign: TextAlign.center,
-                      style: AppTextStyles.body.copyWith(color: isDark ? Colors.white70 : Colors.black87),
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          iconTheme: IconThemeData(
+            color: isDark ? Colors.white : Colors.black87,
+          ),
+        ),
+        body: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 40),
+          children: [
+            Center(
+              child: Column(
+                children: [
+                  AvatarWidget(
+                    nome: _nome.isNotEmpty ? _nome : '?',
+                    fotoUrl: _fotoUrl,
+                    size: 96,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    _nome,
+                    style: AppTextStyles.heading2.copyWith(
+                      color: isDark ? Colors.white : Colors.black87,
                     ),
-                  ],
-                  if (widget.imobiliaria!.telefone.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    _linhaContato(isDark, Icons.phone_outlined, widget.imobiliaria!.telefone),
-                  ],
-                  if (widget.imobiliaria!.endereco.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    _linhaContato(isDark, Icons.location_on_outlined, widget.imobiliaria!.endereco),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _rotulo,
+                    style: AppTextStyles.captionBold.copyWith(
+                      color: corPrimaria,
+                    ),
+                  ),
+                  // descricao e telefone so existem pra imobiliaria, e so quando
+                  // ela mesma preencheu (ver EditarImobiliariaScreen) -- cadastro
+                  // criado por um corretor nasce sem os dois
+                  if (_ehImobiliaria) ...[
+                    if (widget.imobiliaria!.descricao.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        widget.imobiliaria!.descricao,
+                        textAlign: TextAlign.center,
+                        style: AppTextStyles.body.copyWith(
+                          color: isDark ? Colors.white70 : Colors.black87,
+                        ),
+                      ),
+                    ],
+                    if (widget.imobiliaria!.telefone.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      _linhaContato(
+                        isDark,
+                        Icons.phone_outlined,
+                        widget.imobiliaria!.telefone,
+                      ),
+                    ],
+                    if (widget.imobiliaria!.endereco.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      _linhaContato(
+                        isDark,
+                        Icons.location_on_outlined,
+                        widget.imobiliaria!.endereco,
+                      ),
+                    ],
                   ],
                 ],
-              ],
-            ),
-          ),
-          // as fotos do escritorio, na mesma galeria que o painel do pin usa
-          // -- e o mesmo material, so que aqui com espaco pra olhar com calma
-          if (_ehImobiliaria && widget.imobiliaria!.fotos.isNotEmpty) ...[
-            const SizedBox(height: 24),
-            GaleriaFotos(
-              fotos: [for (final f in widget.imobiliaria!.fotos) FotoInatel(f)],
-              isDark: isDark,
-              iconeReserva: Icons.real_estate_agent_rounded,
-              gradienteReserva: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: PinsMapa.cores(TipoPin.imobiliaria),
               ),
             ),
-          ],
+            // as fotos do escritorio, na mesma galeria que o painel do pin usa
+            // -- e o mesmo material, so que aqui com espaco pra olhar com calma
+            if (_ehImobiliaria && widget.imobiliaria!.fotos.isNotEmpty) ...[
+              const SizedBox(height: 24),
+              GaleriaFotos(
+                fotos: [
+                  for (final f in widget.imobiliaria!.fotos) FotoInatel(f),
+                ],
+                isDark: isDark,
+                iconeReserva: Icons.real_estate_agent_rounded,
+                gradienteReserva: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: PinsMapa.cores(TipoPin.imobiliaria),
+                ),
+              ),
+            ],
 
-          const SizedBox(height: 24),
-
-          if (!_ehImobiliaria && !_souEu)
-            AnimatedGradientButton(
-              label: 'Enviar Mensagem',
-              icon: Icons.chat_bubble_outline_rounded,
-              onTap: _enviarMensagem,
-            ),
-
-          if (_ehImobiliaria) ...[
             const SizedBox(height: 24),
-            _tituloSecao(isDark, 'Corretores vinculados'),
-            const SizedBox(height: 12),
-            _buildCorretoresVinculados(isDark),
-          ],
 
-          if (_mostraVitrine) ...[
+            if (!_ehImobiliaria && !_souEu)
+              AnimatedGradientButton(
+                label: 'Enviar Mensagem',
+                icon: Icons.chat_bubble_outline_rounded,
+                onTap: _enviarMensagem,
+              ),
+
+            if (_ehImobiliaria) ...[
+              const SizedBox(height: 24),
+              _tituloSecao(isDark, 'Corretores vinculados'),
+              const SizedBox(height: 12),
+              _buildCorretoresVinculados(isDark),
+            ],
+
+            if (_mostraVitrine) ...[
+              const SizedBox(height: 24),
+              _tituloSecao(isDark, 'Anúncios'),
+              const SizedBox(height: 12),
+              _buildVitrine(isDark),
+            ],
+
             const SizedBox(height: 24),
-            _tituloSecao(isDark, 'Anúncios'),
+            _tituloSecao(isDark, 'Avaliações'),
             const SizedBox(height: 12),
-            _buildVitrine(isDark),
+            _buildAvaliacoes(isDark),
           ],
-
-          const SizedBox(height: 24),
-          _tituloSecao(isDark, 'Avaliações'),
-          const SizedBox(height: 12),
-          _buildAvaliacoes(isDark),
-        ],
+        ),
       ),
     );
   }
@@ -229,7 +276,9 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
           child: Text(
             texto,
             textAlign: TextAlign.center,
-            style: AppTextStyles.caption.copyWith(color: isDark ? Colors.white54 : Colors.grey.shade700),
+            style: AppTextStyles.caption.copyWith(
+              color: isDark ? Colors.white54 : Colors.grey.shade700,
+            ),
           ),
         ),
       ],
@@ -237,18 +286,27 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
   }
 
   Widget _tituloSecao(bool isDark, String texto) {
-    return Text(texto, style: AppTextStyles.heading3.copyWith(color: isDark ? Colors.white : Colors.black87));
+    return Text(
+      texto,
+      style: AppTextStyles.heading3.copyWith(
+        color: isDark ? Colors.white : Colors.black87,
+      ),
+    );
   }
 
   Widget _buildCorretoresVinculados(bool isDark) {
     return StreamBuilder<List<PerfilPublico>>(
-      stream: ImobiliariaService.instance.streamCorretoresVinculados(widget.imobiliaria!.id),
+      stream: ImobiliariaService.instance.streamCorretoresVinculados(
+        widget.imobiliaria!.id,
+      ),
       builder: (context, snapshot) {
         final corretores = snapshot.data ?? [];
         if (corretores.isEmpty) {
           return Text(
             'Nenhum corretor vinculado ainda.',
-            style: AppTextStyles.caption.copyWith(color: isDark ? Colors.white38 : Colors.grey),
+            style: AppTextStyles.caption.copyWith(
+              color: isDark ? Colors.white38 : Colors.grey,
+            ),
           );
         }
         return Column(
@@ -260,9 +318,21 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
                 borderRadius: BorderRadius.circular(16),
               ),
               child: ListTile(
-                leading: AvatarWidget(nome: corretor.nome, fotoUrl: corretor.fotoUrl, size: 40),
-                title: Text(corretor.nome, style: TextStyle(color: isDark ? Colors.white : Colors.black87)),
-                trailing: Icon(Icons.chevron_right_rounded, color: isDark ? Colors.white38 : Colors.grey),
+                leading: AvatarWidget(
+                  nome: corretor.nome,
+                  fotoUrl: corretor.fotoUrl,
+                  size: 40,
+                ),
+                title: Text(
+                  corretor.nome,
+                  style: TextStyle(
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
+                ),
+                trailing: Icon(
+                  Icons.chevron_right_rounded,
+                  color: isDark ? Colors.white38 : Colors.grey,
+                ),
                 onTap: () => _abrirPerfil(corretor),
               ),
             );
@@ -275,7 +345,10 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
   Widget _buildVitrine(bool isDark) {
     if (!_ehImobiliaria) {
       return _buildGradeDeImoveis(
-        FirebaseFirestore.instance.collection('imoveis').where('donoUid', isEqualTo: widget.pessoa!.uid).snapshots(),
+        FirebaseFirestore.instance
+            .collection('imoveis')
+            .where('donoUid', isEqualTo: widget.pessoa!.uid)
+            .snapshots(),
         isDark,
       );
     }
@@ -283,17 +356,24 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
     // imobiliaria: pega os uids dos corretores confirmados primeiro, depois
     // busca os imoveis deles
     return StreamBuilder<List<PerfilPublico>>(
-      stream: ImobiliariaService.instance.streamCorretoresVinculados(widget.imobiliaria!.id),
+      stream: ImobiliariaService.instance.streamCorretoresVinculados(
+        widget.imobiliaria!.id,
+      ),
       builder: (context, snapshot) {
         final uids = (snapshot.data ?? []).map((p) => p.uid).toList();
         if (uids.isEmpty) {
           return Text(
             'Nenhum anúncio ainda.',
-            style: AppTextStyles.caption.copyWith(color: isDark ? Colors.white38 : Colors.grey),
+            style: AppTextStyles.caption.copyWith(
+              color: isDark ? Colors.white38 : Colors.grey,
+            ),
           );
         }
         return _buildGradeDeImoveis(
-          FirebaseFirestore.instance.collection('imoveis').where('donoUid', whereIn: uids.take(30).toList()).snapshots(),
+          FirebaseFirestore.instance
+              .collection('imoveis')
+              .where('donoUid', whereIn: uids.take(30).toList())
+              .snapshots(),
           isDark,
         );
       },
@@ -305,20 +385,34 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
       stream: stream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: corPrimaria));
+          return const Center(
+            child: CircularProgressIndicator(color: corPrimaria),
+          );
         }
-        final imoveis = snapshot.data?.docs
-                .map((doc) => Imovel.fromMap(doc.data() as Map<String, dynamic>, doc.id))
+        final imoveis =
+            snapshot.data?.docs
+                .map(
+                  (doc) => Imovel.fromMap(
+                    doc.data() as Map<String, dynamic>,
+                    doc.id,
+                  ),
+                )
                 .toList() ??
             [];
         if (imoveis.isEmpty) {
           return Text(
             'Nenhum anúncio ainda.',
-            style: AppTextStyles.caption.copyWith(color: isDark ? Colors.white38 : Colors.grey),
+            style: AppTextStyles.caption.copyWith(
+              color: isDark ? Colors.white38 : Colors.grey,
+            ),
           );
         }
         return Column(
-          children: imoveis.map((imovel) => CardImovelVertical(imovel: imovel, isDark: isDark)).toList(),
+          children: imoveis
+              .map(
+                (imovel) => CardImovelVertical(imovel: imovel, isDark: isDark),
+              )
+              .toList(),
         );
       },
     );
@@ -329,7 +423,10 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
       stream: AvaliacaoService.instance.streamAvaliacoes(_colecaoPai, _id),
       builder: (context, snapshot) {
         final avaliacoes = snapshot.data ?? [];
-        final media = avaliacoes.isEmpty ? 0.0 : avaliacoes.map((a) => a.nota).reduce((a, b) => a + b) / avaliacoes.length;
+        final media = avaliacoes.isEmpty
+            ? 0.0
+            : avaliacoes.map((a) => a.nota).reduce((a, b) => a + b) /
+                  avaliacoes.length;
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -341,7 +438,10 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
                   const SizedBox(width: 4),
                   Text(
                     '${media.toStringAsFixed(1)} · ${avaliacoes.length} avaliação(ões)',
-                    style: TextStyle(color: isDark ? Colors.white70 : Colors.black87, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                      color: isDark ? Colors.white70 : Colors.black87,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ],
               ),
@@ -363,20 +463,27 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
                         return IconButton(
                           padding: EdgeInsets.zero,
                           icon: Icon(
-                            preenchida ? Icons.star_rounded : Icons.star_border_rounded,
+                            preenchida
+                                ? Icons.star_rounded
+                                : Icons.star_border_rounded,
                             color: corAtencao,
                           ),
-                          onPressed: () => setState(() => _notaSelecionada = i + 1),
+                          onPressed: () =>
+                              setState(() => _notaSelecionada = i + 1),
                         );
                       }),
                     ),
                     TextField(
                       controller: _comentarioController,
                       maxLines: 2,
-                      style: TextStyle(color: isDark ? Colors.white : Colors.black87),
+                      style: TextStyle(
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
                       decoration: InputDecoration(
                         hintText: 'Escreva um comentário...',
-                        hintStyle: TextStyle(color: isDark ? Colors.white38 : Colors.grey),
+                        hintStyle: TextStyle(
+                          color: isDark ? Colors.white38 : Colors.grey,
+                        ),
                         border: InputBorder.none,
                       ),
                     ),
@@ -396,51 +503,66 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
             if (avaliacoes.isEmpty)
               Text(
                 'Ainda não tem avaliações.',
-                style: AppTextStyles.caption.copyWith(color: isDark ? Colors.white38 : Colors.grey),
+                style: AppTextStyles.caption.copyWith(
+                  color: isDark ? Colors.white38 : Colors.grey,
+                ),
               )
             else
-              ...avaliacoes.map((avaliacao) => Container(
-                    margin: const EdgeInsets.only(bottom: 10),
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: isDark ? superficieEscura : superficieClara,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            AvatarWidget(nome: avaliacao.avaliadorNome, fotoUrl: avaliacao.avaliadorFotoUrl, size: 28),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                avaliacao.avaliadorNome,
-                                style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontWeight: FontWeight.w600),
+              ...avaliacoes.map(
+                (avaliacao) => Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: isDark ? superficieEscura : superficieClara,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          AvatarWidget(
+                            nome: avaliacao.avaliadorNome,
+                            fotoUrl: avaliacao.avaliadorFotoUrl,
+                            size: 28,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              avaliacao.avaliadorNome,
+                              style: TextStyle(
+                                color: isDark ? Colors.white : Colors.black87,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
-                            Row(
-                              children: List.generate(
-                                5,
-                                (i) => Icon(
-                                  i < avaliacao.nota ? Icons.star_rounded : Icons.star_border_rounded,
-                                  color: corAtencao,
-                                  size: 14,
-                                ),
+                          ),
+                          Row(
+                            children: List.generate(
+                              5,
+                              (i) => Icon(
+                                i < avaliacao.nota
+                                    ? Icons.star_rounded
+                                    : Icons.star_border_rounded,
+                                color: corAtencao,
+                                size: 14,
                               ),
                             ),
-                          ],
-                        ),
-                        if (avaliacao.comentario.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            avaliacao.comentario,
-                            style: TextStyle(color: isDark ? Colors.white70 : Colors.black87),
                           ),
                         ],
+                      ),
+                      if (avaliacao.comentario.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          avaliacao.comentario,
+                          style: TextStyle(
+                            color: isDark ? Colors.white70 : Colors.black87,
+                          ),
+                        ),
                       ],
-                    ),
-                  )),
+                    ],
+                  ),
+                ),
+              ),
           ],
         );
       },

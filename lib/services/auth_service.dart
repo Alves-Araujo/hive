@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
@@ -62,5 +63,67 @@ class AuthService {
 
   Future<void> enviarEmailDeVerificacao() async {
     await _auth.currentUser?.sendEmailVerification();
+  }
+
+  // true se o login foi feito com e-mail/senha -- decide se a reautenticacao
+  // (pedida pelo firebase antes de excluir a conta) pede senha ou reabre o
+  // seletor do Google
+  bool get precisaSenhaPraReautenticar =>
+      _auth.currentUser?.providerData.any((p) => p.providerId == 'password') ?? false;
+
+  // repete a prova de identidade exigida pelo firebase pra operacao sensivel
+  // (excluir conta) quando o login já não é recente. Sem isso, currentUser!.delete()
+  // falha com 'requires-recent-login' pra quem nao entrou agora ha pouco
+  Future<void> reautenticar({String? senha}) async {
+    final usuario = _auth.currentUser;
+    if (usuario == null) return;
+
+    if (precisaSenhaPraReautenticar) {
+      if (senha == null || senha.isEmpty || usuario.email == null) {
+        throw ArgumentError('Senha necessária para reautenticar');
+      }
+      final credential = EmailAuthProvider.credential(email: usuario.email!, password: senha);
+      await usuario.reauthenticateWithCredential(credential);
+      return;
+    }
+
+    await _garantirGoogleSignInInicializado();
+    final contaGoogle = await GoogleSignIn.instance.authenticate();
+    final auth = contaGoogle.authentication;
+    final credential = GoogleAuthProvider.credential(idToken: auth.idToken);
+    await usuario.reauthenticateWithCredential(credential);
+  }
+
+  // apaga o que o app tem permissao de apagar (anuncios, avisos pessoais,
+  // perfil publico e privado) e por ultimo a conta no firebase auth --
+  // precisa ser por ultimo porque sem usuario logado nenhuma das regras acima
+  // deixa mais escrever.
+  //
+  // Nao ha Cloud Functions no projeto (ver notificacao_service.dart), entao
+  // nao existe faxina automatica de servidor: avaliacoes recebidas e
+  // conversas continuam existindo, do mesmo jeito que um anuncio removido
+  // nao apaga as mensagens trocadas nele
+  Future<void> excluirConta() async {
+    final usuario = _auth.currentUser;
+    if (usuario == null) return;
+    final uid = usuario.uid;
+    final db = FirebaseFirestore.instance;
+
+    final imoveis = await db.collection('imoveis').where('donoUid', isEqualTo: uid).get();
+    final notificacoes = await db.collection('usuarios').doc(uid).collection('notificacoes').get();
+
+    final lote = db.batch();
+    for (final doc in imoveis.docs) {
+      lote.delete(doc.reference);
+    }
+    for (final doc in notificacoes.docs) {
+      lote.delete(doc.reference);
+    }
+    lote.delete(db.collection('perfisPublicos').doc(uid));
+    lote.delete(db.collection('usuarios').doc(uid));
+    await lote.commit();
+
+    await usuario.delete();
+    if (_googleSignInPronto) await GoogleSignIn.instance.signOut();
   }
 }

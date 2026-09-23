@@ -92,11 +92,7 @@ class PainelImobiliaria extends StatelessWidget {
 
   Future<void> _ligar(BuildContext context) async {
     final numero = imobiliaria.telefone.replaceAll(RegExp(r'[^0-9+]'), '');
-    await _abrir(
-      context,
-      'tel:$numero',
-      'Não foi possível abrir o telefone.',
-    );
+    await _abrir(context, 'tel:$numero', 'Não foi possível abrir o telefone.');
   }
 
   void _abrirPerfil(BuildContext context) {
