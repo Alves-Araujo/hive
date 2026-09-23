@@ -1,6 +1,7 @@
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../utils/inatividade.dart';
 import '../utils/texto.dart';
 
 enum TipoListing { moradia, evento }
@@ -99,6 +100,14 @@ class Imovel {
   final bool incluiAgua;
   final bool incluiWifi;
 
+  // Desde quando alguem mandou mensagem neste anuncio e ninguem respondeu.
+  // Nulo = ninguem esperando. Nao e escrito pela tela de cadastro e nem sai
+  // em toMap(): quem liga e desliga esse relogio e o envio de mensagem, por
+  // ImovelService.registrarMensagem (ver utils/inatividade.dart). Se ele
+  // entrasse no toMap(), reabrir o anuncio pra corrigir o preco zeraria o
+  // prazo -- editar nao e responder ninguem
+  final DateTime? aguardandoRespostaDesde;
+
   Imovel({
     required this.id,
     required this.titulo,
@@ -126,6 +135,7 @@ class Imovel {
     this.incluiLuz = false,
     this.incluiAgua = false,
     this.incluiWifi = false,
+    this.aguardandoRespostaDesde,
   });
 
   factory Imovel.fromMap(Map<String, dynamic> map, String docId) {
@@ -180,8 +190,27 @@ class Imovel {
       incluiLuz: map['incluiLuz'] ?? false,
       incluiAgua: map['incluiAgua'] ?? false,
       incluiWifi: (map['incluiWifi'] ?? false) || tinhaTagWifi,
+      // vem nulo enquanto o horario do servidor esta pendente (a mensagem que
+      // ligou o relogio acabou de sair deste aparelho) -- e nulo ja e o que
+      // significa "ninguem esperando", entao o anuncio so nao conta esses
+      // segundos a mais
+      aguardandoRespostaDesde:
+          (map['aguardandoRespostaDesde'] as Timestamp?)?.toDate(),
     );
   }
+
+  // Ha quanto tempo este anuncio deve resposta, traduzido pro que isso muda
+  // na pratica. Evento fica de fora: ele ja nasce com data pra acabar, e quem
+  // o publicou nao esta ocupando o lugar de ninguem no mapa depois disso
+  EstadoResposta get estadoResposta => tipo == TipoListing.evento
+      ? EstadoResposta.emDia
+      : estadoDeResposta(aguardandoRespostaDesde);
+
+  // Passou dos cinco meses sem ninguem responder: nao aparece mais pra quem
+  // procura (mapa e lista). Continua existindo, e no painel do dono -- basta
+  // responder pra voltar
+  bool get foraDoMapaPorFaltaDeResposta =>
+      estadoResposta == EstadoResposta.foraDoMapa;
 
   // o aluguel ja inclui essa conta?
   bool incluiConta(String conta) => switch (conta) {
@@ -220,6 +249,9 @@ class Imovel {
       'incluiLuz': incluiLuz,
       'incluiAgua': incluiAgua,
       'incluiWifi': incluiWifi,
+      // aguardandoRespostaDesde NAO entra aqui de proposito (ver o campo la
+      // em cima). Por isso a gravacao do anuncio e feita com merge: sem ele,
+      // salvar uma edicao apagaria o relogio de resposta
     };
   }
 }

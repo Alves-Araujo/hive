@@ -19,6 +19,21 @@ String gerarIdChat({required String imovelId, required String uidA, required Str
   return '${prefixo}_${ordenados[0]}_${ordenados[1]}';
 }
 
+// O caminho inverso de gerarIdChat: de que anuncio essa conversa trata
+// (vazio no chat de perfil pra perfil). Serve pra quem abre a conversa sem
+// ter o anuncio em maos -- quem chega pelo aviso de mensagem nova, por
+// exemplo, so tem o chatId. E dele que o prazo de resposta do anuncio
+// depende (ver utils/inatividade.dart): sem isso, o dono que respondesse
+// pelo aviso nao desligaria o prazo e perderia o lugar no mapa mesmo tendo
+// respondido.
+//
+// uid do firebase e id de documento do firestore sao so letras e numeros,
+// entao o primeiro '_' e sempre a divisa entre o prefixo e os participantes
+String imovelIdDoChat(String chatId) {
+  final prefixo = chatId.split('_').first;
+  return prefixo == prefixoChatDireto ? '' : prefixo;
+}
+
 // a ordem tambem vai gravada no documento: a regra exige p[0] < p[1], que e o
 // que garante os dois lados no mesmo id (e barra conversa de alguem consigo
 // mesmo)

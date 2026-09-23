@@ -140,7 +140,13 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
     List<Imovel> imoveis = [];
     try {
       final snap = await FirebaseFirestore.instance.collection('imoveis').get();
-      imoveis = snap.docs.map((d) => Imovel.fromMap(d.data(), d.id)).toList();
+      imoveis = snap.docs
+          .map((d) => Imovel.fromMap(d.data(), d.id))
+          // anuncio que saiu do mapa por falta de resposta tambem nao serve
+          // de destino de rota: ele nao aparece mais em lugar nenhum pra quem
+          // procura (ver utils/inatividade.dart)
+          .where((item) => !item.foraDoMapaPorFaltaDeResposta)
+          .toList();
     } catch (_) {
       // sem os imoveis cadastrados a busca ainda funciona (locais conhecidos + online)
     }

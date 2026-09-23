@@ -50,6 +50,26 @@ void main() {
     });
   });
 
+  group('imovelIdDoChat', () {
+    const eu = 'uid_eu';
+    const outro = 'uid_outro';
+    const imovel = 'imovel123';
+
+    test('desmonta o id e devolve o anuncio da conversa', () {
+      // quem abre a conversa pelo aviso de mensagem nova so tem o chatId, e
+      // e o anuncio que diz qual prazo de resposta essa mensagem mexe
+      expect(imovelIdDoChat(gerarIdChat(imovelId: imovel, uidA: eu, uidB: outro)), imovel);
+    });
+
+    test('conversa de perfil pra perfil nao tem anuncio', () {
+      expect(imovelIdDoChat(gerarIdChat(imovelId: '', uidA: eu, uidB: outro)), '');
+    });
+
+    test('conversa antiga, de quando o id era so o imovelId, ainda aponta certo', () {
+      expect(imovelIdDoChat(imovel), imovel);
+    });
+  });
+
   group('Chat.contatoUid', () {
     test('o contato e sempre o outro lado', () {
       final chat = Chat(id: 'x', participantes: const ['uid_a', 'uid_b']);

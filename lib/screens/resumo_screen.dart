@@ -137,6 +137,11 @@ class _TelaResumoState extends State<TelaResumo>
                     [];
 
                 final imoveisFiltrados = imoveisDoBanco.where((i) {
+                  // mesmo corte do mapa: anuncio abandonado (cinco meses com
+                  // mensagem sem resposta) tambem nao aparece na lista, senao
+                  // sumir do mapa nao resolveria nada -- ver
+                  // utils/inatividade.dart
+                  if (i.foraDoMapaPorFaltaDeResposta) return false;
                   if (_filtroTipo == 'Todos') return true;
                   if (_filtroTipo == 'Moradias')
                     return i.tipo == TipoListing.moradia;

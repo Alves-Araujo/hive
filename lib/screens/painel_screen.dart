@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../main.dart';
 import '../models/imovel.dart';
 import '../models/usuario.dart';
+import '../utils/inatividade.dart';
 import '../utils/moeda.dart';
 import '../widgets/cabecalho_tela.dart';
 import '../widgets/pressionavel.dart';
@@ -65,16 +66,111 @@ class PainelScreen extends StatelessWidget {
                 );
               }
 
-              return ListView.separated(
-                padding: const EdgeInsets.all(16),
-                itemCount: imoveis.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 12),
-                itemBuilder: (context, index) => _ItemPainel(imovel: imoveis[index], isDark: isDark),
+              // anuncio com mensagem sem resposta perto do prazo (ou ja fora
+              // do mapa). O aviso vem antes da lista, e nao so na etiqueta do
+              // card: perder lugar no mapa sem ninguem avisar seria o anuncio
+              // sumindo do nada -- ver utils/inatividade.dart
+              final semResposta = imoveis
+                  .where((i) => i.estadoResposta != EstadoResposta.emDia)
+                  .toList();
+
+              return Column(
+                children: [
+                  if (semResposta.isNotEmpty)
+                    _AvisoSemResposta(anuncios: semResposta, isDark: isDark),
+                  Expanded(
+                    child: ListView.separated(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: imoveis.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 12),
+                      itemBuilder: (context, index) =>
+                          _ItemPainel(imovel: imoveis[index], isDark: isDark),
+                    ),
+                  ),
+                ],
               );
             },
           ),
         ),
       ],
+    );
+  }
+}
+
+// Faixa no topo do painel: diz o que esta para acontecer com quem nao
+// responde, e o que fazer pra desfazer. Some sozinha quando o dono responde,
+// porque a mensagem de resposta desliga o prazo de todos os anuncios dele
+class _AvisoSemResposta extends StatelessWidget {
+  final List<Imovel> anuncios;
+  final bool isDark;
+
+  const _AvisoSemResposta({required this.anuncios, required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    final foraDoMapa = anuncios
+        .where((i) => i.estadoResposta == EstadoResposta.foraDoMapa)
+        .length;
+    // o que ja saiu do mapa manda no tom da faixa: e o caso mais grave, e
+    // quem tem os dois precisa ver primeiro o que ja aconteceu
+    final bool jaSaiu = foraDoMapa > 0;
+    final Color cor = jaSaiu ? corErro : corAtencao;
+    final int quantos = jaSaiu ? foraDoMapa : anuncios.length;
+
+    final String titulo = jaSaiu
+        ? (quantos == 1
+              ? 'Um anúncio seu saiu do mapa'
+              : '$quantos anúncios seus saíram do mapa')
+        : 'Tem gente esperando resposta';
+
+    final String corpo = jaSaiu
+        ? 'Anúncio que passa cinco meses com mensagem sem resposta sai do '
+              'mapa e da lista. Responda quem te procurou na aba Chat e ele '
+              'volta na hora.'
+        : (quantos == 1
+              ? 'Um anúncio seu sai do mapa se ninguém responder às '
+                    'mensagens. Toque nele para ver o prazo.'
+              : '$quantos anúncios seus saem do mapa se ninguém responder às '
+                    'mensagens. Toque em cada um para ver o prazo.');
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      padding: const EdgeInsets.all(AppSpacing.md + 2),
+      decoration: BoxDecoration(
+        color: cor.withAlpha(isDark ? 40 : 20),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(color: cor.withAlpha(isDark ? 90 : 60)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            jaSaiu ? Icons.visibility_off_rounded : Icons.schedule_rounded,
+            color: cor,
+            size: 20,
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  titulo,
+                  style: AppTextStyles.bodyBold.copyWith(color: cor),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  corpo,
+                  style: AppTextStyles.caption.copyWith(
+                    color: isDark ? Colors.white70 : Colors.black87,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -123,6 +219,12 @@ class _ItemPainel extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
+              // o prazo por extenso, antes das acoes: e a informacao que
+              // decide o que a pessoa vai fazer com esse anuncio agora
+              if (imovel.estadoResposta != EstadoResposta.emDia) ...[
+                const SizedBox(height: AppSpacing.md),
+                _blocoPrazo(),
+              ],
               const SizedBox(height: AppSpacing.lg),
               _opcao(
                 context: folhaContext,
@@ -166,6 +268,38 @@ class _ItemPainel extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  // cor do estado do prazo, a mesma na etiqueta do card e no bloco da folha
+  Color get _corDoPrazo => imovel.estadoResposta == EstadoResposta.foraDoMapa
+      ? corErro
+      : corAtencao;
+
+  Widget _blocoPrazo() {
+    final cor = _corDoPrazo;
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md + 2),
+      decoration: BoxDecoration(
+        color: cor.withAlpha(isDark ? 40 : 20),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.mark_chat_unread_rounded, color: cor, size: 20),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Text(
+              avisoDeResposta(imovel.aguardandoRespostaDesde),
+              style: AppTextStyles.caption.copyWith(
+                color: isDark ? Colors.white70 : Colors.black87,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -307,6 +441,25 @@ class _ItemPainel extends StatelessWidget {
                     isEvento ? 'Evento' : (imovel.tipoImovel.isNotEmpty ? imovel.tipoImovel : 'Moradia'),
                     style: AppTextStyles.caption.copyWith(color: isDark ? Colors.white38 : Colors.grey),
                   ),
+                  // "Sai do mapa em X dias" / "Fora do mapa": o prazo aparece
+                  // no proprio card, junto do anuncio a que ele pertence
+                  if (imovel.estadoResposta != EstadoResposta.emDia) ...[
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: _corDoPrazo.withAlpha(isDark ? 50 : 25),
+                        borderRadius: BorderRadius.circular(AppRadius.sm),
+                      ),
+                      child: Text(
+                        etiquetaResposta(imovel.aguardandoRespostaDesde),
+                        style: AppTextStyles.caption.copyWith(
+                          color: _corDoPrazo,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

@@ -186,12 +186,47 @@ service cloud.firestore {
     // encontravam. A tela de edicao ja desliga o seletor; esta regra e o que
     // vale pra quem chama o Firestore direto
     match /imoveis/{imovelId} {
+      // O relogio que tira do mapa anuncio abandonado (cinco meses com
+      // mensagem sem resposta -- ver lib/utils/inatividade.dart) e ligado por
+      // QUEM MANDA a mensagem, que nao e o dono do anuncio. Dai a segunda
+      // regra de update abaixo, a unica coisa que alguem de fora escreve num
+      // anuncio alheio.
+      //
+      // O que ela amarra, pra isso nao virar uma porta de entrada:
+      // - so esse campo muda, e com o horario do SERVIDOR (request.time) --
+      //   ninguem antecipa a data pra derrubar anuncio dos outros
+      // - so liga o que esta desligado: o prazo conta da PRIMEIRA mensagem
+      //   sem resposta, e reescrever o campo so serviria pra adiar
+      // - so quem realmente abriu conversa com o dono NESTE anuncio, provado
+      //   pela existencia do chat (o id dele e derivado dos dois uids e do
+      //   imovelId -- o mesmo idDerivado() usado em /chats la embaixo)
+      // Desligar e coisa do dono, e cai na regra de update dele
+      function chatComODono() {
+        let dono = resource.data.get('donoUid', '');
+        let eu = request.auth.uid;
+        let p = eu < dono ? [eu, dono] : [dono, eu];
+        return imovelId + '_' + p[0] + '_' + p[1];
+      }
+      function relogioDesligado() {
+        return !('aguardandoRespostaDesde' in resource.data)
+        || resource.data.aguardandoRespostaDesde == null;
+      }
+
       allow read: if request.auth != null;
       allow create: if perfilCompleto()
       && request.resource.data.donoUid == request.auth.uid;
       allow update: if request.auth != null
       && resource.data.donoUid == request.auth.uid
       && request.resource.data.get('tipo', '') == resource.data.get('tipo', '');
+      allow update: if request.auth != null
+      && request.auth.uid != resource.data.get('donoUid', '')
+      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['aguardandoRespostaDesde'])
+      // get() com padrao, nao leitura direta: quando a escrita APAGA o campo
+      // (o desligar, que so o dono faz) ele nao existe no request.resource, e
+      // ler direto ali seria erro de avaliacao no meio da regra
+      && request.resource.data.get('aguardandoRespostaDesde', null) == request.time
+      && relogioDesligado()
+      && exists(/databases/$(database)/documents/chats/$(chatComODono()));
       allow delete: if request.auth != null
       && resource.data.donoUid == request.auth.uid;
     }

@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart' show FirebaseException;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show TextInputFormatter;
 import 'package:image_picker/image_picker.dart';
@@ -127,6 +128,19 @@ class _EditarImobiliariaScreenState extends State<EditarImobiliariaScreen> {
         ),
       );
       Navigator.pop(context, atualizada);
+    } on FirebaseException catch (e) {
+      // O Firestore recusa a gravacao com "permission-denied" nos dois casos em
+      // que ela nao deveria ter chegado ate aqui: a conta nao e a dona do
+      // e-mail da imobiliaria, ou as regras que liberam essa edicao ainda nao
+      // foram publicadas no projeto. Jogar o codigo cru na barra vermelha nao
+      // diz nada a quem esta com o celular na mao
+      if (!mounted) return;
+      _mostrarErro(
+        e.code == 'permission-denied'
+            ? 'Esta conta não tem permissão para editar o cadastro da '
+                'imobiliária. Entre com o e-mail dela (confirmado) e tente de novo.'
+            : 'Erro ao salvar: ${e.message ?? e.code}',
+      );
     } catch (e) {
       if (mounted) _mostrarErro('Erro ao salvar: $e');
     } finally {

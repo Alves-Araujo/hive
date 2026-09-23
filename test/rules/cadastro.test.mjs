@@ -19,7 +19,7 @@ import {
   assertFails,
   assertSucceeds,
 } from '@firebase/rules-unit-testing';
-import { doc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, deleteField } from 'firebase/firestore';
 
 const DONO = 'uidDono';           // publicou o anuncio
 const ESTRANHO = 'uidEstranho';
@@ -256,6 +256,40 @@ async function main() {
         endereco: 'Rua Nova, 100, Centro, Santa Rita do Sapucaí - MG',
         latitude: -22.25,
         longitude: -45.7,
+      }),
+    );
+  });
+
+  // Os dois de cima mandam um pedaco do formulario por vez; a tela manda o
+  // bloco INTEIRO num update so (ImobiliariaService.atualizarPerfil), inclusive
+  // quando nada mudou de valor. E esse payload que precisa passar -- foi o que
+  // voltou com permission-denied no aparelho enquanto as regras nao subiram
+  await verifica('o payload inteiro da tela passa de uma vez', async () => {
+    await assertSucceeds(
+      updateDoc(doc(imobiliariaDb, 'imobiliarias', IMOBILIARIA), {
+        nome: 'Imobiliária Central Ltda',
+        nomeBusca: 'imobiliaria central ltda',
+        descricao: 'Aluguel de kitnets perto do campus',
+        telefone: '(35) 99999-0000',
+        fotoUrl: 'https://i.ibb.co/foto.jpg',
+        endereco: 'Rua Nova, 100, Centro, Santa Rita do Sapucaí - MG',
+      }),
+    );
+  });
+
+  // endereco novo que o geocoder nao reconhece: a tela APAGA a coordenada (sai
+  // do mapa ate ser corrigido) em vez de deixar o pin no escritorio antigo
+  await verifica('endereco novo sem coordenada apaga o pin', async () => {
+    await assertSucceeds(
+      updateDoc(doc(imobiliariaDb, 'imobiliarias', IMOBILIARIA), {
+        nome: 'Imobiliária Central Ltda',
+        nomeBusca: 'imobiliaria central ltda',
+        descricao: 'Aluguel de kitnets perto do campus',
+        telefone: '(35) 99999-0000',
+        fotoUrl: 'https://i.ibb.co/foto.jpg',
+        endereco: 'Endereço que o geocoder não reconhece',
+        latitude: deleteField(),
+        longitude: deleteField(),
       }),
     );
   });

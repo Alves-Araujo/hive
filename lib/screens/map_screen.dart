@@ -267,6 +267,12 @@ class _CentroDoMapaState extends State<CentroDoMapa>
         setState(() {
           _imoveisDoBanco = snapshot.docs
               .map((doc) => Imovel.fromMap(doc.data(), doc.id))
+              // anuncio que passou cinco meses com mensagem sem resposta sai
+              // do mapa (ver utils/inatividade.dart). O corte e aqui, na
+              // entrada: assim ele some dos pins, da contagem dos filtros e
+              // da busca de uma vez so. O dono continua vendo o dele no
+              // painel, com o aviso -- e ele volta assim que responder
+              .where((item) => !item.foraDoMapaPorFaltaDeResposta)
               .toList();
         });
         _atualizarMarcadoresFiltrados();

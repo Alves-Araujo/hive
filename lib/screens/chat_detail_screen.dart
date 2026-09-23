@@ -12,9 +12,11 @@ import 'package:audioplayers/audioplayers.dart';
 import '../utils/tempo.dart';
 import '../utils/texto.dart';
 import '../main.dart';
+import '../models/chat.dart';
 import '../models/perfil_publico.dart';
 import '../models/usuario.dart';
 import '../services/chat_service.dart';
+import '../services/imovel_service.dart';
 import '../services/notificacao_service.dart';
 import '../services/perfil_publico_service.dart';
 import '../services/usuario_service.dart';
@@ -174,6 +176,26 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     // o documento pai acabou de nascer com esta mensagem: a escuta que o
     // firestore tinha negado agora vale, e e ela que traz a conversa pra tela
     if (_escutaCaiu) _reabrirEscuta();
+
+    // Conversa de anuncio: e esta mensagem que liga (interessado escrevendo)
+    // ou desliga (dono respondendo) o prazo que tira do mapa anuncio
+    // abandonado -- ver utils/inatividade.dart.
+    //
+    // O anuncio sai do chatId quando quem abriu a conversa nao o informou: e
+    // o caso de quem chega pelo aviso de mensagem nova, que so tem o id da
+    // conversa em maos.
+    //
+    // Sem await: o relogio e consequencia da mensagem, e a mensagem ja saiu.
+    // O proprio servico engole a falha, entao nao ha erro solto pra tratar
+    final String imovelDaConversa = widget.imovelId.isNotEmpty
+        ? widget.imovelId
+        : imovelIdDoChat(widget.chatId);
+    if (imovelDaConversa.isNotEmpty) {
+      unawaited(ImovelService.instance.registrarMensagem(
+        imovelId: imovelDaConversa,
+        remetenteUid: meuUid,
+      ));
+    }
 
     // o aviso vai sempre pro outro lado, e quem recebe abre a conversa comigo
     NotificacaoService.instance.avisarNovaMensagem(

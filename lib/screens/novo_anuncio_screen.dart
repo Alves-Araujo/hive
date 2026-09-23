@@ -366,7 +366,12 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
         incluiWifi: _incluiWifi,
       );
 
-      await docRef.set(novoImovel.toMap());
+      // merge por causa do prazo de resposta: aguardandoRespostaDesde nao sai
+      // em toMap() (ver models/imovel.dart), e um set inteiro apagaria o
+      // campo -- reabrir o anuncio pra mexer no preco zeraria o prazo de quem
+      // esta esperando resposta ha meses. Todo o resto vai escrito aqui
+      // mesmo, entao o merge nao deixa nada velho pra tras
+      await docRef.set(novoImovel.toMap(), SetOptions(merge: true));
       // o aviso e de anuncio NOVO: edicao nao notifica ninguem de novo.
       // Sem await -- o anuncio ja foi publicado, o aviso nao segura a tela
       if (!_editando) NotificacaoService.instance.avisarNovoAnuncio(novoImovel);

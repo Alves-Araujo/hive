@@ -33,6 +33,7 @@ O **Hive** resolve um problema concreto de cidade universitária: encontrar mora
 - Chat privado entre o interessado e o anunciante, uma conversa por interessado
 - Envio de fotos e **mensagens de áudio** dentro da conversa
 - **Chamada de voz e vídeo** integrada
+- **Anúncio abandonado sai do mapa sozinho**: cinco meses com mensagem sem resposta e ele deixa de aparecer para quem procura, com aviso e prazo no painel do anunciante desde um mês antes. Responder traz o anúncio de volta na hora
 
 ---
 
@@ -64,6 +65,7 @@ As permissões ficam nas regras do Firebase, versionadas junto com o código em 
 - Anúncio só pode ser criado por quem completou o perfil, e só o dono edita ou apaga
 - Avaliação não pode ser publicada em nome de outra pessoa
 - **Conversa só é lida e escrita pelas duas pessoas dela**, e ninguém assina mensagem em nome de outra
+- O prazo de resposta de um anúncio só é iniciado por quem realmente abriu conversa nele, com a data do servidor - ninguém derruba do mapa o anúncio de um concorrente
 - Upload no chat limitado a 32 MB por arquivo
 
 As regras do chat são as mais fáceis de quebrar sem perceber, porque o app
@@ -74,6 +76,14 @@ emulador do Firestore:
 ```bash
 cd test/rules && npm install && cd ../..
 firebase emulators:exec --only firestore "node test/rules/chats.test.mjs"
+```
+
+O prazo de resposta é o único caso do app em que alguém escreve num anúncio
+que não é seu, então ele tem o teste dele pelo mesmo motivo - o app continua
+funcionando igual mesmo que a regra esteja larga demais:
+
+```bash
+firebase emulators:exec --only firestore "node test/rules/prazo-resposta.test.mjs"
 ```
 
 ---
