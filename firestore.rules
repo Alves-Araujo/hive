@@ -124,15 +124,46 @@ service cloud.firestore {
       allow create: if request.auth != null
       && request.resource.data.emailVerificado == false;
 
+      // A imobiliaria nao e um tipo de conta: quem responde por ela e quem
+      // entra com o e-mail dela, confirmado (o mesmo criterio ja usado pra
+      // aprovar corretor la em cima, em perfisPublicos)
+      //
+      // Tudo por get() com padrao: login por telefone (ou anonimo) nao tem
+      // "email" nenhum no token, e ler o campo direto derruba a avaliacao da
+      // regra inteira. E a comparacao exige os dois lados preenchidos --
+      // senao um cadastro antigo, gravado sem emailBusca, casaria com o
+      // e-mail vazio de QUALQUER conta dessas
+      function souAImobiliaria() {
+        return request.auth.token.get('email_verified', false) == true
+        && request.auth.token.get('email', '') != ''
+        && resource.data.get('emailBusca', '') != ''
+        && request.auth.token.get('email', '').lower() == resource.data.get('emailBusca', '');
+      }
+
       allow update: if request.auth != null && (
         // so quem entra com o e-mail (confirmado) da imobiliaria a confirma.
         // Antes qualquer logado podia marcar emailVerificado em qualquer uma
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['emailVerificado'])
-        && request.auth.token.email_verified == true
-        && request.auth.token.email.lower() == resource.data.emailBusca)
+        && souAImobiliaria())
         ||
         // completar endereco e coordenada de cadastro antigo (pin no mapa)
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['endereco', 'latitude', 'longitude'])
+        ||
+        // A imobiliaria edita o PROPRIO cadastro (nome, descricao, telefone,
+        // foto, endereco). Antes nao havia caminho nenhum pra isso: trocar o
+        // nome da empresa exigia abrir outra conta, e os corretores ja
+        // vinculados ficavam apontando pro cadastro velho.
+        //
+        // Fica de fora o que identifica a empresa e o que decide quem manda
+        // nela: cnpj/cnpjBusca (chave de "encontrarOuCriar" -- dois cadastros
+        // podiam colidir no mesmo numero), email/emailBusca (trocar entregaria
+        // a imobiliaria, e os corretores dela, pra outra conta) e
+        // emailVerificado (que so a confirmacao acima liga)
+        (request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['nome', 'nomeBusca', 'descricao', 'telefone', 'fotoUrl', 'endereco', 'latitude', 'longitude'])
+        && souAImobiliaria()
+        && request.resource.data.nome is string
+        && request.resource.data.nome.trim() != '')
       );
 
       match /avaliacoes/{avaliacaoId} {

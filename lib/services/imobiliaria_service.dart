@@ -77,6 +77,60 @@ class ImobiliariaService {
     return doc.id;
   }
 
+  // Atualiza o cadastro da propria imobiliaria -- quem chama e a conta que
+  // entra com o e-mail dela (ver buscarPorEmail e EditarImobiliariaScreen).
+  //
+  // Vai so o bloco editavel no update: CNPJ e e-mail ficam de fora porque sao
+  // o que identifica a empresa (o CNPJ e a chave de "encontrarOuCriar", e o
+  // e-mail e o que decide QUEM responde por ela -- trocar o e-mail aqui seria
+  // entregar a imobiliaria pra outra conta). As regras do Firestore recusam o
+  // update que mexer neles, entao nem adianta mandar.
+  //
+  // Devolve a imobiliaria ja com os valores novos, pra tela nao precisar
+  // reler o documento so pra se redesenhar
+  Future<Imobiliaria> atualizarPerfil({
+    required Imobiliaria atual,
+    required String nome,
+    required String descricao,
+    required String telefone,
+    required String endereco,
+    required String fotoUrl,
+  }) async {
+    final dados = <String, dynamic>{
+      'nome': nome,
+      'nomeBusca': normalizarNome(nome),
+      'descricao': descricao,
+      'telefone': telefone,
+      'fotoUrl': fotoUrl,
+      'endereco': endereco,
+    };
+
+    // endereco novo pede coordenada nova: manter a antiga deixaria o pin do
+    // mapa apontando pro escritorio de onde a imobiliaria acabou de sair.
+    // Quando o geocoder nao reconhece o endereco novo, a coordenada e APAGADA
+    // -- sai do mapa ate alguem corrigir, que e melhor que ficar errada
+    final mudouEndereco = endereco.trim() != atual.endereco.trim();
+    LatLng? posicao = atual.posicao;
+    if (mudouEndereco) {
+      posicao = await _geocodificar(endereco);
+      dados['latitude'] = posicao?.latitude ?? FieldValue.delete();
+      dados['longitude'] = posicao?.longitude ?? FieldValue.delete();
+    }
+
+    await _colecao.doc(atual.id).update(dados);
+
+    return atual.copiarCom(
+      nome: nome,
+      nomeBusca: normalizarNome(nome),
+      descricao: descricao,
+      telefone: telefone,
+      fotoUrl: fotoUrl,
+      endereco: endereco,
+      posicao: posicao,
+      limparPosicao: mudouEndereco && posicao == null,
+    );
+  }
+
   // endereco escrito -> coordenada. Null quando o servico nao reconhece o
   // endereco: a imobiliaria e cadastrada do mesmo jeito, so nao entra no mapa
   Future<LatLng?> _geocodificar(String endereco) async {

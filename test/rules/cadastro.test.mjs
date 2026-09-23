@@ -25,6 +25,7 @@ const DONO = 'uidDono';           // publicou o anuncio
 const ESTRANHO = 'uidEstranho';
 const CORRETOR = 'uidCorretor';   // pediu vinculo com a imobiliaria
 const IMOBILIARIA = 'imob1';
+const IMOBILIARIA_SEM_EMAIL = 'imob2';
 const EMAIL_IMOBILIARIA = 'contato@imobiliaria.com';
 const ANUNCIO = 'anuncio1';
 
@@ -77,6 +78,13 @@ async function prepararDados() {
       nome: 'Imobiliária Central',
       emailBusca: EMAIL_IMOBILIARIA,
       emailVerificado: false,
+    });
+
+    // cadastro antigo, gravado antes de existir emailBusca: ninguem responde
+    // por ele, entao ninguem edita (conta sem e-mail no token nao pode casar
+    // com o campo vazio)
+    await setDoc(doc(db, 'imobiliarias', IMOBILIARIA_SEM_EMAIL), {
+      nome: 'Imobiliária Sem Dono',
     });
 
     await setDoc(doc(db, 'perfisPublicos', CORRETOR), {
@@ -222,6 +230,92 @@ async function main() {
         { vinculoConfirmado: true, nome: 'Outro Nome' },
         { merge: true },
       ),
+    );
+  });
+
+  // --- a imobiliaria edita o proprio cadastro ------------------------------
+  //
+  // Antes nao havia caminho nenhum: trocar o nome da empresa exigia abrir
+  // outra conta, e os corretores ja vinculados continuavam no cadastro velho
+
+  await verifica('a imobiliaria edita o proprio nome, descricao e telefone', async () => {
+    await assertSucceeds(
+      updateDoc(doc(imobiliariaDb, 'imobiliarias', IMOBILIARIA), {
+        nome: 'Imobiliária Central Ltda',
+        nomeBusca: 'imobiliaria central ltda',
+        descricao: 'Aluguel de kitnets perto do campus',
+        telefone: '(35) 99999-0000',
+      }),
+    );
+  });
+
+  await verifica('e tambem a foto, o endereco e a coordenada do pin', async () => {
+    await assertSucceeds(
+      updateDoc(doc(imobiliariaDb, 'imobiliarias', IMOBILIARIA), {
+        fotoUrl: 'https://i.ibb.co/foto.jpg',
+        endereco: 'Rua Nova, 100, Centro, Santa Rita do Sapucaí - MG',
+        latitude: -22.25,
+        longitude: -45.7,
+      }),
+    );
+  });
+
+  await verifica('quem nao e a imobiliaria NAO edita o cadastro dela', async () => {
+    await assertFails(
+      updateDoc(doc(estranhoDb, 'imobiliarias', IMOBILIARIA), {
+        nome: 'Imobiliária do Estranho',
+      }),
+    );
+  });
+
+  await verifica('com o e-mail dela mas sem confirmar, tambem NAO edita', async () => {
+    await assertFails(
+      updateDoc(doc(semConfirmarDb, 'imobiliarias', IMOBILIARIA), {
+        nome: 'Imobiliária Sequestrada',
+      }),
+    );
+  });
+
+  await verifica('a imobiliaria NAO troca o proprio CNPJ', async () => {
+    await assertFails(
+      updateDoc(doc(imobiliariaDb, 'imobiliarias', IMOBILIARIA), {
+        cnpj: '12.345.678/0001-99',
+        cnpjBusca: '12345678000199',
+      }),
+    );
+  });
+
+  await verifica('a imobiliaria NAO troca o e-mail que responde por ela', async () => {
+    await assertFails(
+      updateDoc(doc(imobiliariaDb, 'imobiliarias', IMOBILIARIA), {
+        email: 'outro@dominio.com',
+        emailBusca: 'outro@dominio.com',
+      }),
+    );
+  });
+
+  await verifica('editar o cadastro NAO e porta pra se marcar como verificada', async () => {
+    await assertFails(
+      updateDoc(doc(imobiliariaDb, 'imobiliarias', IMOBILIARIA), {
+        nome: 'Imobiliária Central',
+        emailVerificado: true,
+      }),
+    );
+  });
+
+  await verifica('a imobiliaria NAO fica sem nome', async () => {
+    await assertFails(
+      updateDoc(doc(imobiliariaDb, 'imobiliarias', IMOBILIARIA), { nome: '   ' }),
+    );
+  });
+
+  // conta sem e-mail no token (login por telefone, anonimo) contra cadastro
+  // antigo sem emailBusca: os dois lados vazios NAO podem casar
+  await verifica('cadastro sem emailBusca nao e editavel por conta sem e-mail', async () => {
+    await assertFails(
+      updateDoc(doc(estranhoDb, 'imobiliarias', IMOBILIARIA_SEM_EMAIL), {
+        nome: 'Tomada de Assalto',
+      }),
     );
   });
 

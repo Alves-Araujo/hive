@@ -9,6 +9,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
 import 'concluir_perfil_screen.dart';
 import 'detalhes_imovel_screen.dart';
+import 'editar_imobiliaria_screen.dart';
 import 'novo_anuncio_screen.dart';
 import 'notificacoes_screen.dart';
 import '../main.dart';
@@ -108,6 +109,11 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   List<Imobiliaria> _imobiliarias = [];
   Set<Marker> _marcadoresImobiliarias = {};
   StreamSubscription<List<Imobiliaria>>? _inscricaoImobiliarias;
+
+  // a imobiliaria desta conta, quando o e-mail do login e o de alguma (ver
+  // _verificarVinculoPendente). Fica null pro resto do mundo -- e o que decide
+  // se a folha de perfil oferece editar o cadastro da empresa
+  Imobiliaria? _imobiliariaDaConta;
 
   // mercado, farmacia, posto, hotel e hospital mais perto de cada moradia
   // (Google Places). Por id do Google: duas republicas vizinhas costumam ter
@@ -713,7 +719,12 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     if (email == null) return;
 
     final imobiliaria = await ImobiliariaService.instance.buscarPorEmail(email);
-    if (imobiliaria == null) return;
+    if (imobiliaria == null || !mounted) return;
+
+    // guarda quem e essa conta: e o mesmo e-mail que prova ser a imobiliaria
+    // aqui e na hora de editar o cadastro dela, entao nao vale fazer a
+    // consulta duas vezes
+    setState(() => _imobiliariaDaConta = imobiliaria);
 
     final pendentes = await ImobiliariaService.instance.vinculosPendentes(
       imobiliaria.id,
@@ -2230,6 +2241,20 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       builder: (sheetContext) {
         return _PerfilPreview(
           perfil: _perfilAtual,
+          imobiliaria: _imobiliariaDaConta,
+          onEditarImobiliaria: () async {
+            Navigator.pop(sheetContext);
+            final atualizada = await Navigator.push<Imobiliaria>(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    EditarImobiliariaScreen(imobiliaria: _imobiliariaDaConta!),
+              ),
+            );
+            if (atualizada != null && mounted) {
+              setState(() => _imobiliariaDaConta = atualizada);
+            }
+          },
           onConcluirPerfil: () async {
             Navigator.pop(sheetContext);
             final atualizado = await Navigator.push<Usuario>(
@@ -3341,11 +3366,19 @@ class _PerfilPreview extends StatelessWidget {
   final VoidCallback onSair;
   final VoidCallback onVerNotificacoes;
 
+  // preenchida so quando o e-mail desta conta e o de uma imobiliaria: ai a
+  // folha tambem oferece editar o cadastro DA EMPRESA, que e outro documento
+  // (colecao "imobiliarias") e nao sai no "Editar Perfil" de cima
+  final Imobiliaria? imobiliaria;
+  final VoidCallback onEditarImobiliaria;
+
   const _PerfilPreview({
     required this.perfil,
     required this.onConcluirPerfil,
     required this.onSair,
     required this.onVerNotificacoes,
+    required this.imobiliaria,
+    required this.onEditarImobiliaria,
   });
 
   String get _rotuloTipo {
@@ -3461,6 +3494,31 @@ class _PerfilPreview extends StatelessWidget {
                   const SizedBox(height: 8),
                   _seloVinculo(perfil.vinculoRecusado),
                 ],
+                // quem entra com o e-mail da imobiliaria responde por ela, mas
+                // nada na tela dizia isso -- a folha so mostrava o perfil
+                // pessoal, como o de qualquer um
+                if (imobiliaria != null) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: corPrimaria.withAlpha(25),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      'Conta da imobiliária ${imobiliaria!.nome}',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: corPrimaria,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -3469,6 +3527,34 @@ class _PerfilPreview extends StatelessWidget {
             label: perfil.perfilCompleto ? 'Editar Perfil' : 'Concluir Perfil',
             onTap: onConcluirPerfil,
           ),
+          // o cadastro da imobiliaria e um documento a parte do perfil de
+          // quem entra: sem esta porta, o nome da empresa so mudava abrindo
+          // outra conta
+          if (imobiliaria != null) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: onEditarImobiliaria,
+              icon: const Icon(
+                Icons.apartment_rounded,
+                color: corPrimaria,
+                size: 18,
+              ),
+              label: Text(
+                'Editar dados da imobiliária',
+                style: TextStyle(
+                  color: isDark ? Colors.white : Colors.black87,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(44),
+                side: BorderSide(color: corPrimaria.withAlpha(90)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           ValueListenableBuilder<int>(
             valueListenable: NotificacaoService.instance.naoLidas,

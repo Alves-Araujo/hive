@@ -141,6 +141,27 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
                 Text(_nome, style: AppTextStyles.heading2.copyWith(color: isDark ? Colors.white : Colors.black87)),
                 const SizedBox(height: 4),
                 Text(_rotulo, style: AppTextStyles.captionBold.copyWith(color: corPrimaria)),
+                // descricao e telefone so existem pra imobiliaria, e so quando
+                // ela mesma preencheu (ver EditarImobiliariaScreen) -- cadastro
+                // criado por um corretor nasce sem os dois
+                if (_ehImobiliaria) ...[
+                  if (widget.imobiliaria!.descricao.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      widget.imobiliaria!.descricao,
+                      textAlign: TextAlign.center,
+                      style: AppTextStyles.body.copyWith(color: isDark ? Colors.white70 : Colors.black87),
+                    ),
+                  ],
+                  if (widget.imobiliaria!.telefone.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    _linhaContato(isDark, Icons.phone_outlined, widget.imobiliaria!.telefone),
+                  ],
+                  if (widget.imobiliaria!.endereco.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    _linhaContato(isDark, Icons.location_on_outlined, widget.imobiliaria!.endereco),
+                  ],
+                ],
               ],
             ),
           ),
@@ -173,6 +194,27 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
           _buildAvaliacoes(isDark),
         ],
       ),
+    );
+  }
+
+  // telefone/endereco da imobiliaria: icone + texto, centralizado junto do
+  // resto do cabecalho. Texto quebra em varias linhas (endereco completo e
+  // longo), por isso o Flexible em vez de largura fixa
+  Widget _linhaContato(bool isDark, IconData icone, String texto) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icone, size: 15, color: isDark ? Colors.white38 : Colors.grey),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            texto,
+            textAlign: TextAlign.center,
+            style: AppTextStyles.caption.copyWith(color: isDark ? Colors.white54 : Colors.grey.shade700),
+          ),
+        ),
+      ],
     );
   }
 
