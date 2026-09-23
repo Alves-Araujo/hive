@@ -114,10 +114,12 @@ class _TelaListaChatsState extends State<TelaListaChats> {
     return Column(
       children: [
         CabecalhoTela(
+          padronizarAltura: true,
           titulo: 'Caixa de Entrada',
-          subtitulo: 'Converse com anunciantes, corretores e colegas',
+          subtitulo: 'Anunciantes, corretores e colegas',
           acao: _buildSeloNaoLidas(),
           rodape: CampoBuscaPadrao(
+            compacto: true,
             controller: _buscaController,
             focusNode: _buscaFocusNode,
             dica: 'Buscar alunos, corretores, imobiliárias...',
@@ -265,6 +267,7 @@ class _TelaListaChatsState extends State<TelaListaChats> {
               contatoUid: contatoUid,
               contato: _contatos[contatoUid],
               isDark: isDark,
+              meuUid: meuUid,
             );
           },
         );
@@ -330,12 +333,14 @@ class _CartaoLista extends StatelessWidget {
   // conversa com mensagem nao lida: ganha a borda e o fundo tingidos
   final bool destacado;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
   const _CartaoLista({
     required this.child,
     required this.isDark,
     required this.destacado,
     required this.onTap,
+    this.onLongPress,
   });
 
   @override
@@ -366,6 +371,7 @@ class _CartaoLista extends StatelessWidget {
           child: InkWell(
             borderRadius: BorderRadius.circular(AppRadius.lg),
             onTap: onTap,
+            onLongPress: onLongPress,
             child: Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppSpacing.md,
@@ -390,13 +396,54 @@ class _ItemConversa extends StatelessWidget {
   // nulo enquanto o perfil ainda esta sendo buscado
   final PerfilPublico? contato;
   final bool isDark;
+  final String meuUid;
 
   const _ItemConversa({
     required this.chat,
     required this.contatoUid,
     required this.contato,
     required this.isDark,
+    required this.meuUid,
   });
+
+  Future<void> _confirmarApagar(BuildContext context, String nome) async {
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: isDark ? corCardEscuro : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.lg)),
+        title: Text(
+          'Apagar conversa com $nome?',
+          style: AppTextStyles.heading3.copyWith(color: isDark ? Colors.white : Colors.black87),
+        ),
+        content: Text(
+          'Ela sai só da sua caixa de entrada. Se $nome escrever de novo, a conversa volta a aparecer.',
+          style: AppTextStyles.body.copyWith(color: isDark ? Colors.white70 : Colors.black87),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text('Cancelar', style: TextStyle(color: isDark ? Colors.white60 : Colors.black54)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text(
+              'Apagar',
+              style: TextStyle(color: corErro, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmou != true || !context.mounted) return;
+
+    final mensageiro = ScaffoldMessenger.of(context);
+    try {
+      await ChatService.instance.apagarConversa(chatId: chat.id, meuUid: meuUid);
+    } catch (e) {
+      mensageiro.showSnackBar(SnackBar(content: Text('Não deu pra apagar: $e'), backgroundColor: corErro));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -425,6 +472,7 @@ class _ItemConversa extends StatelessWidget {
               ),
             );
           },
+          onLongPress: () => _confirmarApagar(context, nome),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

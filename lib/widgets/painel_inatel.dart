@@ -26,7 +26,8 @@ class FotoInatel {
 const List<FotoInatel> fotosInatel = [
   FotoInatel('https://inatel.br/home/images/seo-home.jpg'),
   FotoInatel(
-      'https://inatel.br/vestibular/images/2026/banner-vestibular-1440.jpg'),
+    'https://inatel.br/vestibular/images/2026/banner-vestibular-1440.jpg',
+  ),
   FotoInatel(
     'https://upload.wikimedia.org/wikipedia/commons/thumb/9/96/Visita_ao_INATEL_%2850230360692%29.jpg/1280px-Visita_ao_INATEL_%2850230360692%29.jpg',
     credito: 'Foto: MCTI · CC BY 2.0',
@@ -53,20 +54,41 @@ class CursoInatel {
 // as 7 engenharias da graduacao, na ordem em que o vestibular as lista.
 // Cada uma abre a propria pagina no site do Inatel.
 const List<CursoInatel> engenhariasInatel = [
-  CursoInatel('Engenharia Biomédica', 'Biomédica',
-      'https://inatel.br/vestibular/engenharia-biomedica'),
-  CursoInatel('Engenharia de Computação', 'Computação',
-      'https://inatel.br/vestibular/engenharia-de-computacao'),
-  CursoInatel('Engenharia de Controle e Automação', 'Controle e Automação',
-      'https://inatel.br/vestibular/engenharia-de-controle-e-automacao'),
-  CursoInatel('Engenharia Elétrica', 'Elétrica',
-      'https://inatel.br/vestibular/engenharia-eletrica'),
-  CursoInatel('Engenharia de Produção', 'Produção',
-      'https://inatel.br/vestibular/engenharia-de-producao'),
-  CursoInatel('Engenharia de Software', 'Software',
-      'https://inatel.br/vestibular/engenharia-de-software'),
-  CursoInatel('Engenharia de Telecomunicações', 'Telecomunicações',
-      'https://inatel.br/vestibular/engenharia-de-telecomunicacoes'),
+  CursoInatel(
+    'Engenharia Biomédica',
+    'Biomédica',
+    'https://inatel.br/vestibular/engenharia-biomedica',
+  ),
+  CursoInatel(
+    'Engenharia de Computação',
+    'Computação',
+    'https://inatel.br/vestibular/engenharia-de-computacao',
+  ),
+  CursoInatel(
+    'Engenharia de Controle e Automação',
+    'Controle e Automação',
+    'https://inatel.br/vestibular/engenharia-de-controle-e-automacao',
+  ),
+  CursoInatel(
+    'Engenharia Elétrica',
+    'Elétrica',
+    'https://inatel.br/vestibular/engenharia-eletrica',
+  ),
+  CursoInatel(
+    'Engenharia de Produção',
+    'Produção',
+    'https://inatel.br/vestibular/engenharia-de-producao',
+  ),
+  CursoInatel(
+    'Engenharia de Software',
+    'Software',
+    'https://inatel.br/vestibular/engenharia-de-software',
+  ),
+  CursoInatel(
+    'Engenharia de Telecomunicações',
+    'Telecomunicações',
+    'https://inatel.br/vestibular/engenharia-de-telecomunicacoes',
+  ),
 ];
 
 // painel que abre ao tocar no pin fixo da faculdade -- fotos, endereco e os
@@ -86,6 +108,13 @@ class PainelInatel extends StatelessWidget {
       // com fotos, cursos e links o painel passa da metade da tela: sem
       // isScrollControlled a folha para em 50% e corta o conteudo
       isScrollControlled: true,
+      // curva e duracao proprias: a padrao abre seca e fecha abrupta
+      sheetAnimationStyle: const AnimationStyle(
+        duration: Duration(milliseconds: 380),
+        reverseDuration: Duration(milliseconds: 260),
+        curve: Curves.easeOutQuart,
+        reverseCurve: Curves.easeInCubic,
+      ),
       constraints: BoxConstraints(
         maxHeight: MediaQuery.of(context).size.height * 0.88,
       ),
@@ -103,7 +132,10 @@ class PainelInatel extends StatelessWidget {
       // externalApplication: o site abre no navegador do celular, nao numa
       // webview de dentro do app -- e conteudo de terceiro, com login e
       // formulario de inscricao
-      ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      ok = await launchUrl(
+        Uri.parse(url),
+        mode: LaunchMode.externalApplication,
+      );
     } catch (_) {
       ok = false;
     }
@@ -123,166 +155,195 @@ class PainelInatel extends StatelessWidget {
 
     return SafeArea(
       top: false,
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // puxador -- sinaliza que a folha arrasta pra fechar
-            Center(
-              child: Container(
-                width: 42,
-                height: 4,
-                margin: const EdgeInsets.only(
-                    top: AppSpacing.md, bottom: AppSpacing.md),
-                decoration: BoxDecoration(
-                  color: isDark ? Colors.white24 : Colors.black12,
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                ),
+      // o puxador fica FORA da area rolavel: dentro dela o scroll ganha o
+      // gesto e a folha nao fecha ao arrastar. Fora, o arrasto vai pra folha
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: Container(
+              width: 42,
+              height: 4,
+              margin: const EdgeInsets.only(
+                top: AppSpacing.md,
+                bottom: AppSpacing.md,
+              ),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.white24 : Colors.black12,
+                borderRadius: BorderRadius.circular(AppRadius.pill),
               ),
             ),
-
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-              child: GaleriaFotos(
-                fotos: fotosInatel,
-                isDark: isDark,
-                iconeReserva: Icons.school_rounded,
-              ),
-            ),
-
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, AppSpacing.lg),
+          ),
+          Flexible(
+            child: SingleChildScrollView(
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(AppSpacing.sm + 2),
-                        decoration: BoxDecoration(
-                          gradient: gradientePrincipal,
-                          borderRadius: BorderRadius.circular(AppRadius.sm),
-                          boxShadow: AppShadows.marca(forca: 0.4),
-                        ),
-                        child: const Icon(Icons.school_rounded,
-                            color: Colors.white, size: 22),
-                      ),
-                      const SizedBox(width: AppSpacing.md),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.lg,
+                    ),
+                    child: GaleriaFotos(
+                      fotos: fotosInatel,
+                      isDark: isDark,
+                      iconeReserva: Icons.school_rounded,
+                    ),
+                  ),
+
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      AppSpacing.lg,
+                      AppSpacing.lg,
+                      AppSpacing.lg,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
                           children: [
-                            Text(
-                              'Inatel',
-                              style: AppTextStyles.heading2.copyWith(
-                                color: isDark ? Colors.white : Colors.black87,
+                            Container(
+                              padding: const EdgeInsets.all(AppSpacing.sm + 2),
+                              decoration: BoxDecoration(
+                                gradient: gradientePrincipal,
+                                borderRadius: BorderRadius.circular(
+                                  AppRadius.sm,
+                                ),
+                                boxShadow: AppShadows.marca(forca: 0.4),
+                              ),
+                              child: const Icon(
+                                Icons.school_rounded,
+                                color: Colors.white,
+                                size: 22,
                               ),
                             ),
-                            Text(
-                              'Instituto Nacional de Telecomunicações',
-                              style: AppTextStyles.caption.copyWith(
-                                color: isDark ? Colors.white54 : Colors.black54,
+                            const SizedBox(width: AppSpacing.md),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Inatel',
+                                    style: AppTextStyles.heading2.copyWith(
+                                      color: isDark
+                                          ? Colors.white
+                                          : Colors.black87,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Instituto Nacional de Telecomunicações',
+                                    style: AppTextStyles.caption.copyWith(
+                                      color: isDark
+                                          ? Colors.white54
+                                          : Colors.black54,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.lg),
+                        const SizedBox(height: AppSpacing.lg),
 
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(Icons.place_rounded,
-                          size: 18,
-                          color: isDark ? Colors.white38 : Colors.black38),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: Text(
-                          enderecoInatel,
-                          style: AppTextStyles.caption.copyWith(
-                            color: isDark ? Colors.white60 : Colors.black54,
-                          ),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.place_rounded,
+                              size: 18,
+                              color: isDark ? Colors.white38 : Colors.black38,
+                            ),
+                            const SizedBox(width: AppSpacing.sm),
+                            Expanded(
+                              child: Text(
+                                enderecoInatel,
+                                style: AppTextStyles.caption.copyWith(
+                                  color: isDark
+                                      ? Colors.white60
+                                      : Colors.black54,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.xl),
+                        const SizedBox(height: AppSpacing.xl),
 
-                  // engenharias da graduacao -- cada chip abre a pagina do
-                  // curso. Em chip e nao em lista porque sao sete: em linhas
-                  // empilhadas empurrariam os links pra fora da tela
-                  Row(
-                    children: [
-                      Text(
-                        'Engenharias',
-                        style: AppTextStyles.bodyBold.copyWith(
-                          color: isDark ? Colors.white : Colors.black87,
+                        // engenharias da graduacao -- cada chip abre a pagina do
+                        // curso. Em chip e nao em lista porque sao sete: em linhas
+                        // empilhadas empurrariam os links pra fora da tela
+                        Row(
+                          children: [
+                            Text(
+                              'Engenharias',
+                              style: AppTextStyles.bodyBold.copyWith(
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.sm),
+                            Text(
+                              '${engenhariasInatel.length} cursos',
+                              style: AppTextStyles.caption.copyWith(
+                                color: isDark ? Colors.white38 : Colors.black38,
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Text(
-                        '${engenhariasInatel.length} cursos',
-                        style: AppTextStyles.caption.copyWith(
-                          color: isDark ? Colors.white38 : Colors.black38,
+                        const SizedBox(height: AppSpacing.md),
+                        Wrap(
+                          spacing: AppSpacing.sm,
+                          runSpacing: AppSpacing.sm,
+                          children: [
+                            for (final curso in engenhariasInatel)
+                              _ChipCurso(
+                                curso: curso,
+                                isDark: isDark,
+                                onTap: () => _abrir(context, curso.url),
+                              ),
+                          ],
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  Wrap(
-                    spacing: AppSpacing.sm,
-                    runSpacing: AppSpacing.sm,
-                    children: [
-                      for (final curso in engenhariasInatel)
-                        _ChipCurso(
-                          curso: curso,
+                        const SizedBox(height: AppSpacing.xl),
+
+                        BotaoPainel(
                           isDark: isDark,
-                          onTap: () => _abrir(context, curso.url),
+                          icone: Icons.school_outlined,
+                          titulo: 'Vestibular',
+                          subtitulo: 'Inscrições, provas e bolsas',
+                          destaque: true,
+                          onTap: () => _abrir(context, vestibularInatel),
                         ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.xl),
+                        const SizedBox(height: AppSpacing.md),
+                        BotaoPainel(
+                          isDark: isDark,
+                          icone: Icons.language_rounded,
+                          titulo: 'Site do Inatel',
+                          subtitulo: 'inatel.br',
+                          onTap: () => _abrir(context, siteInatel),
+                        ),
 
-                  BotaoPainel(
-                    isDark: isDark,
-                    icone: Icons.school_outlined,
-                    titulo: 'Vestibular',
-                    subtitulo: 'Inscrições, provas e bolsas',
-                    destaque: true,
-                    onTap: () => _abrir(context, vestibularInatel),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  BotaoPainel(
-                    isDark: isDark,
-                    icone: Icons.language_rounded,
-                    titulo: 'Site do Inatel',
-                    subtitulo: 'inatel.br',
-                    onTap: () => _abrir(context, siteInatel),
-                  ),
-
-                  if (aoTracarRota != null) ...[
-                    const SizedBox(height: AppSpacing.md),
-                    BotaoPainel(
-                      isDark: isDark,
-                      icone: Icons.directions_rounded,
-                      titulo: 'Traçar rota até aqui',
-                      subtitulo: 'Do seu local atual',
-                      externo: false,
-                      onTap: () {
-                        Navigator.pop(context);
-                        aoTracarRota!();
-                      },
+                        if (aoTracarRota != null) ...[
+                          const SizedBox(height: AppSpacing.md),
+                          BotaoPainel(
+                            isDark: isDark,
+                            icone: Icons.directions_rounded,
+                            titulo: 'Traçar rota até aqui',
+                            subtitulo: 'Do seu local atual',
+                            externo: false,
+                            onTap: () {
+                              Navigator.pop(context);
+                              aoTracarRota!();
+                            },
+                          ),
+                        ],
+                      ],
                     ),
-                  ],
+                  ),
                 ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -310,7 +371,9 @@ class _ChipCurso extends StatelessWidget {
         button: true,
         child: Container(
           padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md, vertical: AppSpacing.sm + 1),
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm + 1,
+          ),
           decoration: BoxDecoration(
             color: isDark ? Colors.white.withAlpha(12) : Colors.white,
             borderRadius: BorderRadius.circular(AppRadius.pill),
@@ -323,8 +386,11 @@ class _ChipCurso extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.engineering_rounded,
-                  size: 15, color: isDark ? Colors.white54 : corPrimaria),
+              Icon(
+                Icons.engineering_rounded,
+                size: 15,
+                color: isDark ? Colors.white54 : corPrimaria,
+              ),
               const SizedBox(width: AppSpacing.xs + 2),
               Text(
                 curso.curto,
@@ -394,8 +460,16 @@ class _GaleriaFotosState extends State<GaleriaFotos> {
                     Image.network(
                       foto.url,
                       fit: BoxFit.cover,
+                      // decodifica no tamanho de exibicao: foto cheia decodificada
+                      // durante a animacao da folha era o que travava
+                      cacheWidth: (MediaQuery.sizeOf(context).width *
+                              MediaQuery.devicePixelRatioOf(context))
+                          .round(),
+                      gaplessPlayback: true,
                       loadingBuilder: (context, filho, progresso) =>
-                          progresso == null ? filho : _reserva(mostrarSpinner: true),
+                          progresso == null
+                          ? filho
+                          : _reserva(mostrarSpinner: true),
                       // foto fora do ar nao pode derrubar o painel: cai no
                       // fundo de marca, que e o mesmo do resto do app
                       errorBuilder: (context, erro, pilha) =>
@@ -407,7 +481,9 @@ class _GaleriaFotosState extends State<GaleriaFotos> {
                         bottom: AppSpacing.sm,
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: AppSpacing.sm, vertical: 2),
+                            horizontal: AppSpacing.sm,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.black.withAlpha(120),
                             borderRadius: BorderRadius.circular(AppRadius.sm),
@@ -415,7 +491,9 @@ class _GaleriaFotosState extends State<GaleriaFotos> {
                           child: Text(
                             foto.credito!,
                             style: const TextStyle(
-                                color: Colors.white70, fontSize: 10),
+                              color: Colors.white70,
+                              fontSize: 10,
+                            ),
                           ),
                         ),
                       ),
@@ -451,10 +529,10 @@ class _GaleriaFotosState extends State<GaleriaFotos> {
   }
 
   Widget _reserva({required bool mostrarSpinner}) => _Reserva(
-        mostrarSpinner: mostrarSpinner,
-        icone: widget.iconeReserva,
-        gradiente: widget.gradienteReserva,
-      );
+    mostrarSpinner: mostrarSpinner,
+    icone: widget.iconeReserva,
+    gradiente: widget.gradienteReserva,
+  );
 }
 
 // fundo que ocupa o lugar da foto enquanto ela carrega ou quando ela falha
@@ -462,7 +540,11 @@ class _Reserva extends StatelessWidget {
   final bool mostrarSpinner;
   final IconData icone;
   final Gradient gradiente;
-  const _Reserva({required this.mostrarSpinner, required this.icone, required this.gradiente});
+  const _Reserva({
+    required this.mostrarSpinner,
+    required this.icone,
+    required this.gradiente,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -474,7 +556,9 @@ class _Reserva extends StatelessWidget {
                 width: 22,
                 height: 22,
                 child: CircularProgressIndicator(
-                    strokeWidth: 2, color: Colors.white70),
+                  strokeWidth: 2,
+                  color: Colors.white70,
+                ),
               )
             : Icon(icone, color: Colors.white38, size: 40),
       ),
@@ -509,8 +593,9 @@ class BotaoPainel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color corTexto =
-        destaque ? Colors.white : (isDark ? Colors.white : Colors.black87);
+    final Color corTexto = destaque
+        ? Colors.white
+        : (isDark ? Colors.white : Colors.black87);
     final Color corApoio = destaque
         ? Colors.white70
         : (isDark ? Colors.white38 : Colors.black45);
@@ -519,7 +604,9 @@ class BotaoPainel extends StatelessWidget {
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.lg, vertical: AppSpacing.md + 2),
+          horizontal: AppSpacing.lg,
+          vertical: AppSpacing.md + 2,
+        ),
         decoration: BoxDecoration(
           gradient: destaque ? gradientePrincipal : null,
           color: destaque
@@ -533,8 +620,9 @@ class BotaoPainel extends StatelessWidget {
                       ? Colors.white.withAlpha(18)
                       : corPrimaria.withAlpha(22),
                 ),
-          boxShadow:
-              destaque ? AppShadows.marca(forca: 0.5) : AppShadows.nivel1(isDark),
+          boxShadow: destaque
+              ? AppShadows.marca(forca: 0.5)
+              : AppShadows.nivel1(isDark),
         ),
         child: Row(
           children: [
@@ -544,10 +632,14 @@ class BotaoPainel extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(titulo,
-                      style: AppTextStyles.bodyBold.copyWith(color: corTexto)),
-                  Text(subtitulo,
-                      style: AppTextStyles.caption.copyWith(color: corApoio)),
+                  Text(
+                    titulo,
+                    style: AppTextStyles.bodyBold.copyWith(color: corTexto),
+                  ),
+                  Text(
+                    subtitulo,
+                    style: AppTextStyles.caption.copyWith(color: corApoio),
+                  ),
                 ],
               ),
             ),

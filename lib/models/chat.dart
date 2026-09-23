@@ -43,6 +43,12 @@ class Chat {
   // sem isso, conversa antiga sem o campo subia pro topo e ficava la
   final bool pendente;
 
+  // quem apagou a conversa da propria caixa de entrada. Nao apaga mensagem
+  // nem o documento (as regras nao permitem, e o outro lado ainda enxerga
+  // tudo normalmente) -- so tira da lista de quem esta aqui, ate a proxima
+  // mensagem chegar e trazer de volta
+  final List<String> ocultoPara;
+
   Chat({
     required this.id,
     required this.participantes,
@@ -51,6 +57,7 @@ class Chat {
     this.ultimaMensagem = '',
     this.atualizadoEm,
     this.pendente = false,
+    this.ocultoPara = const [],
   });
 
   // a hora que ordena a caixa de entrada. Mensagem recem-enviada conta como
@@ -74,6 +81,7 @@ class Chat {
       // recem-enviada) -- ver `pendente` e ordenadaPor()
       atualizadoEm: (map['atualizadoEm'] as Timestamp?)?.toDate(),
       pendente: doc.metadata.hasPendingWrites,
+      ocultoPara: List<String>.from(map['ocultoPara'] ?? const []),
     );
   }
 }

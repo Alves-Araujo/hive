@@ -30,8 +30,19 @@ class ChatService {
   Stream<List<Chat>> conversasDe(String uid) {
     return _colecao.where('participantes', arrayContains: uid).snapshots().map((snap) {
       final agora = DateTime.now();
-      return snap.docs.map(Chat.fromDoc).toList()
+      return snap.docs
+          .map(Chat.fromDoc)
+          .where((chat) => !chat.ocultoPara.contains(uid))
+          .toList()
         ..sort((a, b) => b.ordenadaPor(agora).compareTo(a.ordenadaPor(agora)));
+    });
+  }
+
+  // some da caixa de entrada de quem apagou, sem mexer no documento nem nas
+  // mensagens dela pra frente -- a regra so libera update, nao delete
+  Future<void> apagarConversa({required String chatId, required String meuUid}) {
+    return _colecao.doc(chatId).update({
+      'ocultoPara': FieldValue.arrayUnion([meuUid]),
     });
   }
 
@@ -57,6 +68,9 @@ class ChatService {
       if (imovelTitulo.isNotEmpty) 'imovelTitulo': imovelTitulo,
       'ultimaMensagem': previa,
       'atualizadoEm': FieldValue.serverTimestamp(),
+      // quem apagou (eu ou quem recebe) volta a ver a conversa assim que
+      // alguem escreve de novo
+      'ocultoPara': FieldValue.arrayRemove([meuUid, contatoUid]),
     }, SetOptions(merge: true));
 
     await mensagensDe(chatId).add({

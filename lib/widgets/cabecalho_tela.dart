@@ -24,26 +24,47 @@ class CabecalhoTela extends StatelessWidget {
   // conteudo extra abaixo do titulo, como um campo de busca
   final Widget? rodape;
 
+  // Resumo e Chat dividem as mesmas faixas de titulo e controles para que
+  // o fundo termine na mesma altura ao trocar de aba.
+  final bool padronizarAltura;
+  final Widget? inicio;
+
   const CabecalhoTela({
     super.key,
     required this.titulo,
     this.subtitulo,
     this.acao,
     this.rodape,
+    this.padronizarAltura = false,
+    this.inicio,
   });
 
   @override
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
     final double recuoTopo = MediaQuery.of(context).padding.top;
+    final escala = MediaQuery.textScalerOf(context);
+    final linhasSubtitulo =
+        MediaQuery.sizeOf(context).width < 360 || escala.scale(12) > 14.4
+        ? 2
+        : 1;
+    final alturaTitulo =
+        (escala.scale(20) * 1.25 + 2 + escala.scale(12) * 1.4 * linhasSubtitulo)
+            .clamp(44.0, double.infinity);
+    final alturaRodape = (escala.scale(14) * 1.4 + 22).clamp(
+      48.0,
+      double.infinity,
+    );
 
     return Container(
       padding: EdgeInsets.only(
         // em tela cheia padding.top e 0; o minimo evita colar na borda
-        top: (recuoTopo > 0 ? recuoTopo : 8) + AppSpacing.md,
+        top:
+            (recuoTopo > 0 ? recuoTopo : 8) +
+            (padronizarAltura ? AppSpacing.sm : AppSpacing.md),
         left: AppSpacing.xl,
         right: AppSpacing.xl,
-        bottom: AppSpacing.lg,
+        bottom: padronizarAltura ? AppSpacing.md : AppSpacing.lg,
       ),
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -52,7 +73,10 @@ class CabecalhoTela extends StatelessWidget {
           stops: const [0, 0.55, 1],
           colors: isDark
               ? [
-                  Color.alphaBlend(Colors.white.withAlpha(15), superficieEscura),
+                  Color.alphaBlend(
+                    Colors.white.withAlpha(15),
+                    superficieEscura,
+                  ),
                   superficieEscura.withAlpha(250),
                   Color.alphaBlend(corPrimaria.withAlpha(20), superficieEscura),
                 ]
@@ -62,41 +86,75 @@ class CabecalhoTela extends StatelessWidget {
                   Color.alphaBlend(corPrimaria.withAlpha(8), superficieClara),
                 ],
         ),
-        boxShadow: AppShadows.nivel2(isDark),
+        border: padronizarAltura
+            ? Border(
+                bottom: BorderSide(
+                  color: isDark
+                      ? Colors.white.withAlpha(16)
+                      : corPrimaria.withAlpha(18),
+                ),
+              )
+            : null,
+        boxShadow: padronizarAltura ? null : AppShadows.nivel2(isDark),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      titulo,
-                      style: AppTextStyles.heading2.copyWith(
-                        color: isDark ? Colors.white : Colors.black87,
-                      ),
-                    ),
-                    if (subtitulo != null) ...[
-                      const SizedBox(height: AppSpacing.xs),
+          SizedBox(
+            height: padronizarAltura ? alturaTitulo : null,
+            child: Row(
+              children: [
+                if (inicio != null) ...[
+                  inicio!,
+                  const SizedBox(width: AppSpacing.md),
+                ],
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Text(
-                        subtitulo!,
-                        style: AppTextStyles.caption.copyWith(
-                          color: isDark ? Colors.white38 : Colors.grey,
+                        titulo,
+                        maxLines: padronizarAltura ? 1 : null,
+                        overflow: padronizarAltura
+                            ? TextOverflow.ellipsis
+                            : null,
+                        style: AppTextStyles.heading2.copyWith(
+                          color: isDark ? Colors.white : Colors.black87,
+                          fontSize: padronizarAltura ? 20 : null,
+                          height: padronizarAltura ? 1.25 : null,
+                          letterSpacing: padronizarAltura ? -0.5 : null,
                         ),
                       ),
+                      if (subtitulo != null) ...[
+                        SizedBox(height: padronizarAltura ? 2 : AppSpacing.xs),
+                        Text(
+                          subtitulo!,
+                          maxLines: padronizarAltura ? linhasSubtitulo : null,
+                          overflow: padronizarAltura
+                              ? TextOverflow.ellipsis
+                              : null,
+                          style: AppTextStyles.caption.copyWith(
+                            color: isDark ? Colors.white60 : Colors.black54,
+                            fontSize: padronizarAltura ? 12 : null,
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-              ?acao,
-            ],
+                ?acao,
+              ],
+            ),
           ),
           if (rodape != null) ...[
-            const SizedBox(height: AppSpacing.lg),
-            rodape!,
+            SizedBox(height: padronizarAltura ? 10 : AppSpacing.lg),
+            SizedBox(
+              height: padronizarAltura ? alturaRodape : null,
+              child: padronizarAltura
+                  ? Align(alignment: Alignment.centerLeft, child: rodape!)
+                  : rodape!,
+            ),
           ],
         ],
       ),
@@ -111,6 +169,7 @@ class CampoBuscaPadrao extends StatelessWidget {
   final FocusNode? focusNode;
   final String dica;
   final VoidCallback? aoLimpar;
+  final bool compacto;
 
   const CampoBuscaPadrao({
     super.key,
@@ -118,6 +177,7 @@ class CampoBuscaPadrao extends StatelessWidget {
     required this.dica,
     this.focusNode,
     this.aoLimpar,
+    this.compacto = false,
   });
 
   @override
@@ -128,11 +188,13 @@ class CampoBuscaPadrao extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: isDark ? Colors.white.withAlpha(14) : Colors.white,
-        borderRadius: BorderRadius.circular(AppRadius.md + 6),
+        borderRadius: BorderRadius.circular(compacto ? 14 : AppRadius.md + 6),
         border: Border.all(
-          color: isDark ? Colors.white.withAlpha(18) : corPrimaria.withAlpha(22),
+          color: isDark
+              ? Colors.white.withAlpha(18)
+              : corPrimaria.withAlpha(22),
         ),
-        boxShadow: AppShadows.nivel1(isDark),
+        boxShadow: compacto ? null : AppShadows.nivel1(isDark),
       ),
       child: TextField(
         controller: controller,
@@ -140,9 +202,20 @@ class CampoBuscaPadrao extends StatelessWidget {
         // sem isso o InputDecoration alinha pela baseline e o texto sobe
         // alguns pixels quando ha prefixIcon e nenhum suffixIcon
         textAlignVertical: TextAlignVertical.center,
-        style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontSize: 15),
+        style: TextStyle(
+          color: isDark ? Colors.white : Colors.black87,
+          fontSize: compacto ? 14 : 15,
+          height: compacto ? 1.4 : null,
+        ),
         decoration: InputDecoration(
           hintText: dica,
+          isDense: compacto,
+          prefixIconConstraints: compacto
+              ? const BoxConstraints(minWidth: 44, minHeight: 44)
+              : null,
+          suffixIconConstraints: compacto
+              ? const BoxConstraints(minWidth: 48, minHeight: 44)
+              : null,
           hintStyle: TextStyle(
             color: isDark ? Colors.white38 : Colors.black38,
             fontWeight: FontWeight.w500,
@@ -155,13 +228,17 @@ class CampoBuscaPadrao extends StatelessWidget {
           ),
           suffixIcon: temTexto
               ? IconButton(
-                  icon: const Icon(Icons.close_rounded, color: Colors.grey, size: 20),
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    color: Colors.grey,
+                    size: 20,
+                  ),
                   onPressed: aoLimpar ?? controller.clear,
                 )
               : null,
-          contentPadding: const EdgeInsets.symmetric(
+          contentPadding: EdgeInsets.symmetric(
             horizontal: AppSpacing.lg,
-            vertical: AppSpacing.md - 1,
+            vertical: compacto ? 10 : AppSpacing.md - 1,
           ),
         ),
       ),
