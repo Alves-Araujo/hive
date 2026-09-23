@@ -69,24 +69,33 @@ class SeletorTipoResumo extends StatelessWidget {
               ),
               child: Stack(
                 children: [
-                  AnimatedPositionedDirectional(
-                    key: const ValueKey('destaque-tipo-resumo'),
-                    duration: duracao,
-                    curve: Curves.easeOutCubic,
-                    start: indice * larguraOpcao,
+                  PositionedDirectional(
+                    start: 0,
                     top: 0,
                     bottom: 0,
                     width: larguraOpcao,
-                    child: IgnorePointer(
-                      child: AnimatedContainer(
-                        duration: duracao,
-                        curve: Curves.easeOutCubic,
-                        decoration: BoxDecoration(
-                          gradient: indice == 2
-                              ? gradienteEvento
-                              : gradientePrincipal,
-                          borderRadius: BorderRadius.circular(15),
-                          border: Border.all(color: Colors.white.withAlpha(32)),
+                    // Translada na pintura, sem refazer o layout dos rótulos.
+                    child: AnimatedSlide(
+                      offset: Offset(
+                        indice * (direcao == TextDirection.rtl ? -1.0 : 1.0),
+                        0,
+                      ),
+                      duration: duracao,
+                      curve: Curves.easeOutCubic,
+                      child: IgnorePointer(
+                        key: const ValueKey('destaque-tipo-resumo'),
+                        child: AnimatedContainer(
+                          duration: duracao,
+                          curve: Curves.easeOutCubic,
+                          decoration: BoxDecoration(
+                            gradient: indice == 2
+                                ? gradienteEvento
+                                : gradientePrincipal,
+                            borderRadius: BorderRadius.circular(15),
+                            border: Border.all(
+                              color: Colors.white.withAlpha(32),
+                            ),
+                          ),
                         ),
                       ),
                     ),

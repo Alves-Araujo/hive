@@ -1,12 +1,12 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import '../widgets/campo_endereco.dart';
 import 'package:flutter/services.dart' show TextInputFormatter;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:geocoding/geocoding.dart';
-import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../models/imovel.dart';
 import '../services/imgbb_service.dart';
 import '../services/notificacao_service.dart';
@@ -48,14 +48,7 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
 
   // endereco estruturado -- exigido por completo (menos o complemento, que
   // nem todo imovel tem) pra nao salvar mais um "endereco" solto sem padrao
-  final TextEditingController _cepController = TextEditingController();
-  final TextEditingController _logradouroController = TextEditingController();
-  final TextEditingController _numeroController = TextEditingController();
-  final TextEditingController _complementoController = TextEditingController();
-  final TextEditingController _bairroController = TextEditingController();
-  final TextEditingController _cidadeController = TextEditingController();
-  String? _estadoSelecionado;
-  final _mascaraCep = MaskTextInputFormatter(mask: '#####-###', filter: {'#': RegExp(r'[0-9]')});
+  final _endereco = EnderecoControllers();
 
   final TextEditingController _generoOutroController = TextEditingController();
 
@@ -105,13 +98,13 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
     _andarController.text = imovel.andar;
     _iptuValorController.text = formatarValorEmCampo(imovel.iptuValor);
 
-    _cepController.text = imovel.cep;
-    _logradouroController.text = imovel.logradouro;
-    _numeroController.text = imovel.numero;
-    _complementoController.text = imovel.complemento;
-    _bairroController.text = imovel.bairro;
-    _cidadeController.text = imovel.cidade;
-    _estadoSelecionado = imovel.estado.isEmpty ? null : imovel.estado;
+    _endereco.cep.text = imovel.cep;
+    _endereco.logradouro.text = imovel.logradouro;
+    _endereco.numero.text = imovel.numero;
+    _endereco.complemento.text = imovel.complemento;
+    _endereco.bairro.text = imovel.bairro;
+    _endereco.cidade.text = imovel.cidade;
+    _endereco.estado = imovel.estado.isEmpty ? null : imovel.estado;
 
     _tipoSelecionado = imovel.tipo;
     _tipoImovelSelecionado = imovel.tipoImovel;
@@ -128,14 +121,14 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
   // usada tanto pra geocodificar quanto pra exibir nas telas que so mostram
   // o "endereco" como texto corrido
   String get _enderecoCompleto {
-    final numero = _numeroController.text.trim();
-    final complemento = _complementoController.text.trim();
+    final numero = _endereco.numero.text.trim();
+    final complemento = _endereco.complemento.text.trim();
     final partes = <String>[
-      '${_logradouroController.text.trim()}${numero.isNotEmpty ? ', $numero' : ''}',
+      '${_endereco.logradouro.text.trim()}${numero.isNotEmpty ? ', $numero' : ''}',
       if (complemento.isNotEmpty) complemento,
-      _bairroController.text.trim(),
-      '${_cidadeController.text.trim()} - ${_estadoSelecionado ?? ''}',
-      'CEP ${_cepController.text.trim()}',
+      _endereco.bairro.text.trim(),
+      '${_endereco.cidade.text.trim()} - ${_endereco.estado ?? ''}',
+      'CEP ${_endereco.cep.text.trim()}',
     ];
     return partes.where((p) => p.trim().isNotEmpty).join(', ');
   }
@@ -148,12 +141,7 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
     _andarController.dispose();
     _iptuValorController.dispose();
     _tagPersonalizadaController.dispose();
-    _cepController.dispose();
-    _logradouroController.dispose();
-    _numeroController.dispose();
-    _complementoController.dispose();
-    _bairroController.dispose();
-    _cidadeController.dispose();
+    _endereco.dispose();
     _generoOutroController.dispose();
     super.dispose();
   }
@@ -242,12 +230,12 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
       return;
     }
 
-    if (_cepController.text.trim().isEmpty ||
-        _logradouroController.text.trim().isEmpty ||
-        _numeroController.text.trim().isEmpty ||
-        _bairroController.text.trim().isEmpty ||
-        _cidadeController.text.trim().isEmpty ||
-        _estadoSelecionado == null) {
+    if (_endereco.cep.text.trim().isEmpty ||
+        _endereco.logradouro.text.trim().isEmpty ||
+        _endereco.numero.text.trim().isEmpty ||
+        _endereco.bairro.text.trim().isEmpty ||
+        _endereco.cidade.text.trim().isEmpty ||
+        _endereco.estado == null) {
       _mostrarErro('Preencha todos os campos do endereço (CEP, logradouro, número, bairro, cidade e estado).');
       return;
     }
@@ -349,13 +337,13 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
         // firestore comparam esse campo com quem esta autenticado
         donoUid: widget.imovel?.donoUid ?? FirebaseAuth.instance.currentUser?.uid ?? '',
         imobiliariaId: widget.imovel?.imobiliariaId ?? widget.imobiliariaId,
-        cep: _cepController.text.trim(),
-        logradouro: _logradouroController.text.trim(),
-        numero: _numeroController.text.trim(),
-        complemento: _complementoController.text.trim(),
-        bairro: _bairroController.text.trim(),
-        cidade: capitalizarNome(_cidadeController.text.trim()),
-        estado: _estadoSelecionado ?? '',
+        cep: _endereco.cep.text.trim(),
+        logradouro: _endereco.logradouro.text.trim(),
+        numero: _endereco.numero.text.trim(),
+        complemento: _endereco.complemento.text.trim(),
+        bairro: _endereco.bairro.text.trim(),
+        cidade: capitalizarNome(_endereco.cidade.text.trim()),
+        estado: _endereco.estado ?? '',
         tipoImovel: ehMoradia ? _tipoImovelSelecionado : '',
         andar: (ehMoradia && _ehApartamento) ? _andarController.text.trim() : '',
         comprovanteResidenciaUrl: comprovanteResidenciaUrl,
@@ -490,95 +478,7 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
 
               Text('Endereço', style: AppTextStyles.captionBold.copyWith(color: isDark ? Colors.white70 : Colors.black87)),
               const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: _buildTextField(
-                      controller: _cepController,
-                      label: 'CEP',
-                      icon: Icons.markunread_mailbox_outlined,
-                      isDark: isDark,
-                      keyboardType: TextInputType.number,
-                      formatters: [_mascaraCep],
-                      validator: (val) => val!.isEmpty ? 'Informe o CEP' : null,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              _buildTextField(
-                controller: _logradouroController,
-                label: 'Logradouro (rua/avenida)',
-                icon: Icons.signpost_outlined,
-                isDark: isDark,
-                validator: (val) => val!.isEmpty ? 'Informe o logradouro' : null,
-              ),
-              const SizedBox(height: 16),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: _buildTextField(
-                      controller: _numeroController,
-                      label: 'Número',
-                      icon: Icons.pin_outlined,
-                      isDark: isDark,
-                      keyboardType: TextInputType.number,
-                      validator: (val) => val!.isEmpty ? 'Informe o número' : null,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildTextField(
-                      controller: _complementoController,
-                      label: 'Complemento (opcional)',
-                      icon: Icons.apartment_outlined,
-                      isDark: isDark,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              _buildTextField(
-                controller: _bairroController,
-                label: 'Bairro',
-                icon: Icons.holiday_village_outlined,
-                isDark: isDark,
-                validator: (val) => val!.isEmpty ? 'Informe o bairro' : null,
-              ),
-              const SizedBox(height: 16),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: _buildTextField(
-                      controller: _cidadeController,
-                      label: 'Cidade',
-                      icon: Icons.location_city_rounded,
-                      isDark: isDark,
-                      textCapitalization: TextCapitalization.words,
-                      validator: (val) => val!.isEmpty ? 'Informe a cidade' : null,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: DropdownButtonFormField<String>(
-                      initialValue: _estadoSelecionado,
-                      isExpanded: true,
-                      style: TextStyle(color: isDark ? Colors.white : Colors.black87),
-                      dropdownColor: isDark ? superficieEscura : superficieClara,
-                      decoration: decoracaoCampo(isDark: isDark, rotulo: 'UF'),
-                      items: estadosBrasileiros
-                          .map((uf) => DropdownMenuItem(value: uf, child: Text(uf)))
-                          .toList(),
-                      onChanged: (val) => setState(() => _estadoSelecionado = val),
-                      validator: (val) => val == null ? 'UF' : null,
-                    ),
-                  ),
-                ],
-              ),
+              CampoEndereco(controllers: _endereco, isDark: isDark),
               const SizedBox(height: 16),
 
               // evento pode ser de graca: campo vazio vale como preco zero e a

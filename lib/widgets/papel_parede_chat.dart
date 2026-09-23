@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../main.dart';
+import '../utils/pintor_icones_padrao.dart';
 
 // Papel de parede das telas de conversa.
 //
@@ -118,33 +119,39 @@ class _PadraoMiudoPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     _pintarBase(canvas, size);
 
-    final Color cor =
-        (isDark ? Colors.white : corPrimaria).withAlpha(isDark ? 12 : 17);
+    final Color cor = (isDark ? Colors.white : corPrimaria).withAlpha(
+      isDark ? 12 : 17,
+    );
 
     final int linhas = (size.height / _celula).ceil() + 1;
     final int colunas = (size.width / _celula).ceil() + 1;
 
-    for (int linha = -1; linha < linhas; linha++) {
-      for (int coluna = -1; coluna < colunas; coluna++) {
-        final int ruido = _ruido(coluna, linha);
+    final pintor = PintorIconesPadrao(cor: cor, tamanho: _tamanhoSimbolo);
+    try {
+      for (int linha = -1; linha < linhas; linha++) {
+        for (int coluna = -1; coluna < colunas; coluna++) {
+          final int ruido = _ruido(coluna, linha);
 
-        // linhas impares entram meia celula deslocadas: em grade reta o olho
-        // acha as colunas na hora e o fundo vira papel quadriculado
-        final double recuo = linha.isOdd ? _celula / 2 : 0;
-        final Offset centro = Offset(
-          coluna * _celula + recuo + _celula / 2,
-          linha * _celula + _celula / 2,
-        );
+          // linhas impares entram meia celula deslocadas: em grade reta o olho
+          // acha as colunas na hora e o fundo vira papel quadriculado
+          final double recuo = linha.isOdd ? _celula / 2 : 0;
+          final Offset centro = Offset(
+            coluna * _celula + recuo + _celula / 2,
+            linha * _celula + _celula / 2,
+          );
 
-        canvas.save();
-        canvas.translate(centro.dx, centro.dy);
-        // giro pequeno (ate ~9 graus) e so pra tirar o ar de carimbo; giro
-        // grande, como o da primeira versao, e o que fazia o padrao parecer
-        // bagunçado em vez de trabalhado
-        canvas.rotate(-0.16 + (ruido % 5) * 0.08);
-        _pintarIcone(canvas, _simbolos[ruido % _simbolos.length], cor);
-        canvas.restore();
+          canvas.save();
+          canvas.translate(centro.dx, centro.dy);
+          // giro pequeno (ate ~9 graus) e so pra tirar o ar de carimbo; giro
+          // grande, como o da primeira versao, e o que fazia o padrao parecer
+          // bagunçado em vez de trabalhado
+          canvas.rotate(-0.16 + (ruido % 5) * 0.08);
+          pintor.pintar(canvas, _simbolos[ruido % _simbolos.length]);
+          canvas.restore();
+        }
       }
+    } finally {
+      pintor.dispose();
     }
   }
 
@@ -169,21 +176,6 @@ class _PadraoMiudoPainter extends CustomPainter {
   // os icones do Material sao uma fonte: da pra desenhar qualquer um no
   // canvas pintando o caractere dele. Sai muito mais barato (e mais bonito)
   // que redesenhar casa, chave e predio a mao em Path
-  void _pintarIcone(Canvas canvas, IconData icone, Color cor) {
-    final pintor = TextPainter(
-      text: TextSpan(
-        text: String.fromCharCode(icone.codePoint),
-        style: TextStyle(
-          fontSize: _tamanhoSimbolo,
-          fontFamily: icone.fontFamily,
-          package: icone.fontPackage,
-          color: cor,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    pintor.paint(canvas, Offset(-pintor.width / 2, -pintor.height / 2));
-  }
 
   // hash espalhado das coordenadas da celula. Derivado da POSICAO, e nao de
   // um Random: com Random, cada repintura embaralharia os simbolos e o fundo

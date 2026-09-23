@@ -3821,7 +3821,7 @@ class _EntradaDeslizanteState extends State<_EntradaDeslizante>
 
   @override
   Widget build(BuildContext context) {
-    final curva = CurvedAnimation(parent: _controller, curve: AppMotion.suave);
+    final curva = _controller.drive(CurveTween(curve: AppMotion.suave));
     return FadeTransition(
       opacity: curva,
       child: SlideTransition(

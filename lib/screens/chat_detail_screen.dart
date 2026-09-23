@@ -98,9 +98,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     _carregarMeuPerfil();
     _carregarContato();
 
-    // reconstroi o botao de enviar/microfone conforme digita
-    _mensagemController.addListener(() => setState(() {}));
-
     _player.onPlayerComplete.listen((_) {
       if (mounted) setState(() => _audioTocandoId = null);
     });
@@ -584,7 +581,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 },
               ),
             ),
-            _buildAreaEnvio(isDark),
+            // Digitar só atualiza o compositor; o histórico permanece estável.
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: _mensagemController,
+              builder: (context, value, child) => _buildAreaEnvio(isDark),
+            ),
           ],
         ),
       ),

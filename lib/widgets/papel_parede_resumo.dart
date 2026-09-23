@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../main.dart';
+import '../utils/pintor_icones_padrao.dart';
 import '../models/imovel.dart';
 
 // Papel de parede miudo da aba Resumo, irmao do PapelDeParedeMiudo em
@@ -92,22 +93,27 @@ class _PadraoResumoPainter extends CustomPainter {
     final int linhas = (size.height / _celula).ceil() + 1;
     final int colunas = (size.width / _celula).ceil() + 1;
 
-    for (int linha = -1; linha < linhas; linha++) {
-      for (int coluna = -1; coluna < colunas; coluna++) {
-        final int ruido = _ruido(coluna, linha);
+    final pintor = PintorIconesPadrao(cor: cor, tamanho: _tamanhoSimbolo);
+    try {
+      for (int linha = -1; linha < linhas; linha++) {
+        for (int coluna = -1; coluna < colunas; coluna++) {
+          final int ruido = _ruido(coluna, linha);
 
-        final double recuo = linha.isOdd ? _celula / 2 : 0;
-        final Offset centro = Offset(
-          coluna * _celula + recuo + _celula / 2,
-          linha * _celula + _celula / 2,
-        );
+          final double recuo = linha.isOdd ? _celula / 2 : 0;
+          final Offset centro = Offset(
+            coluna * _celula + recuo + _celula / 2,
+            linha * _celula + _celula / 2,
+          );
 
-        canvas.save();
-        canvas.translate(centro.dx, centro.dy);
-        canvas.rotate(-0.16 + (ruido % 5) * 0.08);
-        _pintarIcone(canvas, simbolos[ruido % simbolos.length], cor);
-        canvas.restore();
+          canvas.save();
+          canvas.translate(centro.dx, centro.dy);
+          canvas.rotate(-0.16 + (ruido % 5) * 0.08);
+          pintor.pintar(canvas, simbolos[ruido % simbolos.length]);
+          canvas.restore();
+        }
       }
+    } finally {
+      pintor.dispose();
     }
   }
 
@@ -125,22 +131,6 @@ class _PadraoResumoPainter extends CustomPainter {
       Offset.zero & size,
       Paint()..shader = gradiente.createShader(Offset.zero & size),
     );
-  }
-
-  void _pintarIcone(Canvas canvas, IconData icone, Color cor) {
-    final pintor = TextPainter(
-      text: TextSpan(
-        text: String.fromCharCode(icone.codePoint),
-        style: TextStyle(
-          fontSize: _tamanhoSimbolo,
-          fontFamily: icone.fontFamily,
-          package: icone.fontPackage,
-          color: cor,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    pintor.paint(canvas, Offset(-pintor.width / 2, -pintor.height / 2));
   }
 
   int _ruido(int x, int y) {

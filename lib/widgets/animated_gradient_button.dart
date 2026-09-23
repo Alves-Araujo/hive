@@ -44,13 +44,23 @@ class _AnimatedGradientButtonState extends State<AnimatedGradientButton>
     _shimmerController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 3200),
-    )..repeat();
+    );
     _varredura = Tween<double>(begin: -1, end: 1).animate(
-      CurvedAnimation(
-        parent: _shimmerController,
-        curve: const Interval(0, 0.45, curve: Curves.easeInOut),
+      _shimmerController.drive(
+        CurveTween(curve: const Interval(0, 0.45, curve: Curves.easeInOut)),
       ),
     );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _shimmerController.stop();
+      _shimmerController.value = 0;
+    } else if (!_shimmerController.isAnimating) {
+      _shimmerController.repeat();
+    }
   }
 
   @override
@@ -72,7 +82,9 @@ class _AnimatedGradientButtonState extends State<AnimatedGradientButton>
       onTapCancel: () => setState(() => _scale = 1.0),
       child: AnimatedScale(
         scale: _scale,
-        duration: const Duration(milliseconds: 120),
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 120),
         curve: Curves.easeOut,
         child: Container(
           height: widget.height,
@@ -99,23 +111,10 @@ class _AnimatedGradientButtonState extends State<AnimatedGradientButton>
               Positioned.fill(
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(widget.borderRadius),
-                  child: AnimatedBuilder(
-                    animation: _shimmerController,
-                    builder: (context, _) => DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
-                          colors: [
-                            Colors.white.withAlpha(0),
-                            Colors.white.withAlpha(38),
-                            Colors.white.withAlpha(0),
-                          ],
-                          stops: const [0.35, 0.5, 0.65],
-                          transform: _DeslizarGradiente(_varredura.value),
-                        ),
-                      ),
-                    ),
+                  // Só a faixa se repinta; texto, sombra e tela não refazem
+                  // build/layout a cada quadro da animação.
+                  child: RepaintBoundary(
+                    child: CustomPaint(painter: _BrilhoPainter(_varredura)),
                   ),
                 ),
               ),
@@ -165,4 +164,27 @@ class _DeslizarGradiente extends GradientTransform {
   @override
   Matrix4? transform(Rect bounds, {TextDirection? textDirection}) =>
       Matrix4.translationValues(bounds.width * fracao, 0, 0);
+}
+
+class _BrilhoPainter extends CustomPainter {
+  _BrilhoPainter(this.varredura) : super(repaint: varredura);
+
+  final Animation<double> varredura;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final gradiente = LinearGradient(
+      begin: Alignment.centerLeft,
+      end: Alignment.centerRight,
+      colors: const [Color(0x00FFFFFF), Color(0x26FFFFFF), Color(0x00FFFFFF)],
+      stops: const [0.35, 0.5, 0.65],
+      transform: _DeslizarGradiente(varredura.value),
+    );
+    canvas.drawRect(rect, Paint()..shader = gradiente.createShader(rect));
+  }
+
+  @override
+  bool shouldRepaint(_BrilhoPainter anterior) =>
+      anterior.varredura != varredura;
 }

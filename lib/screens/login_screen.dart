@@ -225,17 +225,11 @@ class _TelaLoginState extends State<TelaLogin> with TickerProviderStateMixin {
               ),
             ),
           ),
-          AnimatedBuilder(
-            animation: _bgController,
-            builder: (context, _) {
-              return CustomPaint(
-                size: size,
-                painter: _OrbPainter(
-                  progress: _bgController.value,
-                  isDark: isDark,
-                ),
-              );
-            },
+          RepaintBoundary(
+            child: CustomPaint(
+              size: size,
+              painter: _OrbPainter(progress: _bgController, isDark: isDark),
+            ),
           ),
           SafeArea(
             child: SingleChildScrollView(
@@ -623,17 +617,18 @@ class _FolhaRecuperarSenhaState extends State<_FolhaRecuperarSenha> {
 }
 
 class _OrbPainter extends CustomPainter {
-  final double progress;
+  final Animation<double> progress;
   final bool isDark;
 
-  _OrbPainter({required this.progress, required this.isDark});
+  _OrbPainter({required this.progress, required this.isDark})
+      : super(repaint: progress);
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()..style = PaintingStyle.fill;
 
-    final orb1X = size.width * 0.8 + sin(progress * 2 * pi) * 30;
-    final orb1Y = size.height * 0.15 + cos(progress * 2 * pi) * 20;
+    final orb1X = size.width * 0.8 + sin(progress.value * 2 * pi) * 30;
+    final orb1Y = size.height * 0.15 + cos(progress.value * 2 * pi) * 20;
     paint.shader = RadialGradient(
       colors: [
         corPrimaria.withAlpha(isDark ? 30 : 20),
@@ -642,8 +637,8 @@ class _OrbPainter extends CustomPainter {
     ).createShader(Rect.fromCircle(center: Offset(orb1X, orb1Y), radius: 160));
     canvas.drawCircle(Offset(orb1X, orb1Y), 160, paint);
 
-    final orb2X = size.width * 0.2 + cos(progress * 2 * pi + 1) * 25;
-    final orb2Y = size.height * 0.75 + sin(progress * 2 * pi + 1) * 30;
+    final orb2X = size.width * 0.2 + cos(progress.value * 2 * pi + 1) * 25;
+    final orb2Y = size.height * 0.75 + sin(progress.value * 2 * pi + 1) * 30;
     paint.shader = RadialGradient(
       colors: [
         corPrimaria2.withAlpha(isDark ? 25 : 15),
@@ -652,8 +647,8 @@ class _OrbPainter extends CustomPainter {
     ).createShader(Rect.fromCircle(center: Offset(orb2X, orb2Y), radius: 130));
     canvas.drawCircle(Offset(orb2X, orb2Y), 130, paint);
 
-    final orb3X = size.width * 0.5 + sin(progress * 2 * pi + 2) * 20;
-    final orb3Y = size.height * 0.45 + cos(progress * 2 * pi + 2) * 15;
+    final orb3X = size.width * 0.5 + sin(progress.value * 2 * pi + 2) * 20;
+    final orb3Y = size.height * 0.45 + cos(progress.value * 2 * pi + 2) * 15;
     paint.shader = RadialGradient(
       colors: [
         corDestaque.withAlpha(isDark ? 18 : 12),
@@ -665,5 +660,5 @@ class _OrbPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _OrbPainter oldDelegate) =>
-      oldDelegate.progress != progress;
+      oldDelegate.progress != progress || oldDelegate.isDark != isDark;
 }

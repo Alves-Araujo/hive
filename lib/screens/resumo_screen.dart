@@ -31,7 +31,7 @@ class _TelaResumoState extends State<TelaResumo>
     super.initState();
     _listAnimController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 240),
       // A aba ja tem sua entrada animada; os cards ficam prontos para exibir.
       value: 1,
     );
@@ -44,9 +44,13 @@ class _TelaResumoState extends State<TelaResumo>
   }
 
   void _mudarFiltro(String novoFiltro) {
+    if (_filtroTipo == novoFiltro) return;
     setState(() => _filtroTipo = novoFiltro);
-    _listAnimController.reset();
-    _listAnimController.forward();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _listAnimController.value = 1;
+    } else {
+      _listAnimController.forward(from: 0);
+    }
   }
 
   // null = Todos, pro papel de parede saber qual familia de simbolo desenhar
@@ -143,8 +147,9 @@ class _TelaResumoState extends State<TelaResumo>
                   // utils/inatividade.dart
                   if (i.foraDoMapaPorFaltaDeResposta) return false;
                   if (_filtroTipo == 'Todos') return true;
-                  if (_filtroTipo == 'Moradias')
+                  if (_filtroTipo == 'Moradias') {
                     return i.tipo == TipoListing.moradia;
+                  }
                   return i.tipo == TipoListing.evento;
                 }).toList();
 
@@ -206,26 +211,39 @@ class _TelaResumoState extends State<TelaResumo>
                           begin: const Offset(0, 0.1),
                           end: Offset.zero,
                         ).animate(
-                          CurvedAnimation(
-                            parent: _listAnimController,
-                            curve: Interval(delay, end, curve: AppMotion.suave),
+                          _listAnimController.drive(
+                            CurveTween(
+                              curve: Interval(
+                                delay,
+                                end,
+                                curve: AppMotion.suave,
+                              ),
+                            ),
                           ),
                         );
                     final fadeAnim = Tween<double>(begin: 0.0, end: 1.0)
                         .animate(
-                          CurvedAnimation(
-                            parent: _listAnimController,
-                            curve: Interval(delay, end, curve: Curves.easeOut),
+                          _listAnimController.drive(
+                            CurveTween(
+                              curve: Interval(
+                                delay,
+                                end,
+                                curve: Curves.easeOut,
+                              ),
+                            ),
                           ),
                         );
 
                     return FadeTransition(
+                      key: ValueKey(imovel.id),
                       opacity: fadeAnim,
                       child: SlideTransition(
                         position: slideAnim,
-                        child: CardImovelVertical(
-                          imovel: imovel,
-                          isDark: isDark,
+                        child: RepaintBoundary(
+                          child: CardImovelVertical(
+                            imovel: imovel,
+                            isDark: isDark,
+                          ),
                         ),
                       ),
                     );

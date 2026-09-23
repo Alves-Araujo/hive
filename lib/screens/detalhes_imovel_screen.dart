@@ -46,6 +46,10 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
   // mercado, farmacia, posto... perto do imovel. Guardado no state pra
   // busca nao repetir a cada rebuild (o carrossel da setState a cada foto)
   late final Future<List<LugarProximo>> _lugaresProximos;
+  // Trocar fotos não deve reiniciar a leitura nem piscar o nome do anunciante.
+  late final Future<PerfilPublico?> _anunciante = widget.imovel.donoUid.isEmpty
+      ? Future.value(null)
+      : PerfilPublicoService.instance.buscarPorUid(widget.imovel.donoUid);
 
   @override
   void initState() {
@@ -1046,7 +1050,7 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
     if (widget.imovel.donoUid.isEmpty) return const SizedBox.shrink();
 
     return FutureBuilder<PerfilPublico?>(
-      future: PerfilPublicoService.instance.buscarPorUid(widget.imovel.donoUid),
+      future: _anunciante,
       builder: (context, snapshot) {
         final carregando = snapshot.connectionState == ConnectionState.waiting;
         final dono = snapshot.data;
