@@ -206,8 +206,11 @@ class BuscaService {
     final texto = normalizarNome(alvo);
     // quebra tambem em virgula, hifen e barra: "Inatel - Instituto Nacional"
     // tem que casar com quem digita "instituto"
+    // letra de qualquer alfabeto (\p{L}), e nao so "a-z": normalizarNome ja
+    // trocou a acentuacao do portugues, mas o que sobrar de fora dela ("Björk
+    // Café") tem que continuar dentro da palavra em vez de parti-la em duas
     final palavrasAlvo = texto
-        .split(RegExp(r'[^0-9a-z]+'))
+        .split(RegExp(r'[^\p{L}\p{N}]+', unicode: true))
         .where((p) => p.isNotEmpty)
         .toList();
 

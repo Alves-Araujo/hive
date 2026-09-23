@@ -74,15 +74,24 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   int _segundosGravando = 0;
   Timer? _timerGravacao;
 
-  // criado uma unica vez: se ficasse inline no build(), cada segundo de
-  // gravacao (que da setState pra atualizar o cronometro) recriava o stream
-  // e o chat piscava voltando pro loading
-  late final Stream<QuerySnapshot<Map<String, dynamic>>> _mensagensStream =
-      ChatService.instance.mensagensRecentes(widget.chatId);
+  // Nao e criado inline no build(): cada segundo de gravacao (que da setState
+  // pra atualizar o cronometro) recriaria o stream, e o chat piscava voltando
+  // pro loading. So troca de verdade quando _reabrirEscuta() manda
+  late Stream<QuerySnapshot<Map<String, dynamic>>> _mensagensStream;
+
+  // A regra das mensagens olha o documento pai da conversa (chats/{id}), e
+  // conversa nova -- aberta pelo anuncio, antes de qualquer mensagem -- ainda
+  // nao tem esse pai: o firestore NEGA a escuta, e escuta negada nao se
+  // reconecta sozinha. Era dai que vinha "mandei e nao foi": a mensagem
+  // chegava ao servidor, mas a tela tinha perdido a escuta antes mesmo da
+  // primeira letra digitada, entao nada aparecia e a pessoa mandava de novo
+  bool _escutaCaiu = false;
+  Timer? _timerReabrirEscuta;
 
   @override
   void initState() {
     super.initState();
+    _mensagensStream = ChatService.instance.mensagensRecentes(widget.chatId);
     NotificacaoService.instance.entrarNoChat(widget.chatId);
     _carregarMeuPerfil();
     _carregarContato();
@@ -111,9 +120,39 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     if (perfil != null && mounted) setState(() => _contato = perfil);
   }
 
+  // abre de novo a escuta das mensagens. So faz sentido depois que o
+  // documento pai passa a existir -- ate la o firestore nega toda tentativa
+  void _reabrirEscuta() {
+    _timerReabrirEscuta?.cancel();
+    _timerReabrirEscuta = null;
+    if (!mounted) return;
+    setState(() {
+      _escutaCaiu = false;
+      _mensagensStream = ChatService.instance.mensagensRecentes(widget.chatId);
+    });
+  }
+
+  // chamado de dentro do build, quando a escuta cai: agenda a proxima
+  // tentativa em vez de reabrir na hora, porque trocar o stream no meio da
+  // construcao do StreamBuilder seria mexer na arvore que esta sendo montada.
+  //
+  // A tentativa periodica cobre o caso em que quem abriu a conversa nao
+  // escreve nada e o OUTRO lado manda a primeira mensagem: o pai nasce longe
+  // daqui, e sem isso a tela ficaria parada no "Diga um oi" pra sempre
+  void _agendarReaberturaDaEscuta() {
+    _escutaCaiu = true;
+    _timerReabrirEscuta ??= Timer(const Duration(seconds: 4), _reabrirEscuta);
+  }
+
   Future<void> _enviarDocumentoMensagem(Map<String, dynamic> dados) async {
     final meuUid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    if (meuUid.isEmpty || widget.contatoUid.isEmpty) return;
+    // antes esses dois casos saiam calados, e a mensagem simplesmente sumia
+    if (meuUid.isEmpty) {
+      throw Exception('sua sessão expirou, entre de novo');
+    }
+    if (widget.contatoUid.isEmpty) {
+      throw Exception('não deu pra identificar com quem é essa conversa');
+    }
 
     final String previa = switch (dados['tipo']) {
       'imagem' => 'Enviou uma foto',
@@ -132,6 +171,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       imovelTitulo: widget.imovelTitulo,
     );
 
+    // o documento pai acabou de nascer com esta mensagem: a escuta que o
+    // firestore tinha negado agora vale, e e ela que traz a conversa pra tela
+    if (_escutaCaiu) _reabrirEscuta();
+
     // o aviso vai sempre pro outro lado, e quem recebe abre a conversa comigo
     NotificacaoService.instance.avisarNovaMensagem(
       destinatarios: [widget.contatoUid],
@@ -143,11 +186,25 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     );
   }
 
+  // O campo e limpo na hora (a mensagem tem que parecer que saiu), mas se o
+  // envio falhar o texto VOLTA pro campo e o erro aparece. Antes ele era
+  // limpo e pronto: falha nenhuma era mostrada, o que a pessoa escreveu se
+  // perdia junto, e so restava digitar tudo de novo e tentar mais uma vez
   void _enviarMensagemTexto() async {
     final texto = _mensagemController.text.trim();
     if (texto.isEmpty) return;
     _mensagemController.clear();
-    await _enviarDocumentoMensagem({'tipo': 'texto', 'texto': normalizarTracos(texto)});
+    try {
+      await _enviarDocumentoMensagem({'tipo': 'texto', 'texto': normalizarTracos(texto)});
+    } catch (e) {
+      if (!mounted) return;
+      // devolve com o cursor no fim, pronto pra continuar de onde parou
+      _mensagemController.value = TextEditingValue(
+        text: texto,
+        selection: TextSelection.collapsed(offset: texto.length),
+      );
+      _mostrarErro('Não deu pra enviar a mensagem: $e');
+    }
   }
 
   Future<void> _escolherEEnviarFoto(ImageSource source) async {
@@ -379,6 +436,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   void dispose() {
     NotificacaoService.instance.sairDoChat(widget.chatId);
     _timerGravacao?.cancel();
+    _timerReabrirEscuta?.cancel();
     _mensagemController.dispose();
     _recorder.dispose();
     _player.dispose();
@@ -402,6 +460,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                 stream: _mensagensStream,
                 builder: (context, snapshot) {
+                  // escuta negada: e o que acontece na conversa que ainda nao
+                  // existe no servidor. Nao e erro pra mostrar -- a tela e a
+                  // mesma de conversa vazia, e a escuta volta sozinha assim
+                  // que a primeira mensagem criar o documento pai
+                  if (snapshot.hasError) {
+                    _agendarReaberturaDaEscuta();
+                    return _buildConversaVazia(isDark);
+                  }
+
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator(color: corPrimaria));
                   }

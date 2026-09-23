@@ -27,6 +27,23 @@ void main() {
       }
     });
 
+    // o teclado do celular manda o acento solto, depois da letra: "João" vira
+    // "Joa" + til. Na tela e igual ao outro, e por isso a reclamacao era de
+    // que o app "bloqueava a digitacao" de caractere brasileiro
+    test('acento que vem solto depois da letra passa igual', () {
+      const joaoSolto = 'João Gonçalves'; // a+til, c+cedilha
+      expect(joaoSolto, isNot('João Gonçalves')); // mesmo texto, bytes outros
+      expect(nomeTemCaracteresValidos(joaoSolto), isTrue);
+      // e as duas formas geram a MESMA chave de busca, senao a checagem de
+      // nome repetido deixaria passar duas contas com o mesmo nome
+      expect(normalizarNome(joaoSolto), normalizarNome('João Gonçalves'));
+    });
+
+    test('letra fora do alfabeto do portugues passa', () {
+      expect(nomeTemCaracteresValidos('Łukasz Świderski'), isTrue);
+      expect(nomeTemCaracteresValidos('Đorđe Mitrović'), isTrue);
+    });
+
     test('hifen e apostrofo de sobrenome passam', () {
       expect(nomeTemCaracteresValidos('Ana Paula Silva-Costa'), isTrue);
       expect(nomeTemCaracteresValidos("Maria D'Ávila"), isTrue);

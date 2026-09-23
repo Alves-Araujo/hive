@@ -6,6 +6,11 @@ const List<String> _palavroesConhecidos = [
   'vagabundo', 'vagabunda', 'safado', 'safada', 'escroto', 'escrota',
 ];
 
+// sinais de acento que vem soltos, depois da letra (Unicode combining marks).
+// Teclado de celular manda "ã" de dois jeitos: um caractere so (U+00E3) ou
+// "a" + til solto (U+0061 U+0303). Os dois aparecem identicos na tela
+final RegExp _acentoSolto = RegExp(r'\p{M}', unicode: true);
+
 // tira acento de uma string, pra comparacao mais tolerante
 String semAcento(String texto) {
   const comAcento = 'áàâãäéèêëíìîïóòôõöúùûüçñÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇÑ';
@@ -14,7 +19,10 @@ String semAcento(String texto) {
   for (var i = 0; i < comAcento.length; i++) {
     resultado = resultado.replaceAll(comAcento[i], semAcentoEquivalente[i]);
   }
-  return resultado;
+  // o mesmo nome digitado nas duas formas tem que gerar a MESMA chave de
+  // busca, senao "João" do celular e "João" do navegador viram dois nomes
+  // diferentes na checagem de duplicidade
+  return resultado.replaceAll(_acentoSolto, '');
 }
 
 // nome normalizado (minusculo, sem acento, sem espaco duplicado) -- usado
@@ -23,15 +31,16 @@ String normalizarNome(String nome) {
   return semAcento(nome.trim().toLowerCase()).replaceAll(RegExp(r'\s+'), ' ');
 }
 
-// Letras (com acento), espaco, apostrofo e hifen -- e nada mais. O intervalo
-// À-ÿ cobre a acentuacao do portugues inteira ("João", "Inês", "Gonçalves");
-// tirando dele os dois sinais de multiplicacao/divisao (× ÷), que caem no meio
-// do intervalo Latin-1 sem serem letra.
+// Letra de qualquer alfabeto (\p{L}) + o acento que vem solto depois dela
+// (\p{M}), mais espaco, apostrofo e hifen -- e nada mais.
 //
-// Nome NAO passa por lista de caracteres permitidos digitados um a um: foi
-// assim que "a-zA-Z" barrou meio pais. Numero e simbolo continuam fora --
+// Nome NAO passa por lista de caracteres escritos um a um: foi assim que
+// "a-zA-Z" barrou meio pais, e depois "À-ÿ" ainda barrava o "ã" que o teclado
+// manda como "a" + til solto -- a pessoa via o nome certo na tela e o app
+// dizia que estava errado. \p{L} resolve a familia toda de uma vez ("João",
+// "Inês", "Gonçalves", "Núria Peña"). Numero e simbolo continuam fora --
 // "Ana2" ou "Ana <3" nao sao nome de pessoa
-final RegExp _apenasLetrasDeNome = RegExp(r"^[a-zA-ZÀ-ÖØ-öø-ÿ' -]+$");
+final RegExp _apenasLetrasDeNome = RegExp(r"^[\p{L}\p{M}' -]+$", unicode: true);
 
 bool nomeTemCaracteresValidos(String nome) => _apenasLetrasDeNome.hasMatch(nome.trim());
 

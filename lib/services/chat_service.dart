@@ -49,7 +49,14 @@ class ChatService {
   // O pai e gravado ANTES da mensagem, e nao junto num WriteBatch: a regra da
   // mensagem faz get() no pai, e dentro de um batch esse get() enxerga o
   // estado anterior -- com o pai ainda inexistente, a primeira mensagem de
-  // toda conversa seria negada
+  // toda conversa seria negada.
+  //
+  // "Antes" aqui e a ordem da FILA, nao esperar o servidor confirmar o pai
+  // pra so entao escrever a mensagem. O firestore envia as escritas de um
+  // mesmo aparelho na ordem em que foram pedidas, entao a regra da mensagem
+  // ja encontra o pai la. Esperando a confirmacao, qualquer oscilacao de
+  // conexao travava o envio pela metade: o pai ia, a mensagem nem chegava a
+  // ser escrita, e quem digitou nao via nada acontecer
   Future<void> enviarMensagem({
     required String chatId,
     required Map<String, dynamic> dados,
@@ -59,7 +66,7 @@ class ChatService {
     String imovelId = '',
     String imovelTitulo = '',
   }) async {
-    await _colecao.doc(chatId).set({
+    final pai = _colecao.doc(chatId).set({
       'participantes': participantesOrdenados(meuUid, contatoUid),
       // so quando vem preenchido: quem abre a conversa pelo aviso de mensagem
       // nao sabe o anuncio, e gravar vazio aqui apagaria o vinculo que o chat
@@ -73,12 +80,14 @@ class ChatService {
       'ocultoPara': FieldValue.arrayRemove([meuUid, contatoUid]),
     }, SetOptions(merge: true));
 
-    await mensagensDe(chatId).add({
+    final mensagem = mensagensDe(chatId).add({
       ...dados,
       // a regra exige que bata com quem esta autenticado: sem isso dava pra
       // assinar mensagem com o uid de outra pessoa
       'remetenteUid': meuUid,
       'timestamp': FieldValue.serverTimestamp(),
     });
+
+    await Future.wait([pai, mensagem]);
   }
 }
