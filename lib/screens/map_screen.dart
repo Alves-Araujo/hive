@@ -33,6 +33,7 @@ import '../widgets/glass_card.dart';
 import '../widgets/map_glass_surface.dart';
 import '../widgets/filtros_mapa_sheet.dart';
 import '../widgets/folha_vinculos_pendentes.dart';
+import '../widgets/painel_imobiliaria.dart';
 import '../widgets/painel_inatel.dart';
 import '../widgets/painel_localizacao.dart';
 import '../widgets/painel_lugar.dart';
@@ -106,6 +107,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
 
   // imobiliarias cadastradas com endereco geocodificado
   BitmapDescriptor? _pinImobiliaria;
+  // a variante de destino, pro pin mudar quando a rota ativa termina nele --
+  // mesmo tratamento que os estabelecimentos e o Inatel ja tinham
+  BitmapDescriptor? _pinImobiliariaDestino;
   List<Imobiliaria> _imobiliarias = [];
   Set<Marker> _marcadoresImobiliarias = {};
   StreamSubscription<List<Imobiliaria>>? _inscricaoImobiliarias;
@@ -457,6 +461,11 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     );
 
     final imobiliaria = await PinsMapa.obter(TipoPin.imobiliaria, densidade);
+    final imobiliariaD = await PinsMapa.obter(
+      TipoPin.imobiliaria,
+      densidade,
+      isDestino: true,
+    );
 
     if (!mounted) return;
     setState(() {
@@ -467,6 +476,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       _pinInatelDestino = inatelD;
 
       _pinImobiliaria = imobiliaria;
+      _pinImobiliariaDestino = imobiliariaD;
 
       _atualizarMarcadorInatel();
       _atualizarMarcadoresImobiliarias();
@@ -601,21 +611,37 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   void _atualizarMarcadoresImobiliarias() {
     final icone = _pinImobiliaria;
     if (icone == null) return;
+    final rota = rotaAtivaGlobal.value;
     _marcadoresImobiliarias = _imobiliarias
         .where((i) => i.posicao != null)
         .map(
           (i) => Marker(
             markerId: MarkerId('imobiliaria_${i.id}'),
             position: i.posicao!,
-            icon: icone,
+            icon: (rota != null && i.posicao == rota.destino)
+                ? (_pinImobiliariaDestino ?? icone)
+                : icone,
             zIndexInt: 1,
-            infoWindow: InfoWindow(
-              title: i.nome,
-              snippet: i.endereco.isNotEmpty ? i.endereco : 'Imobiliária',
-            ),
+            // sem infoWindow, igual o Inatel e os estabelecimentos: o toque
+            // abre o painel completo (foto, endereco, telefone, rota), e o
+            // balaozinho do Google por cima dele so roubaria o lugar do pin
+            onTap: () => _abrirPainelImobiliaria(i),
           ),
         )
         .toSet();
+  }
+
+  void _abrirPainelImobiliaria(Imobiliaria imobiliaria) {
+    PainelImobiliaria.mostrar(
+      context,
+      imobiliaria,
+      aoTracarRota: imobiliaria.posicao == null
+          ? null
+          : () => _tracarRotaAte(
+              destino: imobiliaria.posicao!,
+              nomeDestino: imobiliaria.nome,
+            ),
+    );
   }
 
   void _atualizarMarcadorInatel() {
@@ -1073,6 +1099,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       _atualizarMarcadoresFiltrados();
       _atualizarMarcadorInatel();
       _atualizarMarcadoresLugares();
+      _atualizarMarcadoresImobiliarias();
       return;
     }
 
@@ -1080,6 +1107,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     _atualizarMarcadoresFiltrados();
     _atualizarMarcadorInatel();
     _atualizarMarcadoresLugares();
+    _atualizarMarcadoresImobiliarias();
 
     // desenha todas as alternativas: as nao escolhidas em cinza e por baixo
     // (zIndex menor), clicaveis pra virar a ativa; a escolhida em destaque por

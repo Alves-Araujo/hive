@@ -150,7 +150,11 @@ service cloud.firestore {
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['endereco', 'latitude', 'longitude'])
         ||
         // A imobiliaria edita o PROPRIO cadastro (nome, descricao, telefone,
-        // foto, endereco). Antes nao havia caminho nenhum pra isso: trocar o
+        // logotipo, fotos do escritorio, endereco). "fotoUrl" e o logotipo
+        // (o avatar redondo) e "fotos" e a galeria que o painel do pin mostra
+        // -- sao dois campos porque servem a coisas diferentes.
+        //
+        // Antes nao havia caminho nenhum pra isso: trocar o
         // nome da empresa exigia abrir outra conta, e os corretores ja
         // vinculados ficavam apontando pro cadastro velho.
         //
@@ -160,7 +164,7 @@ service cloud.firestore {
         // a imobiliaria, e os corretores dela, pra outra conta) e
         // emailVerificado (que so a confirmacao acima liga)
         (request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['nome', 'nomeBusca', 'descricao', 'telefone', 'fotoUrl', 'endereco', 'latitude', 'longitude'])
+        .hasOnly(['nome', 'nomeBusca', 'descricao', 'telefone', 'fotoUrl', 'fotos', 'endereco', 'latitude', 'longitude'])
         && souAImobiliaria()
         && request.resource.data.nome is string
         && request.resource.data.nome.trim() != '')

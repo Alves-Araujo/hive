@@ -24,8 +24,11 @@ O que essa regra faz, em `match /imobiliarias`:
   `emailBusca` do documento. É o mesmo critério que já valia pra aprovar
   corretor, agora escrito uma vez só e usado nos dois lugares;
 - novo caminho de `update` pra essa conta, limitado a `nome`, `nomeBusca`,
-  `descricao`, `telefone`, `fotoUrl`, `endereco`, `latitude` e `longitude`
-  (`descricao` e `telefone` são campos novos, preenchidos na tela nova);
+  `descricao`, `telefone`, `fotoUrl`, `fotos`, `endereco`, `latitude` e
+  `longitude` (`descricao`, `telefone` e `fotos` são campos novos, preenchidos
+  na tela nova). `fotoUrl` é o logotipo, que já existia; `fotos` é a galeria do
+  escritório que aparece quando alguém toca no pin da imobiliária no mapa, do
+  mesmo jeito que já acontece com farmácia e mercado;
 - ficam de fora, de propósito: `cnpj`/`cnpjBusca` (é a chave que evita cadastro
   duplicado), `email`/`emailBusca` (trocar entregaria a imobiliária, e os
   corretores dela, pra outra conta) e `emailVerificado` (só a confirmação liga);
@@ -89,7 +92,7 @@ firebase emulators:exec --only firestore --project moradias-inatel \
    && node test/rules/chats.test.mjs"
 ```
 
-   Tem que aparecer `24/24`, `10/10` e `19/19 passaram` - aqui rodei os três. O
+   Tem que aparecer `25/25`, `10/10` e `19/19 passaram` - aqui rodei os três. O
    `cadastro.test.mjs` é o que cobre a edição da imobiliária, inclusive com o
    payload exato que a tela manda.
 
@@ -119,7 +122,8 @@ firebase deploy --only firestore:rules --project moradias-inatel
   `firebase projects:list`.
 - Enquanto não publicar: a parte 2 só não faz efeito (o relógio nunca liga e
   nenhum anúncio sai do mapa, nada quebra), mas a parte 1 continua quebrada -
-  salvar em "Dados da Imobiliária" volta com `permission-denied` toda vez.
+  salvar em "Dados da Imobiliária" volta com `permission-denied` toda vez,
+  inclusive pra mandar as fotos do escritório.
 
 **As travas da regra nova do anúncio** (pra revisar antes, se quiser)
 

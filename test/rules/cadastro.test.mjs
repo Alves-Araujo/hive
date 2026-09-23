@@ -249,6 +249,14 @@ async function main() {
     );
   });
 
+  await verifica('e tambem a galeria de fotos do escritorio', async () => {
+    await assertSucceeds(
+      updateDoc(doc(imobiliariaDb, 'imobiliarias', IMOBILIARIA), {
+        fotos: ['https://i.ibb.co/escritorio1.jpg', 'https://i.ibb.co/escritorio2.jpg'],
+      }),
+    );
+  });
+
   await verifica('e tambem a foto, o endereco e a coordenada do pin', async () => {
     await assertSucceeds(
       updateDoc(doc(imobiliariaDb, 'imobiliarias', IMOBILIARIA), {
@@ -272,6 +280,7 @@ async function main() {
         descricao: 'Aluguel de kitnets perto do campus',
         telefone: '(35) 99999-0000',
         fotoUrl: 'https://i.ibb.co/foto.jpg',
+        fotos: ['https://i.ibb.co/escritorio1.jpg'],
         endereco: 'Rua Nova, 100, Centro, Santa Rita do Sapucaí - MG',
       }),
     );

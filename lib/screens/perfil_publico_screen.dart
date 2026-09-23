@@ -11,9 +11,11 @@ import '../services/avaliacao_service.dart';
 import '../services/imobiliaria_service.dart';
 import '../services/notificacao_service.dart';
 import '../services/usuario_service.dart';
+import '../utils/pins_mapa.dart';
 import '../widgets/animated_gradient_button.dart';
 import '../widgets/avatar_widget.dart';
 import '../widgets/card_imovel_vertical.dart';
+import '../widgets/painel_inatel.dart' show FotoInatel, GaleriaFotos;
 import 'chat_detail_screen.dart';
 
 // perfil publico de uma pessoa (aluno/corretor/proprietario) OU de uma
@@ -165,6 +167,22 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
               ],
             ),
           ),
+          // as fotos do escritorio, na mesma galeria que o painel do pin usa
+          // -- e o mesmo material, so que aqui com espaco pra olhar com calma
+          if (_ehImobiliaria && widget.imobiliaria!.fotos.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            GaleriaFotos(
+              fotos: [for (final f in widget.imobiliaria!.fotos) FotoInatel(f)],
+              isDark: isDark,
+              iconeReserva: Icons.real_estate_agent_rounded,
+              gradienteReserva: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: PinsMapa.cores(TipoPin.imobiliaria),
+              ),
+            ),
+          ],
+
           const SizedBox(height: 24),
 
           if (!_ehImobiliaria && !_souEu)

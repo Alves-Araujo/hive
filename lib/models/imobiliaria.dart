@@ -17,6 +17,13 @@ class Imobiliaria {
   final String descricao;
   final String telefone;
 
+  // fotos do escritorio, na ordem em que a imobiliaria montou -- e a galeria
+  // que aparece no painel do pin, do mesmo jeito que a farmacia e o mercado
+  // mostram as fotos do Google. O fotoUrl acima continua sendo o logotipo (o
+  // avatar redondo do perfil), que e outra coisa: um serve de marca, o outro
+  // mostra o lugar
+  final List<String> fotos;
+
   // coordenada do escritorio, pro pin no mapa. Fica null quando o endereco
   // nao pode ser geocodificado (ou em cadastro antigo, feito antes disso
   // existir) -- e a ausencia dela que decide se a imobiliaria aparece no mapa
@@ -35,6 +42,7 @@ class Imobiliaria {
     this.endereco = '',
     this.descricao = '',
     this.telefone = '',
+    this.fotos = const [],
     this.posicao,
   });
 
@@ -47,6 +55,7 @@ class Imobiliaria {
     String? endereco,
     String? descricao,
     String? telefone,
+    List<String>? fotos,
     LatLng? posicao,
     bool limparPosicao = false,
   }) {
@@ -63,6 +72,7 @@ class Imobiliaria {
       endereco: endereco ?? this.endereco,
       descricao: descricao ?? this.descricao,
       telefone: telefone ?? this.telefone,
+      fotos: fotos ?? this.fotos,
       posicao: limparPosicao ? null : (posicao ?? this.posicao),
     );
   }
@@ -81,6 +91,7 @@ class Imobiliaria {
       endereco: map['endereco'] ?? '',
       descricao: map['descricao'] ?? '',
       telefone: map['telefone'] ?? '',
+      fotos: List<String>.from(map['fotos'] ?? const []),
       posicao: (map['latitude'] is num && map['longitude'] is num)
           ? LatLng((map['latitude'] as num).toDouble(),
               (map['longitude'] as num).toDouble())
@@ -101,6 +112,7 @@ class Imobiliaria {
       'endereco': endereco,
       'descricao': descricao,
       'telefone': telefone,
+      'fotos': fotos,
       // gravados soltos (nao como GeoPoint) pra seguir o mesmo formato que
       // os imoveis ja usam na colecao "imoveis"
       if (posicao != null) 'latitude': posicao!.latitude,

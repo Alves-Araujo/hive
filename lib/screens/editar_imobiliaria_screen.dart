@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart' show FirebaseException;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show TextInputFormatter;
@@ -51,6 +53,15 @@ class _EditarImobiliariaScreenState extends State<EditarImobiliariaScreen> {
   bool _enviandoFoto = false;
   bool _salvando = false;
 
+  // galeria do escritorio: as que ja estao gravadas e as escolhidas agora,
+  // que so sobem pro imgbb na hora de salvar (igual o anuncio faz -- escolher
+  // foto e desistir da tela nao pode deixar imagem orfa na hospedagem)
+  final List<String> _fotosJaSalvas = [];
+  final List<XFile> _fotosNovas = [];
+
+  // o mesmo teto do anuncio: acima disso o upload costuma morrer no caminho
+  static const int _limiteTamanhoImagemBytes = 32 * 1024 * 1024;
+
   @override
   void initState() {
     super.initState();
@@ -62,6 +73,7 @@ class _EditarImobiliariaScreenState extends State<EditarImobiliariaScreen> {
     _telefoneController = TextEditingController(text: i.telefone);
     _enderecoController = TextEditingController(text: i.endereco);
     _fotoUrl = i.fotoUrl;
+    _fotosJaSalvas.addAll(i.fotos);
   }
 
   @override
@@ -99,6 +111,32 @@ class _EditarImobiliariaScreenState extends State<EditarImobiliariaScreen> {
     }
   }
 
+  // galeria do escritorio -- varias de uma vez, como no anuncio
+  Future<void> _escolherFotos() async {
+    try {
+      final imagens = await _picker.pickMultiImage(imageQuality: 70);
+      if (imagens.isEmpty) return;
+
+      final aceitas = <XFile>[];
+      var algumaRecusada = false;
+      for (final imagem in imagens) {
+        if (await imagem.length() > _limiteTamanhoImagemBytes) {
+          algumaRecusada = true;
+        } else {
+          aceitas.add(imagem);
+        }
+      }
+
+      if (!mounted) return;
+      setState(() => _fotosNovas.addAll(aceitas));
+      if (algumaRecusada) {
+        _mostrarErro('Alguma foto passou de 32MB e foi ignorada.');
+      }
+    } catch (e) {
+      if (mounted) _mostrarErro('Erro ao selecionar fotos: $e');
+    }
+  }
+
   Future<void> _salvar() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -110,8 +148,26 @@ class _EditarImobiliariaScreenState extends State<EditarImobiliariaScreen> {
       return;
     }
 
+    // foto obrigatoria, pelo mesmo motivo do perfil das pessoas: o cadastro
+    // aparece no mapa, no anuncio do corretor e na lista de imobiliarias, e
+    // sem foto a empresa fica so um circulo com a inicial
+    if (_enviandoFoto) {
+      _mostrarErro('Espere a foto terminar de enviar.');
+      return;
+    }
+    if (_fotoUrl.trim().isEmpty) {
+      _mostrarErro('Adicione a foto (ou logotipo) da imobiliária.');
+      return;
+    }
+
     setState(() => _salvando = true);
     try {
+      // as ja gravadas primeiro, depois as escolhidas agora: e a ordem que a
+      // galeria do painel segue, entao a primeira miniatura e a foto de capa
+      final fotos = [
+        ..._fotosJaSalvas,
+        ...await ImgbbService.instance.enviarImagens(_fotosNovas),
+      ];
       final atualizada = await ImobiliariaService.instance.atualizarPerfil(
         atual: widget.imobiliaria,
         nome: nome,
@@ -119,8 +175,17 @@ class _EditarImobiliariaScreenState extends State<EditarImobiliariaScreen> {
         telefone: _telefoneController.text.trim(),
         endereco: _enderecoController.text.trim(),
         fotoUrl: _fotoUrl,
+        fotos: fotos,
       );
       if (!mounted) return;
+      // as novas viraram URL: sem isso, salvar duas vezes seguidas mandaria
+      // as mesmas fotos pro imgbb de novo e duplicaria a galeria
+      setState(() {
+        _fotosJaSalvas
+          ..clear()
+          ..addAll(fotos);
+        _fotosNovas.clear();
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Dados da imobiliária atualizados.'),
@@ -220,6 +285,22 @@ class _EditarImobiliariaScreenState extends State<EditarImobiliariaScreen> {
                 ],
               ),
             ),
+            const SizedBox(height: AppSpacing.sm + 2),
+            // avisa antes de o botao recusar: a camerazinha sozinha parecia
+            // opcional
+            Center(
+              child: Text(
+                _fotoUrl.trim().isEmpty
+                    ? 'Toque na câmera e escolha a foto da imobiliária (obrigatória)'
+                    : 'Foto da imobiliária',
+                textAlign: TextAlign.center,
+                style: AppTextStyles.caption.copyWith(
+                  color: _fotoUrl.trim().isEmpty
+                      ? corErro
+                      : (isDark ? Colors.white38 : Colors.grey),
+                ),
+              ),
+            ),
             const SizedBox(height: AppSpacing.xxl + AppSpacing.xs),
 
             _secao(
@@ -255,6 +336,26 @@ class _EditarImobiliariaScreenState extends State<EditarImobiliariaScreen> {
                   isDark: isDark,
                   keyboardType: TextInputType.phone,
                   formatters: [_mascaraTelefone],
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.xl),
+
+            _secao(
+              isDark: isDark,
+              titulo: 'Fotos da imobiliária',
+              icone: Icons.photo_library_outlined,
+              filhos: [
+                _seletorDeFotos(isDark),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  'São estas fotos que aparecem quando alguém toca no pin da '
+                  'imobiliária no mapa, do mesmo jeito que acontece com uma '
+                  'farmácia ou um mercado. A primeira é a de capa. Sem nenhuma, '
+                  'o painel mostra o logotipo.',
+                  style: AppTextStyles.caption.copyWith(
+                    color: isDark ? Colors.white38 : Colors.grey,
+                  ),
                 ),
               ],
             ),
@@ -325,6 +426,124 @@ class _EditarImobiliariaScreenState extends State<EditarImobiliariaScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // mesma faixa de miniaturas do anuncio: as ja gravadas e as escolhidas
+  // agora na mesma fila, cada uma com o x pra tirar, e o quadro de "+" no fim
+  Widget _seletorDeFotos(bool isDark) {
+    final total = _fotosJaSalvas.length + _fotosNovas.length;
+    if (total == 0) {
+      return GestureDetector(
+        onTap: _escolherFotos,
+        child: Container(
+          width: double.infinity,
+          height: 120,
+          decoration: BoxDecoration(
+            color: isDark ? Colors.white.withAlpha(5) : Colors.white,
+            borderRadius: BorderRadius.circular(AppRadius.lg + 2),
+            border: Border.all(
+              color: isDark ? Colors.white.withAlpha(20) : Colors.grey.withAlpha(50),
+              width: 2,
+            ),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.add_photo_alternate_rounded,
+                size: 40,
+                color: corPrimaria.withAlpha(150),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'Toque para adicionar fotos do escritório',
+                style: TextStyle(
+                  color: isDark ? Colors.white54 : Colors.grey,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 100,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: total + 1,
+        itemBuilder: (context, index) {
+          if (index == total) {
+            return GestureDetector(
+              onTap: _escolherFotos,
+              child: Container(
+                width: 100,
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? Colors.white.withAlpha(10)
+                      : Colors.grey.withAlpha(30),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  border: Border.all(color: corPrimaria.withAlpha(100), width: 2),
+                ),
+                child: const Icon(
+                  Icons.add_a_photo_rounded,
+                  color: corPrimaria,
+                  size: 32,
+                ),
+              ),
+            );
+          }
+
+          final bool jaSalva = index < _fotosJaSalvas.length;
+          return Stack(
+            children: [
+              Container(
+                width: 100,
+                margin: const EdgeInsets.only(right: AppSpacing.md),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  image: DecorationImage(
+                    image: jaSalva
+                        ? NetworkImage(_fotosJaSalvas[index])
+                        : FileImage(
+                                File(
+                                  _fotosNovas[index - _fotosJaSalvas.length].path,
+                                ),
+                              )
+                              as ImageProvider,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 4,
+                right: AppSpacing.md + 4,
+                child: GestureDetector(
+                  onTap: () => setState(
+                    () => jaSalva
+                        ? _fotosJaSalvas.removeAt(index)
+                        : _fotosNovas.removeAt(index - _fotosJaSalvas.length),
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.all(AppSpacing.xs),
+                    decoration: const BoxDecoration(
+                      color: Colors.black54,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.close_rounded,
+                      color: Colors.white,
+                      size: 16,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

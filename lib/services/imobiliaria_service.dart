@@ -95,6 +95,7 @@ class ImobiliariaService {
     required String telefone,
     required String endereco,
     required String fotoUrl,
+    required List<String> fotos,
   }) async {
     final dados = <String, dynamic>{
       'nome': nome,
@@ -102,6 +103,7 @@ class ImobiliariaService {
       'descricao': descricao,
       'telefone': telefone,
       'fotoUrl': fotoUrl,
+      'fotos': fotos,
       'endereco': endereco,
     };
 
@@ -125,6 +127,7 @@ class ImobiliariaService {
       descricao: descricao,
       telefone: telefone,
       fotoUrl: fotoUrl,
+      fotos: fotos,
       endereco: endereco,
       posicao: posicao,
       limparPosicao: mudouEndereco && posicao == null,

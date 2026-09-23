@@ -260,6 +260,12 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
   // valida os campos que nao tem TextFormField.validator (documento, data,
   // secoes condicionais) -- retorna a primeira mensagem de erro encontrada
   String? _validarCamposCondicionais() {
+    // a foto e obrigatoria: o perfil aparece na conversa, no anuncio e na
+    // avaliacao, e a inicial no circulo colorido nao diz com quem se esta
+    // falando. Fica antes de tudo porque o avatar e o topo do formulario
+    if (_enviandoFoto) return 'Espere a foto terminar de enviar.';
+    if (_fotoUrl.trim().isEmpty) return 'Adicione uma foto de perfil.';
+
     if (_tipoSelecionado == null) return 'Selecione o tipo de conta.';
 
     if (_generoSelecionado.isEmpty) return 'Selecione seu gênero.';
@@ -473,6 +479,22 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
                     ),
                   ),
                 ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            // avisa antes de o botao recusar: a camerazinha sozinha parecia
+            // opcional, e o erro so aparecia depois de preencher tudo
+            Center(
+              child: Text(
+                _fotoUrl.trim().isEmpty
+                    ? 'Toque na câmera e escolha sua foto de perfil (obrigatória)'
+                    : 'Foto de perfil',
+                textAlign: TextAlign.center,
+                style: AppTextStyles.caption.copyWith(
+                  color: _fotoUrl.trim().isEmpty
+                      ? corErro
+                      : (isDark ? Colors.white38 : Colors.grey),
+                ),
               ),
             ),
             const SizedBox(height: 28),
