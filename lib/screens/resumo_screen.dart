@@ -14,18 +14,24 @@ class TelaResumo extends StatefulWidget {
   State<TelaResumo> createState() => _TelaResumoState();
 }
 
-class _TelaResumoState extends State<TelaResumo> with SingleTickerProviderStateMixin {
+class _TelaResumoState extends State<TelaResumo>
+    with SingleTickerProviderStateMixin {
   String _filtroTipo = 'Todos';
   late AnimationController _listAnimController;
+  // Nao reinicia a assinatura quando o tema ou os filtros mudam.
+  late final Stream<QuerySnapshot> _imoveisStream = FirebaseFirestore.instance
+      .collection('imoveis')
+      .snapshots();
 
   @override
   void initState() {
     super.initState();
     _listAnimController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 600),
+      duration: const Duration(milliseconds: 300),
+      // A aba ja tem sua entrada animada; os cards ficam prontos para exibir.
+      value: 1,
     );
-    _listAnimController.forward();
   }
 
   @override
@@ -67,14 +73,23 @@ class _TelaResumoState extends State<TelaResumo> with SingleTickerProviderStateM
               stops: const [0, 0.55, 1],
               colors: isDark
                   ? [
-                      Color.alphaBlend(Colors.white.withAlpha(15), superficieEscura),
+                      Color.alphaBlend(
+                        Colors.white.withAlpha(15),
+                        superficieEscura,
+                      ),
                       superficieEscura.withAlpha(250),
-                      Color.alphaBlend(corPrimaria.withAlpha(20), superficieEscura),
+                      Color.alphaBlend(
+                        corPrimaria.withAlpha(20),
+                        superficieEscura,
+                      ),
                     ]
                   : [
                       superficieClara,
                       superficieClara,
-                      Color.alphaBlend(corPrimaria.withAlpha(8), superficieClara),
+                      Color.alphaBlend(
+                        corPrimaria.withAlpha(8),
+                        superficieClara,
+                      ),
                     ],
             ),
             boxShadow: AppShadows.nivel2(isDark),
@@ -85,34 +100,41 @@ class _TelaResumoState extends State<TelaResumo> with SingleTickerProviderStateM
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Avatar do usuario ou icone fallback -- com foto, a borda
-                  // orna com a cor da propria foto em vez do branco fixo
-                  FutureBuilder<Color?>(
-                    future: widget.perfil.fotoUrl.isNotEmpty ? corDaFoto(widget.perfil.fotoUrl) : null,
-                    initialData: corDaFotoSalva(widget.perfil.fotoUrl),
-                    builder: (context, snapshot) {
-                      final corBorda = snapshot.data ?? (isDark ? Colors.white.withAlpha(40) : Colors.white);
-                      return Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: gradientePrincipal,
-                          boxShadow: AppShadows.marca(forca: 0.3),
-                          border: Border.all(color: corBorda, width: 2),
-                        ),
-                        child: ClipOval(
-                          child: widget.perfil.fotoUrl.isNotEmpty
-                              ? Image(
-                                  image: fotoAvatar(widget.perfil.fotoUrl, 48, MediaQuery.devicePixelRatioOf(context)),
-                                  fit: BoxFit.cover,
-                                  gaplessPlayback: true,
-                                  errorBuilder: (context, error, stackTrace) => const Icon(Icons.person_rounded, color: Colors.white),
-                                )
-                              : const Icon(Icons.person_rounded, color: Colors.white, size: 24),
-                        ),
-                      );
-                    },
+                  // Mesmo anel azul do avatar de perfil no mapa (ver
+                  // _buildGlassButton em map_screen.dart) -- a borda usava a
+                  // cor extraida da propria foto, o que deixava o anel quase
+                  // invisivel sobre fotos escuras e destoava do resto do app
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: gradientePrincipal,
+                      boxShadow: AppShadows.marca(forca: 0.3),
+                      border: Border.all(color: corPrimaria2, width: 2),
+                    ),
+                    child: ClipOval(
+                      child: widget.perfil.fotoUrl.isNotEmpty
+                          ? Image(
+                              image: fotoAvatar(
+                                widget.perfil.fotoUrl,
+                                48,
+                                MediaQuery.devicePixelRatioOf(context),
+                              ),
+                              fit: BoxFit.cover,
+                              gaplessPlayback: true,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  const Icon(
+                                    Icons.person_rounded,
+                                    color: Colors.white,
+                                  ),
+                            )
+                          : const Icon(
+                              Icons.person_rounded,
+                              color: Colors.white,
+                              size: 24,
+                            ),
+                    ),
                   ),
                   const SizedBox(width: AppSpacing.md),
                   Expanded(
@@ -180,100 +202,118 @@ class _TelaResumoState extends State<TelaResumo> with SingleTickerProviderStateM
         // lista de imoveis
         Expanded(
           child: StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance.collection('imoveis').snapshots(),
+            stream: _imoveisStream,
             builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator(color: corPrimaria));
-                }
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: CircularProgressIndicator(color: corPrimaria),
+                );
+              }
 
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Text('Erro ao carregar dados.', style: AppTextStyles.body.copyWith(color: corErro)),
-                  );
-                }
+              if (snapshot.hasError) {
+                return Center(
+                  child: Text(
+                    'Erro ao carregar dados.',
+                    style: AppTextStyles.body.copyWith(color: corErro),
+                  ),
+                );
+              }
 
-                final imoveisDoBanco = snapshot.data?.docs.map((doc) {
-                  return Imovel.fromMap(doc.data() as Map<String, dynamic>, doc.id);
-                }).toList() ?? [];
+              final imoveisDoBanco =
+                  snapshot.data?.docs.map((doc) {
+                    return Imovel.fromMap(
+                      doc.data() as Map<String, dynamic>,
+                      doc.id,
+                    );
+                  }).toList() ??
+                  [];
 
-                final imoveisFiltrados = imoveisDoBanco.where((i) {
-                  if (_filtroTipo == 'Todos') return true;
-                  if (_filtroTipo == 'Moradias') return i.tipo == TipoListing.moradia;
-                  return i.tipo == TipoListing.evento;
-                }).toList();
+              final imoveisFiltrados = imoveisDoBanco.where((i) {
+                if (_filtroTipo == 'Todos') return true;
+                if (_filtroTipo == 'Moradias')
+                  return i.tipo == TipoListing.moradia;
+                return i.tipo == TipoListing.evento;
+              }).toList();
 
-                if (imoveisFiltrados.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(AppSpacing.xl),
-                          decoration: BoxDecoration(
-                            color: isDark ? superficieEscura.withAlpha(80) : superficieClara.withAlpha(180),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.search_off_rounded,
-                            size: 48,
-                            color: isDark ? Colors.white.withAlpha(51) : Colors.grey.shade300,
-                          ),
+              if (imoveisFiltrados.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(AppSpacing.xl),
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? superficieEscura.withAlpha(80)
+                              : superficieClara.withAlpha(180),
+                          shape: BoxShape.circle,
                         ),
-                        const SizedBox(height: AppSpacing.lg),
-                        Text(
-                          'Nenhum resultado encontrado.',
-                          style: AppTextStyles.body.copyWith(
-                            color: isDark ? Colors.white30 : Colors.grey,
-                          ),
+                        child: Icon(
+                          Icons.search_off_rounded,
+                          size: 48,
+                          color: isDark
+                              ? Colors.white.withAlpha(51)
+                              : Colors.grey.shade300,
                         ),
-                      ],
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                      Text(
+                        'Nenhum resultado encontrado.',
+                        style: AppTextStyles.body.copyWith(
+                          color: isDark ? Colors.white30 : Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              return ListView.builder(
+                padding: EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.md + 2,
+                  AppSpacing.lg,
+                  // com extendBody: true o body vai ate a base da tela e a
+                  // barra inferior fica por cima -- sem esse reforco o
+                  // ultimo card da lista ficava escondido atras dela.
+                  // MediaQuery.padding.bottom aqui ja e a altura REAL da
+                  // barra (o Scaffold soma ela ao inset por causa do
+                  // extendBody), igual e feito no mapa em map_screen.dart
+                  MediaQuery.of(context).padding.bottom + AppSpacing.md + 2,
+                ),
+                physics: const BouncingScrollPhysics(),
+                itemCount: imoveisFiltrados.length,
+                itemBuilder: (context, index) {
+                  final imovel = imoveisFiltrados[index];
+
+                  final delay = (index * 0.08).clamp(0.0, 0.6);
+                  final end = (delay + 0.4).clamp(0.0, 1.0);
+                  final slideAnim =
+                      Tween<Offset>(
+                        begin: const Offset(0, 0.1),
+                        end: Offset.zero,
+                      ).animate(
+                        CurvedAnimation(
+                          parent: _listAnimController,
+                          curve: Interval(delay, end, curve: AppMotion.suave),
+                        ),
+                      );
+                  final fadeAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
+                    CurvedAnimation(
+                      parent: _listAnimController,
+                      curve: Interval(delay, end, curve: Curves.easeOut),
                     ),
                   );
-                }
 
-                return ListView.builder(
-                  padding: EdgeInsets.fromLTRB(
-                    AppSpacing.lg,
-                    AppSpacing.md + 2,
-                    AppSpacing.lg,
-                    // com extendBody: true o body vai ate a base da tela e a
-                    // barra inferior fica por cima -- sem esse reforco o
-                    // ultimo card da lista ficava escondido atras dela.
-                    // MediaQuery.padding.bottom aqui ja e a altura REAL da
-                    // barra (o Scaffold soma ela ao inset por causa do
-                    // extendBody), igual e feito no mapa em map_screen.dart
-                    MediaQuery.of(context).padding.bottom + AppSpacing.md + 2,
-                  ),
-                  physics: const BouncingScrollPhysics(),
-                  itemCount: imoveisFiltrados.length,
-                  itemBuilder: (context, index) {
-                    final imovel = imoveisFiltrados[index];
-
-                    final delay = (index * 0.08).clamp(0.0, 0.6);
-                    final end = (delay + 0.4).clamp(0.0, 1.0);
-                    final slideAnim = Tween<Offset>(
-                      begin: const Offset(0, 0.1),
-                      end: Offset.zero,
-                    ).animate(CurvedAnimation(
-                      parent: _listAnimController,
-                      curve: Interval(delay, end, curve: AppMotion.suave),
-                    ));
-                    final fadeAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
-                      CurvedAnimation(
-                        parent: _listAnimController,
-                        curve: Interval(delay, end, curve: Curves.easeOut),
-                      ),
-                    );
-
-                    return FadeTransition(
-                      opacity: fadeAnim,
-                      child: SlideTransition(
-                        position: slideAnim,
-                        child: CardImovelVertical(imovel: imovel, isDark: isDark),
-                      ),
-                    );
-                  },
-                );
+                  return FadeTransition(
+                    opacity: fadeAnim,
+                    child: SlideTransition(
+                      position: slideAnim,
+                      child: CardImovelVertical(imovel: imovel, isDark: isDark),
+                    ),
+                  );
+                },
+              );
             },
           ),
         ),
@@ -310,10 +350,14 @@ class _FiltroChip extends StatelessWidget {
           vertical: AppSpacing.sm + 2,
         ),
         decoration: BoxDecoration(
-          gradient: selected ? (isEvento ? gradienteEvento : gradientePrincipal) : null,
+          gradient: selected
+              ? (isEvento ? gradienteEvento : gradientePrincipal)
+              : null,
           color: selected
               ? null
-              : (isDark ? Colors.white.withAlpha(10) : Colors.grey.withAlpha(20)),
+              : (isDark
+                    ? Colors.white.withAlpha(10)
+                    : Colors.grey.withAlpha(20)),
           borderRadius: BorderRadius.circular(99.0),
           boxShadow: selected ? AppShadows.nivel1(isDark) : [],
         ),
@@ -323,13 +367,17 @@ class _FiltroChip extends StatelessWidget {
             Icon(
               icon,
               size: 16,
-              color: selected ? Colors.white : (isDark ? Colors.white60 : Colors.black54),
+              color: selected
+                  ? Colors.white
+                  : (isDark ? Colors.white60 : Colors.black54),
             ),
             const SizedBox(width: AppSpacing.xs),
             Text(
               label,
               style: TextStyle(
-                color: selected ? Colors.white : (isDark ? Colors.white60 : Colors.black87),
+                color: selected
+                    ? Colors.white
+                    : (isDark ? Colors.white60 : Colors.black87),
                 fontSize: 13,
                 fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
               ),

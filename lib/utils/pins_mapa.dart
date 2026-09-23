@@ -233,7 +233,7 @@ class PinsMapa {
     // medidas em pixels logicos, multiplicadas pela densidade no fim
     const double raio = 15.5;
     const double alturaCauda = 14;
-    const double borda = 2.1;
+    const double borda = 1.5;
     const double margem = 4; // espaco pra sombra nao ser cortada
 
     final double r = raio * escala;
@@ -295,6 +295,17 @@ class PinsMapa {
           Offset(centro.dx, centro.dy - r),
           Offset(centro.dx, ponta.dy),
           cores,
+        ),
+    );
+
+    // Reflexo suave rasterizado uma unica vez junto com o pin em cache.
+    canvas.drawPath(
+      gota,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          Offset(centro.dx - r * 0.5, centro.dy - r * 0.6),
+          r * 1.7,
+          [Colors.white.withAlpha(38), Colors.white.withAlpha(0)],
         ),
     );
 

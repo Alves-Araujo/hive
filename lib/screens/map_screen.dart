@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle, FilteringTextInputFormatter;
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:flutter_polyline_points/flutter_polyline_points.dart' show TravelMode;
+import 'package:flutter_polyline_points/flutter_polyline_points.dart'
+    show TravelMode;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
@@ -23,14 +24,13 @@ import '../services/lugares_service.dart';
 import '../services/notificacao_service.dart';
 import '../services/rota_service.dart';
 import '../services/usuario_service.dart';
-import '../utils/cor_foto.dart';
 import '../utils/distancia.dart';
-import '../utils/icones_tag.dart';
-import '../utils/moeda.dart';
 import '../utils/pins_mapa.dart';
 import '../utils/moderacao.dart';
 import '../widgets/avatar_widget.dart';
 import '../widgets/glass_card.dart';
+import '../widgets/map_glass_surface.dart';
+import '../widgets/filtros_mapa_sheet.dart';
 import '../widgets/painel_inatel.dart';
 import '../widgets/painel_localizacao.dart';
 import '../widgets/painel_lugar.dart';
@@ -48,7 +48,6 @@ class CentroDoMapa extends StatefulWidget {
 
 class _CentroDoMapaState extends State<CentroDoMapa>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
-
   GoogleMapController? _mapController;
 
   final TextEditingController _buscaController = TextEditingController();
@@ -88,6 +87,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   String? _estiloAtivo;
 
   final FiltroState _filtroState = FiltroState();
+  final ValueNotifier<int> _dadosFiltros = ValueNotifier(0);
 
   Set<Marker> _marcadores = {};
 
@@ -95,7 +95,8 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   // terminar; enquanto isso os markers saem com o icone padrao, o que evita
   // a tela abrir sem marcador nenhum
   // um trio (normal, origem, destino) por tipo de anuncio
-  Map<TipoPin, (BitmapDescriptor, BitmapDescriptor, BitmapDescriptor)> _pinsAnuncio = {};
+  Map<TipoPin, (BitmapDescriptor, BitmapDescriptor, BitmapDescriptor)>
+  _pinsAnuncio = {};
   BitmapDescriptor? _pinInatel;
   BitmapDescriptor? _pinInatelOrigem;
   BitmapDescriptor? _pinInatelDestino;
@@ -227,25 +228,34 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       vsync: this,
       duration: const Duration(milliseconds: 800),
     );
-    _fadeAnim = CurvedAnimation(parent: _animIniciaisController, curve: Curves.easeOut);
-    _slideAnim = Tween<Offset>(
-      begin: const Offset(0, -0.3),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _animIniciaisController, curve: Curves.easeOutCubic));
+    _fadeAnim = CurvedAnimation(
+      parent: _animIniciaisController,
+      curve: Curves.easeOut,
+    );
+    _slideAnim = Tween<Offset>(begin: const Offset(0, -0.3), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _animIniciaisController,
+            curve: Curves.easeOutCubic,
+          ),
+        );
     _animIniciaisController.forward();
 
     // imobiliarias com endereco geocodificado -- atualiza ao vivo, igual os
     // imoveis, entao uma que acaba de se cadastrar ja aparece no mapa
-    _inscricaoImobiliarias =
-        ImobiliariaService.instance.streamComPosicao().listen((lista) {
-      if (!mounted) return;
-      setState(() {
-        _imobiliarias = lista;
-        _atualizarMarcadoresImobiliarias();
-      });
-    });
+    _inscricaoImobiliarias = ImobiliariaService.instance
+        .streamComPosicao()
+        .listen((lista) {
+          if (!mounted) return;
+          setState(() {
+            _imobiliarias = lista;
+            _atualizarMarcadoresImobiliarias();
+          });
+        });
 
-    FirebaseFirestore.instance.collection('imoveis').snapshots().listen((snapshot) {
+    FirebaseFirestore.instance.collection('imoveis').snapshots().listen((
+      snapshot,
+    ) {
       if (mounted) {
         setState(() {
           _imoveisDoBanco = snapshot.docs
@@ -305,7 +315,10 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       if (erro == null || !mounted) return;
       rotaErroGlobal.value = null;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Não foi possível calcular a rota: $erro'), backgroundColor: corErro),
+        SnackBar(
+          content: Text('Não foi possível calcular a rota: $erro'),
+          backgroundColor: corErro,
+        ),
       );
     };
     rotaErroGlobal.addListener(_rotaErroListener);
@@ -332,8 +345,10 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       final termoAgora = _buscaController.text;
       final palavras = BuscaService.instance.palavras(termoAgora);
       setState(() {
-        _sugestoesLocais =
-            BuscaService.instance.buscarSugestoes(termoAgora, _imoveisDoBanco);
+        _sugestoesLocais = BuscaService.instance.buscarSugestoes(
+          termoAgora,
+          _imoveisDoBanco,
+        );
 
         // o que a internet ja trouxe CONTINUA na tela enquanto ainda fizer
         // sentido pro que esta escrito. Antes a lista inteira era zerada a
@@ -342,9 +357,13 @@ class _CentroDoMapaState extends State<CentroDoMapa>
         _sugestoesOnline = palavras.isEmpty
             ? []
             : _sugestoesOnline
-                .where((s) => BuscaService.instance
-                    .combina('${s.texto} ${s.detalhe}', palavras))
-                .toList();
+                  .where(
+                    (s) => BuscaService.instance.combina(
+                      '${s.texto} ${s.detalhe}',
+                      palavras,
+                    ),
+                  )
+                  .toList();
       });
 
       _debounceSugestoes?.cancel();
@@ -361,8 +380,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
         // na lista fixa, nao busca online pra essa mesma consulta -- evita que
         // um bairro/regiao homonimo do Nominatim apareca do lado do pin certo
         // e a pessoa acabe clicando no lugar errado
-        final achouInstituicaoConhecida =
-            _sugestoesLocais.any((s) => s.tipo == TipoSugestao.faculdade);
+        final achouInstituicaoConhecida = _sugestoesLocais.any(
+          (s) => s.tipo == TipoSugestao.faculdade,
+        );
         if (achouInstituicaoConhecida) return;
 
         setState(() => _buscandoOnline = true);
@@ -400,7 +420,8 @@ class _CentroDoMapaState extends State<CentroDoMapa>
 
   Future<void> _prepararPins() async {
     final double densidade = MediaQuery.of(context).devicePixelRatio;
-    final pinsAnuncio = <TipoPin, (BitmapDescriptor, BitmapDescriptor, BitmapDescriptor)>{};
+    final pinsAnuncio =
+        <TipoPin, (BitmapDescriptor, BitmapDescriptor, BitmapDescriptor)>{};
     for (final tipo in TipoPin.values) {
       if (tipo == TipoPin.faculdade || tipo == TipoPin.imobiliaria) continue;
       pinsAnuncio[tipo] = (
@@ -411,8 +432,16 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     }
 
     final inatel = await PinsMapa.obter(TipoPin.faculdade, densidade);
-    final inatelO = await PinsMapa.obter(TipoPin.faculdade, densidade, isOrigem: true);
-    final inatelD = await PinsMapa.obter(TipoPin.faculdade, densidade, isDestino: true);
+    final inatelO = await PinsMapa.obter(
+      TipoPin.faculdade,
+      densidade,
+      isOrigem: true,
+    );
+    final inatelD = await PinsMapa.obter(
+      TipoPin.faculdade,
+      densidade,
+      isDestino: true,
+    );
 
     final imobiliaria = await PinsMapa.obter(TipoPin.imobiliaria, densidade);
 
@@ -437,11 +466,18 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   // paralelo e o servico guarda o resultado da sessao, entao voltar pro mapa
   // nao repete nada
   Future<void> _carregarLugaresProximos() async {
-    final moradias = _imoveisDoBanco.where((i) => i.tipo != TipoListing.evento).toList();
-    final chave = (moradias.map((i) =>
-            '${i.posicao.latitude.toStringAsFixed(4)},${i.posicao.longitude.toStringAsFixed(4)}').toList()
-          ..sort())
-        .join('|');
+    final moradias = _imoveisDoBanco
+        .where((i) => i.tipo != TipoListing.evento)
+        .toList();
+    final chave =
+        (moradias
+                .map(
+                  (i) =>
+                      '${i.posicao.latitude.toStringAsFixed(4)},${i.posicao.longitude.toStringAsFixed(4)}',
+                )
+                .toList()
+              ..sort())
+            .join('|');
     if (chave == _chaveLugaresConsultados) return;
     _chaveLugaresConsultados = chave;
 
@@ -456,7 +492,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     for (var i = 0; i < moradias.length; i++) {
       // o servico ja devolve so o que esta dentro do raio da categoria,
       // entao estar na lista ja significa "perto"
-      categorias[moradias[i].id] = {for (final l in porMoradia[i]) l.lugar.categoria};
+      categorias[moradias[i].id] = {
+        for (final l in porMoradia[i]) l.lugar.categoria,
+      };
       for (final l in porMoradia[i]) {
         lugares[l.lugar.id] = l.lugar;
       }
@@ -507,38 +545,40 @@ class _CentroDoMapaState extends State<CentroDoMapa>
 
   void _atualizarMarcadoresLugares() {
     final rota = rotaAtivaGlobal.value;
-    final categorias = _filtroState.categoriasSelecionadas;
+    _dadosFiltros.value++;
     // a chave e o place id, entao o mesmo lugar achado por dois caminhos
     // (varredura da cidade, lista fixa, busca por anuncio) nao vira dois
     // pins. A ordem importa: quem vem depois vence, e a busca por anuncio e
     // a que garante foto no painel
     _marcadoresLugares = {..._lugaresCidade, ..._lugaresFixos, ..._lugares}
         .values
-        // sem categoria escolhida o mapa mostra tudo; com alguma, so os pins
-        // daquele tipo ficam (escolher "Eventos" tira todos os pins daqui)
-        .where((lugar) => categorias.isEmpty || categorias.contains(lugar.categoria.name))
+        .where(
+          (lugar) => _filtroState.atual.mostraCategoria(lugar.categoria.name),
+        )
         .map((lugar) {
-      final pins = _pinsAnuncio[lugar.categoria.pin];
-      BitmapDescriptor? icone = pins?.$1;
-      if (rota != null && lugar.posicao == rota.destino) icone = pins?.$3;
-      return Marker(
-        markerId: MarkerId('lugar_${lugar.id}'),
-        position: lugar.posicao,
-        icon: icone ?? BitmapDescriptor.defaultMarker,
-        // abaixo das moradias: quando um pin cai em cima do outro, o anuncio
-        // e que tem que ficar por cima
-        zIndexInt: -1,
-        // sem infoWindow, igual o Inatel: o toque abre o painel completo
-        onTap: () => _abrirPainelLugar(lugar),
-      );
-    }).toSet();
+          final pins = _pinsAnuncio[lugar.categoria.pin];
+          BitmapDescriptor? icone = pins?.$1;
+          if (rota != null && lugar.posicao == rota.destino) icone = pins?.$3;
+          return Marker(
+            markerId: MarkerId('lugar_${lugar.id}'),
+            position: lugar.posicao,
+            icon: icone ?? BitmapDescriptor.defaultMarker,
+            // abaixo das moradias: quando um pin cai em cima do outro, o anuncio
+            // e que tem que ficar por cima
+            zIndexInt: -1,
+            // sem infoWindow, igual o Inatel: o toque abre o painel completo
+            onTap: () => _abrirPainelLugar(lugar),
+          );
+        })
+        .toSet();
   }
 
   void _abrirPainelLugar(Lugar lugar) {
     PainelLugar.mostrar(
       context,
       lugar,
-      aoTracarRota: () => _tracarRotaAte(destino: lugar.posicao, nomeDestino: lugar.nome),
+      aoTracarRota: () =>
+          _tracarRotaAte(destino: lugar.posicao, nomeDestino: lugar.nome),
     );
   }
 
@@ -550,16 +590,18 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     if (icone == null) return;
     _marcadoresImobiliarias = _imobiliarias
         .where((i) => i.posicao != null)
-        .map((i) => Marker(
-              markerId: MarkerId('imobiliaria_${i.id}'),
-              position: i.posicao!,
-              icon: icone,
-              zIndexInt: 1,
-              infoWindow: InfoWindow(
-                title: i.nome,
-                snippet: i.endereco.isNotEmpty ? i.endereco : 'Imobiliária',
-              ),
-            ))
+        .map(
+          (i) => Marker(
+            markerId: MarkerId('imobiliaria_${i.id}'),
+            position: i.posicao!,
+            icon: icone,
+            zIndexInt: 1,
+            infoWindow: InfoWindow(
+              title: i.nome,
+              snippet: i.endereco.isNotEmpty ? i.endereco : 'Imobiliária',
+            ),
+          ),
+        )
         .toSet();
   }
 
@@ -656,14 +698,18 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   Future<void> _verificarVinculoPendente() async {
     final email = FirebaseAuth.instance.currentUser?.email;
     if (email == null) return;
-    final pendente = await ImobiliariaService.instance.buscarPendentePorEmail(email);
+    final pendente = await ImobiliariaService.instance.buscarPendentePorEmail(
+      email,
+    );
     if (pendente == null || !mounted) return;
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     showModalBottomSheet(
       context: context,
       backgroundColor: isDark ? superficieEscura : superficieClara,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
+      ),
       builder: (sheetContext) {
         return Padding(
           padding: const EdgeInsets.all(24),
@@ -675,13 +721,17 @@ class _CentroDoMapaState extends State<CentroDoMapa>
               const SizedBox(height: 16),
               Text(
                 'Você é responsável por "${pendente.nome}"?',
-                style: AppTextStyles.heading3.copyWith(color: isDark ? Colors.white : Colors.black87),
+                style: AppTextStyles.heading3.copyWith(
+                  color: isDark ? Colors.white : Colors.black87,
+                ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
               Text(
                 'Um ou mais corretores pediram vínculo com essa imobiliária usando esse e-mail. Confirme pra liberar o perfil público deles.',
-                style: AppTextStyles.caption.copyWith(color: isDark ? Colors.white54 : Colors.grey),
+                style: AppTextStyles.caption.copyWith(
+                  color: isDark ? Colors.white54 : Colors.grey,
+                ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 20),
@@ -695,7 +745,12 @@ class _CentroDoMapaState extends State<CentroDoMapa>
               const SizedBox(height: 8),
               TextButton(
                 onPressed: () => Navigator.pop(sheetContext),
-                child: Text('Agora não', style: TextStyle(color: isDark ? Colors.white38 : Colors.grey)),
+                child: Text(
+                  'Agora não',
+                  style: TextStyle(
+                    color: isDark ? Colors.white38 : Colors.grey,
+                  ),
+                ),
               ),
             ],
           ),
@@ -752,8 +807,10 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     _desenharSugestao(inicial);
 
     setState(() => _carregandoContorno = true);
-    final pontos = await BuscaService.instance
-        .buscarContornoDeArea(pedido.nome, pedido.perto);
+    final pontos = await BuscaService.instance.buscarContornoDeArea(
+      pedido.nome,
+      pedido.perto,
+    );
     if (!mounted) return;
     setState(() => _carregandoContorno = false);
     // a pessoa pode ter buscado outra coisa enquanto o contorno vinha
@@ -767,7 +824,8 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-              'O contorno do bairro ${pedido.nome} ainda não está mapeado no OpenStreetMap.'),
+            'O contorno do bairro ${pedido.nome} ainda não está mapeado no OpenStreetMap.',
+          ),
           backgroundColor: corPrimaria,
         ),
       );
@@ -783,8 +841,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     // Fica FORA do setState porque o enquadramento da camera, la embaixo,
     // usa os dois valores
     final bool temGeometria = sugestao.pontosGeometria.length >= 2;
-    final TipoGeometria tipoEfetivo =
-        temGeometria ? sugestao.tipoGeometria : TipoGeometria.ponto;
+    final TipoGeometria tipoEfetivo = temGeometria
+        ? sugestao.tipoGeometria
+        : TipoGeometria.ponto;
 
     // local que ja tem pin proprio no mapa (moradia, lugar, imobiliaria,
     // Inatel): o pin roxo da busca caia por cima e escondia o original. Nesse
@@ -820,7 +879,10 @@ class _CentroDoMapaState extends State<CentroDoMapa>
           _destaqueAreaBusca = {
             Polyline(
               polylineId: const PolylineId('destaque_busca'),
-              points: [...sugestao.pontosGeometria, sugestao.pontosGeometria.first],
+              points: [
+                ...sugestao.pontosGeometria,
+                sugestao.pontosGeometria.first,
+              ],
               color: const Color(0xFFE53935),
               width: 4,
               patterns: [PatternItem.dash(20), PatternItem.gap(12)],
@@ -839,7 +901,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
           _destaquePoiBusca = Marker(
             markerId: const MarkerId('destaque_busca'),
             position: sugestao.destino,
-            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet),
+            icon: BitmapDescriptor.defaultMarkerWithHue(
+              BitmapDescriptor.hueViolet,
+            ),
             infoWindow: InfoWindow(title: sugestao.texto),
           );
       }
@@ -851,10 +915,15 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     // tinha pulado pro lugar errado
     if (temGeometria && tipoEfetivo != TipoGeometria.ponto) {
       _mapController?.animateCamera(
-        CameraUpdate.newLatLngBounds(RotaService.calcularBounds(sugestao.pontosGeometria), 60),
+        CameraUpdate.newLatLngBounds(
+          RotaService.calcularBounds(sugestao.pontosGeometria),
+          60,
+        ),
       );
     } else {
-      _mapController?.animateCamera(CameraUpdate.newLatLngZoom(sugestao.destino, 16));
+      _mapController?.animateCamera(
+        CameraUpdate.newLatLngZoom(sugestao.destino, 16),
+      );
     }
 
     if (pinExistente != null) {
@@ -903,6 +972,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     LocalizacaoService.instance.estado.removeListener(_localizacaoListener);
     bairroPendenteGlobal.removeListener(_bairroListener);
     _filtroState.dispose();
+    _dadosFiltros.dispose();
     _debounceSugestoes?.cancel();
     _buscaController.dispose();
     _buscaFocusNode.dispose();
@@ -911,8 +981,12 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   }
 
   Future<void> _carregarEstilosDoAsset() async {
-    _estiloMapaEscuro = await rootBundle.loadString('assets/map_styles/style_dark.json');
-    _estiloMapaLimpo = await rootBundle.loadString('assets/map_styles/style_clean.json');
+    _estiloMapaEscuro = await rootBundle.loadString(
+      'assets/map_styles/style_dark.json',
+    );
+    _estiloMapaLimpo = await rootBundle.loadString(
+      'assets/map_styles/style_clean.json',
+    );
     if (mounted) _atualizarEstiloMapa();
   }
 
@@ -921,90 +995,33 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   bool _passaNaBusca(Imovel item) {
     final textoBusca = _buscaController.text.toLowerCase().trim();
     if (textoBusca.isEmpty) return true;
-    return '${item.titulo} ${item.descricao}'.toLowerCase().contains(textoBusca);
+    return '${item.titulo} ${item.descricao}'.toLowerCase().contains(
+      textoBusca,
+    );
   }
 
-  // o item passa pelos filtros da folha? Recebe os valores por parametro (em
-  // vez de ler _filtroState) pra folha poder contar quantos imoveis sobram
-  // COM o que esta escolhido ali, antes de aplicar
-  bool _passaNosFiltros(
-    Imovel item, {
-    required double? precoMinimo,
-    required double? precoMaximo,
-    required List<String> tags,
-    required List<String> contas,
-    required List<String> localidades,
-    required List<String> categorias,
-  }) {
-    // com categoria escolhida o mapa mostra SO aquilo: anuncio so continua se
-    // for evento e "Eventos" estiver marcado. Escolher "Mercados" sozinho
-    // deixa no mapa os pins de mercado e mais nada -- que e o que a pessoa
-    // pediu ao marcar so aquela categoria
-    if (categorias.isNotEmpty) {
-      final bool ehEvento = item.tipo == TipoListing.evento;
-      if (!ehEvento || !categorias.contains(categoriaEvento)) return false;
-    }
-    // evento nao tem preco de aluguel, entao pula so o filtro de preco
-    if (item.tipo != TipoListing.evento) {
-      if (precoMinimo != null && item.preco < precoMinimo) return false;
-      if (precoMaximo != null && item.preco > precoMaximo) return false;
-    }
-    if (!tags.every(item.tags.contains)) return false;
-    if (!contas.every(item.incluiConta)) return false;
-    if (!localidades.every((id) => _atendeLocalidade(item, id))) return false;
-    return true;
-  }
-
-  // quantos pins de estabelecimento sobrariam com essas categorias -- o
-  // companheiro de _quantosAtendem pro botao da folha, ja que um filtro so de
-  // categoria pode nao deixar anuncio nenhum e ainda assim mostrar muita coisa
-  int _quantosLugares(List<String> categorias) {
-    if (categorias.isEmpty) return 0;
-    // a mesma juncao de _atualizarMarcadoresLugares: a contagem do botao tem
-    // que bater com o que vai aparecer no mapa
-    return {..._lugaresCidade, ..._lugaresFixos, ..._lugares}
-        .values
-        .where((l) => categorias.contains(l.categoria.name))
-        .length;
-  }
-
-  // quantos imoveis sobrariam com essa escolha -- alimenta o numero do botao
-  // da folha de filtros
-  int _quantosAtendem({
-    required double? precoMinimo,
-    required double? precoMaximo,
-    required List<String> tags,
-    required List<String> contas,
-    required List<String> localidades,
-    required List<String> categorias,
-  }) =>
-      _imoveisDoBanco
-          .where((item) =>
-              _passaNaBusca(item) &&
-              _passaNosFiltros(
-                item,
-                precoMinimo: precoMinimo,
-                precoMaximo: precoMaximo,
-                tags: tags,
-                contas: contas,
-                localidades: localidades,
-                categorias: categorias,
-              ))
-          .length;
+  int _quantosImoveisAtendem(FiltrosMapa filtro) => _imoveisDoBanco
+      .where(
+        (item) =>
+            _passaNaBusca(item) &&
+            filtro.aceitaImovel(
+              item,
+              atendeLocalidade: (id) => _atendeLocalidade(item, id),
+            ),
+      )
+      .length;
 
   void _atualizarMarcadoresFiltrados() {
+    _dadosFiltros.value++;
     final imovelFiltrados = _imoveisDoBanco
-        .where((item) =>
-            _passaNaBusca(item) &&
-            _passaNosFiltros(
-              item,
-              precoMinimo: _filtroState.precoMinimo,
-              precoMaximo: _filtroState.precoMaximo,
-              tags: _filtroState.tagsSelecionadas,
-              contas: _filtroState.contasSelecionadas,
-              localidades: _filtroState.localidadesSelecionadas,
-              categorias: _filtroState.categoriasSelecionadas,
-            ))
+        .where(
+          (item) =>
+              _passaNaBusca(item) &&
+              _filtroState.atual.aceitaAnuncio(
+                item,
+                atendeLocalidade: (id) => _atendeLocalidade(item, id),
+              ),
+        )
         .toList();
 
     final rota = rotaAtivaGlobal.value;
@@ -1026,14 +1043,14 @@ class _CentroDoMapaState extends State<CentroDoMapa>
         return Marker(
           markerId: MarkerId(item.id),
           position: item.posicao,
-          icon: iconeBase ??
+          icon:
+              iconeBase ??
               BitmapDescriptor.defaultMarkerWithHue(
-                isEvento ? BitmapDescriptor.hueOrange : BitmapDescriptor.hueAzure,
+                isEvento
+                    ? BitmapDescriptor.hueOrange
+                    : BitmapDescriptor.hueAzure,
               ),
-          infoWindow: InfoWindow(
-            title: item.titulo,
-            snippet: item.descricao,
-          ),
+          infoWindow: InfoWindow(title: item.titulo, snippet: item.descricao),
           onTap: () => _abrirDetalhesImovel(item),
         );
       }).toSet();
@@ -1055,7 +1072,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     final ativa = rotaAtivaGlobal.value;
     _rotaAtual = ativa;
     _carregandoRota = rotaCarregandoGlobal.value;
-    
+
     if (ativa == null) {
       _rotas = {};
       _marcadoresRota = {};
@@ -1064,7 +1081,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       _atualizarMarcadoresLugares();
       return;
     }
-    
+
     // Atualiza as cores dos pins que ja existem no mapa (moradias, eventos, inatel)
     _atualizarMarcadoresFiltrados();
     _atualizarMarcadorInatel();
@@ -1084,7 +1101,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
           Polyline(
             polylineId: PolylineId('rota_alt_$i'),
             points: ativa.opcoes[i].pontos,
-            color: _deveUsarEstiloEscuro ? Colors.white54 : Colors.grey.shade500,
+            color: _deveUsarEstiloEscuro
+                ? Colors.white54
+                : Colors.grey.shade500,
             width: 5,
             zIndex: 1,
             consumeTapEvents: true,
@@ -1101,8 +1120,12 @@ class _CentroDoMapaState extends State<CentroDoMapa>
 
     // se a origem ou destino for um local generico (buscado via Google, etc)
     // e nao estiver na nossa lista de imoveis/Inatel, ai sim criamos um pin generico
-    final origemEhImovelOuInatel = ativa.origem == posicaoInatel || _imoveisDoBanco.any((i) => i.posicao == ativa.origem);
-    final destinoEhImovelOuInatel = ativa.destino == posicaoInatel || _imoveisDoBanco.any((i) => i.posicao == ativa.destino);
+    final origemEhImovelOuInatel =
+        ativa.origem == posicaoInatel ||
+        _imoveisDoBanco.any((i) => i.posicao == ativa.origem);
+    final destinoEhImovelOuInatel =
+        ativa.destino == posicaoInatel ||
+        _imoveisDoBanco.any((i) => i.posicao == ativa.destino);
 
     _marcadoresRota = {
       // o pin de origem some na navegacao: ele marca de onde a rota partiu, e
@@ -1112,7 +1135,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
         Marker(
           markerId: const MarkerId('rota_origem'),
           position: ativa.origem,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueGreen,
+          ),
         ),
       if (!destinoEhImovelOuInatel)
         Marker(
@@ -1131,7 +1156,8 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     // RotaAtiva.selecionar), entao da pra diferenciar "rota nova" de "so
     // mudou a escolhida" por identidade -- sem isso a camera reenquadraria a
     // cada toque numa alternativa, jogando a visao do usuario fora do lugar
-    final rotaNova = ativa != null && !identical(_rotaAtual?.opcoes, ativa.opcoes);
+    final rotaNova =
+        ativa != null && !identical(_rotaAtual?.opcoes, ativa.opcoes);
 
     setState(_sincronizarComRotaGlobal);
 
@@ -1143,7 +1169,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       // aparecerem na tela e o usuario ver que existe opcao
       _mapController?.animateCamera(
         CameraUpdate.newLatLngBounds(
-          RotaService.calcularBounds(ativa.opcoes.expand((o) => o.pontos).toList()),
+          RotaService.calcularBounds(
+            ativa.opcoes.expand((o) => o.pontos).toList(),
+          ),
           60,
         ),
       );
@@ -1195,8 +1223,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
 
     // mantem o modal que o usuario ja tinha escolhido no seletor, com o mesmo
     // desvio de "moto" que _trocarModoTransporte faz (nao existe na API classica)
-    final modoParaApi =
-        _modoTransporteUi == TravelMode.twoWheeler ? TravelMode.driving : _modoTransporteUi;
+    final modoParaApi = _modoTransporteUi == TravelMode.twoWheeler
+        ? TravelMode.driving
+        : _modoTransporteUi;
 
     rotaPendenteGlobal.value = RotaPendente(
       origem: origem,
@@ -1309,7 +1338,8 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       // estimativa honesta -- melhor que nao mostrar tempo nenhum
       if (trilha.total > 0) {
         segundos =
-            (ativa.selecionada.duracaoSegundos * (restante / trilha.total)).round();
+            (ativa.selecionada.duracaoSegundos * (restante / trilha.total))
+                .round();
       }
     }
 
@@ -1326,8 +1356,10 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     final destino = ativa?.destino;
     if (destino != null) {
       final emLinhaReta = Geolocator.distanceBetween(
-        posicao.latitude, posicao.longitude,
-        destino.latitude, destino.longitude,
+        posicao.latitude,
+        posicao.longitude,
+        destino.latitude,
+        destino.longitude,
       );
       if (emLinhaReta < 35) {
         _encerrarNavegacao(chegou: true);
@@ -1425,7 +1457,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     if (chegou) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Você chegou em ${_rotaAtual?.nomeDestino ?? "seu destino"}.'),
+          content: Text(
+            'Você chegou em ${_rotaAtual?.nomeDestino ?? "seu destino"}.',
+          ),
           backgroundColor: corSucesso,
         ),
       );
@@ -1455,7 +1489,8 @@ class _CentroDoMapaState extends State<CentroDoMapa>
         // faixa superior: so o essencial. Durante o deslocamento o usuario
         // olha a tela de relance, entao cabe pouca informacao
         Positioned(
-          top: (MediaQuery.of(context).padding.top > 0
+          top:
+              (MediaQuery.of(context).padding.top > 0
                   ? MediaQuery.of(context).padding.top
                   : 6) +
               AppSpacing.sm,
@@ -1465,7 +1500,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
             radius: 22,
             sombra: AppShadows.nivel3(isDark),
             padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+              horizontal: AppSpacing.lg,
+              vertical: AppSpacing.md,
+            ),
             child: Row(
               children: [
                 Container(
@@ -1474,8 +1511,11 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                     gradient: gradientePrincipal,
                     borderRadius: BorderRadius.circular(AppRadius.sm),
                   ),
-                  child: const Icon(Icons.navigation_rounded,
-                      color: Colors.white, size: 20),
+                  child: const Icon(
+                    Icons.navigation_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
                 ),
                 const SizedBox(width: AppSpacing.md),
                 Expanded(
@@ -1600,7 +1640,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     // "moto" nao existe na Directions API classica (so na Routes API nova,
     // que exigiria habilitar outra api no google cloud) -- usa carro como
     // aproximacao por baixo dos panos, mantendo o icone de moto selecionado na UI
-    final modoParaApi = modoEscolhido == TravelMode.twoWheeler ? TravelMode.driving : modoEscolhido;
+    final modoParaApi = modoEscolhido == TravelMode.twoWheeler
+        ? TravelMode.driving
+        : modoEscolhido;
 
     rotaPendenteGlobal.value = RotaPendente(
       origem: _rotaAtual!.origem,
@@ -1640,8 +1682,10 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     if (_semResultado) {
       return ListTile(
         dense: true,
-        leading: Icon(Icons.search_off_rounded,
-            color: isDark ? Colors.white38 : Colors.black38),
+        leading: Icon(
+          Icons.search_off_rounded,
+          color: isDark ? Colors.white38 : Colors.black38,
+        ),
         title: Text(
           'Nada encontrado para "${_buscaController.text.trim()}"',
           maxLines: 1,
@@ -1681,7 +1725,12 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     return GlassCard(
       radius: 24,
       sombra: AppShadows.nivel3(isDark),
-      padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.sm, AppSpacing.lg - 2),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.md,
+        AppSpacing.sm,
+        AppSpacing.lg - 2,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1692,7 +1741,10 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                 padding: const EdgeInsets.all(8),
                 // mesmo gradiente escuro do botao logo abaixo -- os dois estao
                 // no mesmo card, e o azul claro/ciano destoava
-                decoration: BoxDecoration(gradient: gradientePrincipal, borderRadius: BorderRadius.circular(10)),
+                decoration: BoxDecoration(
+                  gradient: gradientePrincipal,
+                  borderRadius: BorderRadius.circular(10),
+                ),
                 child: Icon(icone, color: Colors.white, size: 18),
               ),
               const SizedBox(width: 12),
@@ -1703,7 +1755,10 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                   children: [
                     Text(
                       local.texto,
-                      style: TextStyle(fontWeight: FontWeight.w700, color: isDark ? Colors.white : Colors.black87),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -1734,7 +1789,10 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                   _buscaController.clear();
                   setState(_limparDestaqueBusca);
                 },
-                icon: Icon(Icons.close_rounded, color: isDark ? Colors.white38 : Colors.grey),
+                icon: Icon(
+                  Icons.close_rounded,
+                  color: isDark ? Colors.white38 : Colors.grey,
+                ),
               ),
             ],
           ),
@@ -1745,21 +1803,36 @@ class _CentroDoMapaState extends State<CentroDoMapa>
               onTap: _tracarRotaAteLocalBuscado,
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 13),
-                decoration: BoxDecoration(gradient: gradientePrincipal, borderRadius: BorderRadius.circular(14)),
+                decoration: BoxDecoration(
+                  gradient: gradientePrincipal,
+                  borderRadius: BorderRadius.circular(14),
+                ),
                 child: Center(
                   child: _buscandoOrigemRota
                       ? const SizedBox(
-                          width: 18, height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white),
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.2,
+                            color: Colors.white,
+                          ),
                         )
                       : const Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.directions_rounded, color: Colors.white, size: 20),
+                            Icon(
+                              Icons.directions_rounded,
+                              color: Colors.white,
+                              size: 20,
+                            ),
                             SizedBox(width: 8),
                             Text(
                               'Traçar rota',
-                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15),
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 15,
+                              ),
                             ),
                           ],
                         ),
@@ -1777,8 +1850,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   // alternativas e os rotulos nao cabem numa linha fixa em tela pequena
   Widget _seletorAlternativas(bool isDark) {
     final ativa = _rotaAtual!;
-    final maisRapidaSegundos =
-        ativa.opcoes.map((o) => o.duracaoSegundos).reduce((a, b) => a < b ? a : b);
+    final maisRapidaSegundos = ativa.opcoes
+        .map((o) => o.duracaoSegundos)
+        .reduce((a, b) => a < b ? a : b);
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -1793,7 +1867,12 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     );
   }
 
-  Widget _chipAlternativa(int indice, RotaOpcao opcao, int maisRapidaSegundos, bool isDark) {
+  Widget _chipAlternativa(
+    int indice,
+    RotaOpcao opcao,
+    int maisRapidaSegundos,
+    bool isDark,
+  ) {
     final selecionado = indice == _rotaAtual!.indiceSelecionado;
 
     // compara com a mais rapida pra dar contexto ("+7 min" diz muito mais que
@@ -1801,8 +1880,11 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     // rapida; diferenca que arredonda pra zero mostra "+1 min" em vez de
     // fingir que sao iguais
     final ehMaisRapida = opcao.duracaoSegundos == maisRapidaSegundos;
-    final atrasoMin = ((opcao.duracaoSegundos - maisRapidaSegundos) / 60).round();
-    final rotulo = ehMaisRapida ? 'Mais rápida' : '+${atrasoMin < 1 ? 1 : atrasoMin} min';
+    final atrasoMin = ((opcao.duracaoSegundos - maisRapidaSegundos) / 60)
+        .round();
+    final rotulo = ehMaisRapida
+        ? 'Mais rápida'
+        : '+${atrasoMin < 1 ? 1 : atrasoMin} min';
 
     return GestureDetector(
       onTap: _carregandoRota ? null : () => _selecionarAlternativa(indice),
@@ -1811,7 +1893,11 @@ class _CentroDoMapaState extends State<CentroDoMapa>
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
           gradient: selecionado ? gradientePrincipal : null,
-          color: selecionado ? null : (isDark ? Colors.white.withAlpha(10) : Colors.grey.withAlpha(15)),
+          color: selecionado
+              ? null
+              : (isDark
+                    ? Colors.white.withAlpha(10)
+                    : Colors.grey.withAlpha(15)),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
@@ -1821,7 +1907,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
             Text(
               opcao.duracaoTexto,
               style: AppTextStyles.captionBold.copyWith(
-                color: selecionado ? Colors.white : (isDark ? Colors.white : Colors.black87),
+                color: selecionado
+                    ? Colors.white
+                    : (isDark ? Colors.white : Colors.black87),
               ),
             ),
             const SizedBox(height: 1),
@@ -1830,7 +1918,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
               style: AppTextStyles.label.copyWith(
                 color: selecionado
                     ? Colors.white.withAlpha(200)
-                    : (ehMaisRapida ? corSucesso : (isDark ? Colors.white38 : Colors.grey)),
+                    : (ehMaisRapida
+                          ? corSucesso
+                          : (isDark ? Colors.white38 : Colors.grey)),
               ),
             ),
           ],
@@ -1859,10 +1949,20 @@ class _CentroDoMapaState extends State<CentroDoMapa>
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
               gradient: selecionado ? gradientePrincipal : null,
-              color: selecionado ? null : (isDark ? Colors.white.withAlpha(10) : Colors.grey.withAlpha(15)),
+              color: selecionado
+                  ? null
+                  : (isDark
+                        ? Colors.white.withAlpha(10)
+                        : Colors.grey.withAlpha(15)),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(icone, size: 20, color: selecionado ? Colors.white : (isDark ? Colors.white54 : Colors.grey.shade700)),
+            child: Icon(
+              icone,
+              size: 20,
+              color: selecionado
+                  ? Colors.white
+                  : (isDark ? Colors.white54 : Colors.grey.shade700),
+            ),
           ),
         );
       }).toList(),
@@ -1876,7 +1976,8 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   bool get _deveUsarEstiloEscuro {
     if (temaGlobal.value == ThemeMode.dark) return true;
     if (temaGlobal.value == ThemeMode.light) return false;
-    return WidgetsBinding.instance.platformDispatcher.platformBrightness == Brightness.dark;
+    return WidgetsBinding.instance.platformDispatcher.platformBrightness ==
+        Brightness.dark;
   }
 
   void _atualizarEstiloMapa() {
@@ -1917,10 +2018,17 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       },
       behavior: HitTestBehavior.opaque,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md + 2),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg,
+          vertical: AppSpacing.md + 2,
+        ),
         child: Row(
           children: [
-            Icon(Icons.search_rounded, color: isDark ? Colors.white54 : Colors.black38, size: 20),
+            Icon(
+              Icons.search_rounded,
+              color: isDark ? Colors.white54 : Colors.black38,
+              size: 20,
+            ),
             const SizedBox(width: AppSpacing.md),
             Expanded(
               child: Text(
@@ -1942,10 +2050,18 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   Widget _ajustesDentroDaBusca(bool isDark) {
     final Color corIcone = isDark ? Colors.white : const Color(0xFF14304F);
 
-    Widget botao({required Widget icone, required VoidCallback onTap}) {
-      return Pressionavel(
-        onTap: onTap,
-        child: SizedBox(width: 42, height: 44, child: Center(child: icone)),
+    Widget botao({
+      required Widget icone,
+      required VoidCallback onTap,
+      required String label,
+    }) {
+      return Semantics(
+        button: true,
+        label: label,
+        child: Pressionavel(
+          onTap: onTap,
+          child: SizedBox(width: 44, height: 48, child: Center(child: icone)),
+        ),
       );
     }
 
@@ -1970,17 +2086,19 @@ class _CentroDoMapaState extends State<CentroDoMapa>
           ),
         ),
         botao(
+          label: 'Filtros do mapa',
           onTap: _mostrarFiltros,
           icone: Badge(
             isLabelVisible: _filtroState.temFiltrosAtivos,
             smallSize: 7,
             backgroundColor: corPrimaria,
-            child: Icon(Icons.tune_rounded, color: corIcone, size: 21),
+            child: Icon(Icons.tune_rounded, color: corIcone, size: 23),
           ),
         ),
         botao(
+          label: 'Configurações do mapa',
           onTap: _mostrarConfiguracoes,
-          icone: Icon(Icons.settings_rounded, color: corIcone, size: 21),
+          icone: Icon(Icons.settings_rounded, color: corIcone, size: 23),
         ),
         const SizedBox(width: AppSpacing.xs),
       ],
@@ -1994,11 +2112,18 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       child: GlassCard(
         radius: 20,
         sombra: AppShadows.nivel1(isDark),
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm + 1),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg,
+          vertical: AppSpacing.sm + 1,
+        ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.explore_outlined, size: 16, color: isDark ? Colors.white54 : corPrimaria.withAlpha(180)),
+            Icon(
+              Icons.explore_outlined,
+              size: 16,
+              color: isDark ? Colors.white54 : corPrimaria.withAlpha(180),
+            ),
             const SizedBox(width: AppSpacing.sm - 2),
             Text(
               'Cidades parceiras',
@@ -2022,7 +2147,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     showModalBottomSheet(
       context: context,
       backgroundColor: isDark ? superficieEscura : superficieClara,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
+      ),
       builder: (sheetContext) {
         return SafeArea(
           child: Padding(
@@ -2031,11 +2158,18 @@ class _CentroDoMapaState extends State<CentroDoMapa>
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('Cidades parceiras', style: AppTextStyles.heading3.copyWith(color: isDark ? Colors.white : Colors.black87)),
+                Text(
+                  'Cidades parceiras',
+                  style: AppTextStyles.heading3.copyWith(
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
+                ),
                 const SizedBox(height: 4),
                 Text(
                   'Só leva a câmera até a região escolhida -- nenhum imóvel some do mapa. Pra buscar um endereço específico, use a busca lá em cima.',
-                  style: AppTextStyles.caption.copyWith(color: isDark ? Colors.white38 : Colors.grey),
+                  style: AppTextStyles.caption.copyWith(
+                    color: isDark ? Colors.white38 : Colors.grey,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 ConstrainedBox(
@@ -2044,9 +2178,14 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                     shrinkWrap: true,
                     children: [
                       ListTile(
-                        leading: const Icon(Icons.zoom_out_map_rounded, color: corPrimaria),
+                        leading: const Icon(
+                          Icons.zoom_out_map_rounded,
+                          color: corPrimaria,
+                        ),
                         title: const Text('Visão geral'),
-                        subtitle: const Text('Só afasta o zoom, sem mover o mapa'),
+                        subtitle: const Text(
+                          'Só afasta o zoom, sem mover o mapa',
+                        ),
                         onTap: () {
                           Navigator.pop(sheetContext);
                           // so um zoom out de verdade -- mantem o centro onde
@@ -2056,11 +2195,21 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                       ),
                       for (final cidade in cidadesParceiras)
                         ListTile(
-                          leading: const Icon(Icons.location_city_rounded, color: corPrimaria),
-                          title: Text(cidade.texto, style: TextStyle(color: isDark ? Colors.white : Colors.black87)),
+                          leading: const Icon(
+                            Icons.location_city_rounded,
+                            color: corPrimaria,
+                          ),
+                          title: Text(
+                            cidade.texto,
+                            style: TextStyle(
+                              color: isDark ? Colors.white : Colors.black87,
+                            ),
+                          ),
                           onTap: () {
                             Navigator.pop(sheetContext);
-                            _mapController?.animateCamera(CameraUpdate.newLatLngZoom(cidade.destino, 13));
+                            _mapController?.animateCamera(
+                              CameraUpdate.newLatLngZoom(cidade.destino, 13),
+                            );
                           },
                         ),
                     ],
@@ -2074,656 +2223,22 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     );
   }
 
-  // o que a pessoa digitou no campo de preco, em reais. Vazio (ou zero) = sem
-  // limite naquela ponta
-  double? _precoDigitado(TextEditingController campo) {
-    final so = campo.text.replaceAll(RegExp(r'[^0-9]'), '');
-    final valor = double.tryParse(so);
-    return (valor == null || valor == 0) ? null : valor;
-  }
-
-  // faixas prontas -- quase todo aluguel de estudante cai numa dessas, e um
-  // toque preenche os dois campos. (minimo, maximo, rotulo); null = ponta aberta
-  static const List<(double?, double?, String)> _faixasSugeridas = [
-    (null, 600, 'Até 600'),
-    (600, 1000, '600 a 1.000'),
-    (1000, 1500, '1.000 a 1.500'),
-    (1500, null, 'Acima de 1.500'),
-  ];
-
-  void _mostrarFiltros() {
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
-
-    final List<String> tagsTemp = List.from(_filtroState.tagsSelecionadas);
-    final List<String> contasTemp = List.from(_filtroState.contasSelecionadas);
-    final List<String> localidadesTemp = List.from(_filtroState.localidadesSelecionadas);
-    final List<String> categoriasTemp = List.from(_filtroState.categoriasSelecionadas);
-
-    showModalBottomSheet(
+  Future<void> _mostrarFiltros() async {
+    _buscaFocusNode.unfocus();
+    final filtros = await showModalBottomSheet<FiltrosMapa>(
       context: context,
       isScrollControlled: true,
-      // a folha desenha o proprio fundo (cantos, borda de luz e sombra), por
-      // isso o do modal sai da frente
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
-      builder: (context) {
-        return _CamposDePreco(
-          minimoInicial: _filtroState.precoMinimo?.toInt().toString() ?? '',
-          maximoInicial: _filtroState.precoMaximo?.toInt().toString() ?? '',
-          builder: (context, precoMinCtrl, precoMaxCtrl) => StatefulBuilder(
-          builder: (context, setModalState) {
-            // ja sai ordenado: quem digita 1500 no minimo e 800 no maximo
-            // quis a mesma faixa ao contrario, e nao um mapa vazio
-            var minimo = _precoDigitado(precoMinCtrl);
-            var maximo = _precoDigitado(precoMaxCtrl);
-            if (minimo != null && maximo != null && minimo > maximo) {
-              final troca = minimo;
-              minimo = maximo;
-              maximo = troca;
-            }
-            final int quantosFiltros = (minimo != null ? 1 : 0) +
-                (maximo != null ? 1 : 0) +
-                tagsTemp.length +
-                contasTemp.length +
-                localidadesTemp.length +
-                categoriasTemp.length;
-            final int resultados = _quantosAtendem(
-              precoMinimo: minimo,
-              precoMaximo: maximo,
-              tags: tagsTemp,
-              contas: contasTemp,
-              localidades: localidadesTemp,
-              categorias: categoriasTemp,
-            );
-            // filtrar so por "Farmácias" deixa zero anuncio e ainda assim
-            // enche o mapa de pins -- o botao tem que contar os dois
-            final int pontosDeInteresse = _quantosLugares(categoriasTemp);
-
-            return Container(
-              margin: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-              decoration: BoxDecoration(
-                color: isDark ? corCardEscuro : Colors.white,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
-                // fio de luz na borda de cima -- e o que separa a folha do
-                // mapa escuro atras sem precisar de sombra pesada
-                border: Border(
-                  top: BorderSide(color: isDark ? Colors.white.withAlpha(20) : Colors.black.withAlpha(10)),
-                ),
-                boxShadow: AppShadows.nivel3(isDark),
-              ),
-              child: SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.xxl, AppSpacing.md, AppSpacing.xxl, AppSpacing.xxl),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Center(
-                        child: Container(
-                          width: 40,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: isDark ? Colors.white.withAlpha(30) : Colors.grey.shade300,
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.xl),
-
-                      // cabecalho: selo da marca, titulo e quantos filtros
-                      // estao de pe agora
-                      Row(
-                        children: [
-                          Container(
-                            width: 42,
-                            height: 42,
-                            decoration: BoxDecoration(
-                              gradient: gradientePrincipal,
-                              borderRadius: BorderRadius.circular(AppRadius.sm),
-                              boxShadow: AppShadows.marca(forca: 0.6),
-                            ),
-                            child: const Icon(Icons.tune_rounded, color: Colors.white, size: 20),
-                          ),
-                          const SizedBox(width: AppSpacing.md),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Filtrar busca',
-                                  style: AppTextStyles.heading3.copyWith(
-                                    color: isDark ? Colors.white : Colors.black87,
-                                  ),
-                                ),
-                                Text(
-                                  quantosFiltros == 0
-                                      ? 'Nenhum filtro ativo'
-                                      : '$quantosFiltros ${quantosFiltros == 1 ? 'filtro ativo' : 'filtros ativos'}',
-                                  style: AppTextStyles.caption.copyWith(
-                                    color: quantosFiltros == 0
-                                        ? (isDark ? Colors.white38 : Colors.grey)
-                                        : corPrimaria2,
-                                    fontWeight:
-                                        quantosFiltros == 0 ? FontWeight.w400 : FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          // so aparece quando ha o que limpar -- botao morto
-                          // ocupando o canto e parte do ar de tela inacabada
-                          AnimatedOpacity(
-                            duration: AppMotion.rapida,
-                            opacity: quantosFiltros == 0 ? 0 : 1,
-                            child: Pressionavel(
-                              onTap: quantosFiltros == 0
-                                  ? () {}
-                                  : () => setModalState(() {
-                                        precoMinCtrl.clear();
-                                        precoMaxCtrl.clear();
-                                        tagsTemp.clear();
-                                        contasTemp.clear();
-                                        localidadesTemp.clear();
-                                        categoriasTemp.clear();
-                                      }),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-                                decoration: BoxDecoration(
-                                  color: isDark ? Colors.white.withAlpha(12) : Colors.grey.withAlpha(20),
-                                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.refresh_rounded,
-                                        size: 14, color: isDark ? Colors.white60 : Colors.black54),
-                                    const SizedBox(width: AppSpacing.xs),
-                                    Text(
-                                      'Limpar',
-                                      style: AppTextStyles.caption.copyWith(
-                                        color: isDark ? Colors.white60 : Colors.black54,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.xl),
-
-                      // --- categorias ---
-                      // vem antes do preco por ser o corte mais grosso: decide
-                      // O QUE aparece no mapa antes de refinar quanto custa
-                      _rotuloSecao('Categorias', Icons.category_rounded, isDark),
-                      const SizedBox(height: AppSpacing.xs),
-                      Text(
-                        'Sem escolher nenhuma, o mapa mostra tudo.',
-                        style: AppTextStyles.caption.copyWith(
-                          color: isDark ? Colors.white38 : Colors.grey,
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      Wrap(
-                        spacing: AppSpacing.sm,
-                        runSpacing: AppSpacing.sm,
-                        children: opcoesCategoria
-                            .map((opcao) => _chipFiltro(
-                                  rotulo: opcao.rotulo,
-                                  icone: opcao.icone,
-                                  selecionado: categoriasTemp.contains(opcao.id),
-                                  isDark: isDark,
-                                  onTap: () => setModalState(() {
-                                    if (categoriasTemp.contains(opcao.id)) {
-                                      categoriasTemp.remove(opcao.id);
-                                    } else {
-                                      categoriasTemp.add(opcao.id);
-                                    }
-                                  }),
-                                ))
-                            .toList(),
-                      ),
-                      const SizedBox(height: AppSpacing.xl),
-
-                      // --- preco ---
-                      Container(
-                        padding: const EdgeInsets.all(AppSpacing.lg),
-                        decoration: BoxDecoration(
-                          color: isDark ? Colors.white.withAlpha(8) : superficieClara,
-                          borderRadius: BorderRadius.circular(AppRadius.md),
-                          border: Border.all(
-                            color: isDark ? Colors.white.withAlpha(12) : Colors.black.withAlpha(8),
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                _rotuloSecao('Quanto quer pagar', Icons.payments_rounded, isDark),
-                                // o ciano e reservado a preco no app inteiro
-                                // (ver gradienteSecundario em main.dart), e e
-                                // ele que da a unica cor viva desta folha
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: AppSpacing.md, vertical: AppSpacing.xs + 1),
-                                  decoration: BoxDecoration(
-                                    gradient: gradienteSecundario,
-                                    borderRadius: BorderRadius.circular(AppRadius.pill),
-                                  ),
-                                  child: Text(
-                                    _resumoDaFaixaDePreco(minimo, maximo),
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: AppSpacing.md),
-                            // dois campos em vez do slider: quem procura sabe
-                            // o valor que cabe no bolso e digita direto, sem
-                            // teto fixo e sem caçar a posicao certa na barra
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _campoPreco(
-                                    controller: precoMinCtrl,
-                                    rotulo: 'mínimo',
-                                    isDark: isDark,
-                                    aoMudar: () => setModalState(() {}),
-                                  ),
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-                                  child: Text(
-                                    'até',
-                                    style: AppTextStyles.caption.copyWith(
-                                      color: isDark ? Colors.white38 : Colors.grey,
-                                    ),
-                                  ),
-                                ),
-                                Expanded(
-                                  child: _campoPreco(
-                                    controller: precoMaxCtrl,
-                                    rotulo: 'máximo',
-                                    isDark: isDark,
-                                    aoMudar: () => setModalState(() {}),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: AppSpacing.md),
-                            Wrap(
-                              spacing: AppSpacing.sm,
-                              runSpacing: AppSpacing.sm,
-                              children: _faixasSugeridas.map((faixa) {
-                                final (de, ate, rotulo) = faixa;
-                                return _pilulaFaixa(
-                                  rotulo: rotulo,
-                                  selecionada: minimo == de && maximo == ate,
-                                  isDark: isDark,
-                                  onTap: () => setModalState(() {
-                                    precoMinCtrl.text = de?.toInt().toString() ?? '';
-                                    precoMaxCtrl.text = ate?.toInt().toString() ?? '';
-                                  }),
-                                );
-                              }).toList(),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.xl),
-
-                      // --- caracteristicas ---
-                      _rotuloSecao('Características do imóvel', Icons.home_work_rounded, isDark),
-                      const SizedBox(height: AppSpacing.md),
-                      Wrap(
-                        spacing: AppSpacing.sm,
-                        runSpacing: AppSpacing.sm,
-                        children: opcoesDeFiltro
-                            .map((tag) => _chipFiltro(
-                                  rotulo: tag,
-                                  icone: iconeDaTag(tag),
-                                  selecionado: tagsTemp.contains(tag),
-                                  isDark: isDark,
-                                  onTap: () => setModalState(() {
-                                    if (tagsTemp.contains(tag)) {
-                                      tagsTemp.remove(tag);
-                                    } else {
-                                      tagsTemp.add(tag);
-                                    }
-                                  }),
-                                ))
-                            .toList(),
-                      ),
-                      const SizedBox(height: AppSpacing.xl),
-
-                      // --- contas inclusas ---
-                      _rotuloSecao('Contas inclusas no aluguel', Icons.receipt_long_rounded, isDark),
-                      const SizedBox(height: AppSpacing.md),
-                      Wrap(
-                        spacing: AppSpacing.sm,
-                        runSpacing: AppSpacing.sm,
-                        children: opcoesContasInclusas
-                            .map((conta) => _chipFiltro(
-                                  rotulo: conta,
-                                  icone: iconeDaConta(conta),
-                                  selecionado: contasTemp.contains(conta),
-                                  isDark: isDark,
-                                  onTap: () => setModalState(() {
-                                    if (contasTemp.contains(conta)) {
-                                      contasTemp.remove(conta);
-                                    } else {
-                                      contasTemp.add(conta);
-                                    }
-                                  }),
-                                ))
-                            .toList(),
-                      ),
-                      const SizedBox(height: AppSpacing.xl),
-
-                      // --- localidade ---
-                      _rotuloSecao('O que tem por perto', Icons.place_rounded, isDark),
-                      const SizedBox(height: AppSpacing.md),
-                      Wrap(
-                        spacing: AppSpacing.sm,
-                        runSpacing: AppSpacing.sm,
-                        children: opcoesLocalidade.map((opcao) {
-                          // so a faculdade sai de conta local; o resto depende
-                          // da busca de lugares, que pode nao ter voltado (ou
-                          // ter falhado). Chip apagado avisa disso em vez de
-                          // filtrar e devolver mapa vazio sem explicacao
-                          final habilitado =
-                              opcao.id == localidadeFaculdade || _categoriasPerto.isNotEmpty;
-                          return _chipFiltro(
-                            rotulo: opcao.rotulo,
-                            icone: opcao.icone,
-                            selecionado: localidadesTemp.contains(opcao.id),
-                            habilitado: habilitado,
-                            isDark: isDark,
-                            onTap: () => setModalState(() {
-                              if (localidadesTemp.contains(opcao.id)) {
-                                localidadesTemp.remove(opcao.id);
-                              } else {
-                                localidadesTemp.add(opcao.id);
-                              }
-                            }),
-                          );
-                        }).toList(),
-                      ),
-                      if (_categoriasPerto.isEmpty) ...[
-                        const SizedBox(height: AppSpacing.sm),
-                        Row(
-                          children: [
-                            SizedBox(
-                              width: 12,
-                              height: 12,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 1.6,
-                                color: isDark ? Colors.white38 : Colors.grey,
-                              ),
-                            ),
-                            const SizedBox(width: AppSpacing.sm),
-                            Expanded(
-                              child: Text(
-                                'Buscando os estabelecimentos de cada imóvel.',
-                                style: AppTextStyles.caption.copyWith(
-                                  color: isDark ? Colors.white38 : Colors.grey,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                      const SizedBox(height: AppSpacing.xxl),
-
-                      // o numero no botao responde antes do toque quantos
-                      // imoveis sobram -- filtro que zera o mapa era
-                      // descoberto so depois de fechar a folha
-                      AnimatedGradientButton(
-                        label: _rotuloDoBotaoDeFiltro(resultados, pontosDeInteresse),
-                        icon: resultados == 0 && pontosDeInteresse == 0
-                            ? Icons.search_off_rounded
-                            : Icons.search_rounded,
-                        onTap: () {
-                          _filtroState.aplicarEstado(
-                            precoMinimo: minimo,
-                            precoMaximo: maximo,
-                            tags: tagsTemp,
-                            contas: contasTemp,
-                            localidades: localidadesTemp,
-                            categorias: categoriasTemp,
-                          );
-
-                          Navigator.pop(context);
-                          final qtd = _filtroState.quantidadeAtiva;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Row(
-                                children: [
-                                  const Icon(Icons.check_circle_outline, color: Colors.white, size: 20),
-                                  const SizedBox(width: 10),
-                                  Text(qtd > 0
-                                      ? '$qtd ${qtd == 1 ? 'filtro aplicado' : 'filtros aplicados'} no mapa!'
-                                      : 'Filtros removidos - todos os imóveis visíveis.'),
-                                ],
-                              ),
-                              backgroundColor: corSucesso,
-                              behavior: SnackBarBehavior.floating,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                              margin: const EdgeInsets.all(16),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-          ),
-        );
-      },
-    );
-  }
-
-  // o que o botao da folha promete. Um filtro so de categoria (so "Postos",
-  // por exemplo) nao deixa anuncio nenhum, mas tambem nao deixa o mapa vazio:
-  // nesse caso o botao conta os pontos, e nao os imoveis
-  String _rotuloDoBotaoDeFiltro(int imoveis, int pontos) {
-    if (imoveis > 0) return 'Ver $imoveis ${imoveis == 1 ? 'imóvel' : 'imóveis'}';
-    if (pontos > 0) return 'Ver $pontos ${pontos == 1 ? 'local' : 'locais'} no mapa';
-    return 'Nenhum resultado com esses filtros';
-  }
-
-  // titulo de secao: icone em selo + texto. O selo e o que tira a folha do
-  // "lista de textos cinzas" sem gritar mais que o conteudo
-  Widget _rotuloSecao(String titulo, IconData icone, bool isDark) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 24,
-          height: 24,
-          decoration: BoxDecoration(
-            color: corPrimaria.withAlpha(isDark ? 55 : 22),
-            borderRadius: BorderRadius.circular(AppRadius.sm - 4),
-          ),
-          child: Icon(icone, size: 14, color: isDark ? corDestaque : corPrimaria),
-        ),
-        const SizedBox(width: AppSpacing.sm),
-        Text(
-          titulo,
-          style: AppTextStyles.captionBold.copyWith(
-            color: isDark ? Colors.white : Colors.black87,
-          ),
-        ),
-      ],
-    );
-  }
-
-  // campo de valor da faixa de preco -- so digito, o "R$" fica no prefixo
-  Widget _campoPreco({
-    required TextEditingController controller,
-    required String rotulo,
-    required bool isDark,
-    required VoidCallback aoMudar,
-  }) {
-    return TextField(
-      controller: controller,
-      keyboardType: TextInputType.number,
-      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-      style: TextStyle(
-        color: isDark ? Colors.white : Colors.black87,
-        fontWeight: FontWeight.w700,
-        fontSize: 16,
-      ),
-      onChanged: (_) => aoMudar(),
-      decoration: InputDecoration(
-        hintText: rotulo,
-        hintStyle: TextStyle(
-          color: isDark ? Colors.white24 : Colors.grey.shade400,
-          fontWeight: FontWeight.w400,
-          fontSize: 14,
-        ),
-        prefixText: 'R\$ ',
-        prefixStyle: TextStyle(
-          color: isDark ? Colors.white38 : Colors.black45,
-          fontWeight: FontWeight.w600,
-          fontSize: 14,
-        ),
-        filled: true,
-        fillColor: isDark ? corFundoEscuro : Colors.white,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadius.sm),
-          borderSide: BorderSide.none,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadius.sm),
-          borderSide: BorderSide(
-            color: isDark ? Colors.white.withAlpha(15) : Colors.black.withAlpha(12),
-          ),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadius.sm),
-          borderSide: const BorderSide(color: corPrimaria2, width: 1.6),
-        ),
-        contentPadding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md, vertical: AppSpacing.md + 2),
+      builder: (_) => FiltrosMapaSheet(
+        inicial: _filtroState.atual,
+        contarImoveis: _quantosImoveisAtendem,
+        proximidadeDisponivel: () => _categoriasPerto.isNotEmpty,
+        atualizacoes: _dadosFiltros,
       ),
     );
-  }
-
-  // o texto da etiqueta de preco: diz em portugues o que a faixa significa,
-  // inclusive quando so uma das pontas foi preenchida
-  String _resumoDaFaixaDePreco(double? minimo, double? maximo) {
-    String curto(double v) => formatarPreco(v).replaceAll(',00', '');
-    if (minimo == null && maximo == null) return 'Qualquer valor';
-    if (minimo == null) return 'Até ${curto(maximo!)}';
-    if (maximo == null) return 'A partir de ${curto(minimo)}';
-    return '${curto(minimo)} a ${curto(maximo)}';
-  }
-
-  // pilula das faixas prontas de preco -- menor e so de contorno, pra nao
-  // competir com os chips de caracteristica logo abaixo
-  Widget _pilulaFaixa({
-    required String rotulo,
-    required bool selecionada,
-    required bool isDark,
-    required VoidCallback onTap,
-  }) {
-    return Pressionavel(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: AppMotion.rapida,
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm - 2),
-        decoration: BoxDecoration(
-          color: selecionada
-              ? corPrimaria.withAlpha(isDark ? 70 : 28)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(AppRadius.pill),
-          border: Border.all(
-            color: selecionada
-                ? corPrimaria2
-                : (isDark ? Colors.white.withAlpha(25) : Colors.black.withAlpha(20)),
-          ),
-        ),
-        child: Text(
-          rotulo,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: selecionada ? FontWeight.w700 : FontWeight.w500,
-            color: selecionada
-                ? (isDark ? Colors.white : corPrimaria)
-                : (isDark ? Colors.white60 : Colors.black54),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // chip dos filtros: mesmo desenho nas caracteristicas e na localidade.
-  // Apagado (habilitado: false) = a informacao ainda nao chegou
-  Widget _chipFiltro({
-    required String rotulo,
-    required IconData icone,
-    required bool selecionado,
-    required bool isDark,
-    required VoidCallback onTap,
-    bool habilitado = true,
-  }) {
-    final bool ligado = selecionado && habilitado;
-    final Color corTexto = !habilitado
-        ? (isDark ? Colors.white24 : Colors.grey.shade400)
-        : ligado
-            ? Colors.white
-            : (isDark ? Colors.white70 : Colors.black87);
-
-    return Pressionavel(
-      onTap: habilitado ? onTap : () {},
-      child: AnimatedContainer(
-        duration: AppMotion.rapida,
-        curve: AppMotion.suave,
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm + 2),
-        decoration: BoxDecoration(
-          gradient: ligado ? gradientePrincipal : null,
-          color: ligado
-              ? null
-              : (isDark ? Colors.white.withAlpha(10) : Colors.white),
-          borderRadius: BorderRadius.circular(AppRadius.pill),
-          border: Border.all(
-            color: ligado
-                ? Colors.transparent
-                : (isDark ? Colors.white.withAlpha(20) : Colors.black.withAlpha(15)),
-          ),
-          // o chip ligado sobe da superficie; o desligado so repousa nela
-          boxShadow: ligado ? AppShadows.marca(forca: 0.5) : AppShadows.nivel1(isDark),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icone, size: 15, color: ligado ? Colors.white : corTexto.withAlpha(200)),
-            const SizedBox(width: AppSpacing.sm - 2),
-            Text(
-              rotulo,
-              style: TextStyle(
-                color: corTexto,
-                fontSize: 13,
-                fontWeight: ligado ? FontWeight.w700 : FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    if (!mounted || filtros == null) return;
+    _filtroState.aplicar(filtros);
   }
 
   void _mostrarPerfil() {
@@ -2732,7 +2247,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     showModalBottomSheet(
       context: context,
       backgroundColor: isDark ? superficieEscura : superficieClara,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
+      ),
       builder: (sheetContext) {
         return _PerfilPreview(
           perfil: _perfilAtual,
@@ -2740,7 +2257,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
             Navigator.pop(sheetContext);
             final atualizado = await Navigator.push<Usuario>(
               context,
-              MaterialPageRoute(builder: (_) => ConcluirPerfilScreen(perfil: _perfilAtual)),
+              MaterialPageRoute(
+                builder: (_) => ConcluirPerfilScreen(perfil: _perfilAtual),
+              ),
             );
             if (atualizado != null && mounted) {
               setState(() => _perfilAtual = atualizado);
@@ -2752,7 +2271,10 @@ class _CentroDoMapaState extends State<CentroDoMapa>
           },
           onVerNotificacoes: () {
             Navigator.pop(sheetContext);
-            Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificacoesScreen()));
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const NotificacoesScreen()),
+            );
           },
         );
       },
@@ -2770,12 +2292,20 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       builder: (dialogContext) => AlertDialog(
         backgroundColor: isDark ? superficieEscura : superficieClara,
         title: const Text('Sair da conta?'),
-        content: const Text('Você vai precisar entrar de novo pra acessar o app.'),
+        content: const Text(
+          'Você vai precisar entrar de novo pra acessar o app.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Sair', style: TextStyle(color: corErro, fontWeight: FontWeight.w700)),
+            child: const Text(
+              'Sair',
+              style: TextStyle(color: corErro, fontWeight: FontWeight.w700),
+            ),
           ),
         ],
       ),
@@ -2789,8 +2319,11 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   void _mostrarConfiguracoes() {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
+      ),
       builder: (context) {
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setModalState) {
@@ -2799,114 +2332,182 @@ class _CentroDoMapaState extends State<CentroDoMapa>
             // antes isDark vinha de fora do StatefulBuilder e ficava preso no
             // valor de quando a folha abriu, so atualizando se fechasse e
             // abrisse ela de novo
-            final bool isDark = temaGlobal.value == ThemeMode.dark ||
+            final bool isDark =
+                temaGlobal.value == ThemeMode.dark ||
                 (temaGlobal.value == ThemeMode.system &&
-                    MediaQuery.platformBrightnessOf(context) == Brightness.dark);
+                    MediaQuery.platformBrightnessOf(context) ==
+                        Brightness.dark);
             return ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(AppRadius.xl),
+              ),
               child: Container(
                 color: isDark ? superficieEscura : superficieClara,
-                padding: const EdgeInsets.all(24.0),
-                child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: isDark ? Colors.white.withAlpha(40) : Colors.grey.shade400,
-                        borderRadius: BorderRadius.circular(AppRadius.pill),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-
-                  Text(
-                    'Configurações',
-                    textAlign: TextAlign.center,
-                    style: AppTextStyles.heading3.copyWith(
-                      color: isDark ? Colors.white : Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: isDark ? Colors.white.withAlpha(12) : Colors.white,
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                      border: Border.all(
-                        color: isDark ? Colors.white.withAlpha(16) : corPrimaria.withAlpha(20),
-                      ),
-                      boxShadow: AppShadows.nivel1(isDark),
-                    ),
-                    child: ListTile(
-                      leading: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          gradient: gradientePrincipal,
-                          borderRadius: BorderRadius.circular(AppRadius.sm),
-                          boxShadow: AppShadows.marca(forca: 0.35),
+                // sem isScrollControlled a folha ficava com altura fixa e o
+                // conteudo (com a secao de localizacao) estourava por baixo
+                // -- SingleChildScrollView + SafeArea garantem que ela sempre
+                // caiba, mesmo com fonte grande ou aparelho baixo
+                child: SafeArea(
+                  top: false,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Center(
+                          child: Container(
+                            width: 40,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? Colors.white.withAlpha(40)
+                                  : Colors.grey.shade400,
+                              borderRadius: BorderRadius.circular(
+                                AppRadius.pill,
+                              ),
+                            ),
+                          ),
                         ),
-                        child: const Icon(Icons.dark_mode_rounded, color: Colors.white, size: 20),
-                      ),
-                      title: Text(
-                        'Tema do Sistema',
-                        style: AppTextStyles.bodyBold.copyWith(
-                          color: isDark ? Colors.white : Colors.black87,
+                        const SizedBox(height: 20),
+
+                        Text(
+                          'Configurações',
+                          textAlign: TextAlign.center,
+                          style: AppTextStyles.heading3.copyWith(
+                            color: isDark ? Colors.white : Colors.black87,
+                          ),
                         ),
-                      ),
-                      trailing: DropdownButton<ThemeMode>(
-                        value: temaGlobal.value,
-                        underline: const SizedBox(),
-                        borderRadius: BorderRadius.circular(AppRadius.sm),
-                        dropdownColor: isDark ? superficieEscura : superficieClara,
-                        items: const [
-                          DropdownMenuItem(value: ThemeMode.system, child: Text('Sistema')),
-                          DropdownMenuItem(value: ThemeMode.light, child: Text('Claro')),
-                          DropdownMenuItem(value: ThemeMode.dark, child: Text('Escuro')),
-                        ],
-                        onChanged: (ThemeMode? novoModo) {
-                          if (novoModo != null) {
-                            setModalState(() => temaGlobal.value = novoModo);
-                          }
-                        },
-                      ),
+                        const SizedBox(height: 24),
+
+                        Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? Colors.white.withAlpha(12)
+                                : Colors.white,
+                            borderRadius: BorderRadius.circular(AppRadius.md),
+                            border: Border.all(
+                              color: isDark
+                                  ? Colors.white.withAlpha(16)
+                                  : corPrimaria.withAlpha(20),
+                            ),
+                            boxShadow: AppShadows.nivel1(isDark),
+                          ),
+                          child: ListTile(
+                            leading: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                gradient: gradientePrincipal,
+                                borderRadius: BorderRadius.circular(
+                                  AppRadius.sm,
+                                ),
+                                boxShadow: AppShadows.marca(forca: 0.35),
+                              ),
+                              child: const Icon(
+                                Icons.dark_mode_rounded,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ),
+                            title: Text(
+                              'Tema do Sistema',
+                              style: AppTextStyles.bodyBold.copyWith(
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                            trailing: DropdownButton<ThemeMode>(
+                              value: temaGlobal.value,
+                              underline: const SizedBox(),
+                              borderRadius: BorderRadius.circular(AppRadius.sm),
+                              dropdownColor: isDark
+                                  ? superficieEscura
+                                  : superficieClara,
+                              items: const [
+                                DropdownMenuItem(
+                                  value: ThemeMode.system,
+                                  child: Text('Sistema'),
+                                ),
+                                DropdownMenuItem(
+                                  value: ThemeMode.light,
+                                  child: Text('Claro'),
+                                ),
+                                DropdownMenuItem(
+                                  value: ThemeMode.dark,
+                                  child: Text('Escuro'),
+                                ),
+                              ],
+                              onChanged: (ThemeMode? novoModo) {
+                                if (novoModo != null) {
+                                  setModalState(
+                                    () => temaGlobal.value = novoModo,
+                                  );
+                                }
+                              },
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _linhaLocalizacao(isDark, setModalState),
+                        const SizedBox(height: 20),
+
+                        Text(
+                          'Estilo Visual do Mapa',
+                          style: AppTextStyles.captionBold.copyWith(
+                            color: isDark ? Colors.white70 : Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _botaoModoMapa(
+                                'Normal',
+                                Icons.map_outlined,
+                                isDark,
+                                setModalState,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _botaoModoMapa(
+                                'Satélite',
+                                Icons.satellite_alt_rounded,
+                                isDark,
+                                setModalState,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+                        Divider(
+                          color: isDark
+                              ? Colors.white.withAlpha(10)
+                              : Colors.grey.withAlpha(20),
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton.icon(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            _confirmarLogout();
+                          },
+                          icon: const Icon(
+                            Icons.logout_rounded,
+                            color: corErro,
+                            size: 18,
+                          ),
+                          label: const Text(
+                            'Sair da conta',
+                            style: TextStyle(
+                              color: corErro,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  _linhaLocalizacao(isDark, setModalState),
-                  const SizedBox(height: 20),
-
-                  Text(
-                    'Estilo Visual do Mapa',
-                    style: AppTextStyles.captionBold.copyWith(
-                      color: isDark ? Colors.white70 : Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  Row(
-                    children: [
-                      Expanded(child: _botaoModoMapa('Normal', Icons.map_outlined, isDark, setModalState)),
-                      const SizedBox(width: 12),
-                      Expanded(child: _botaoModoMapa('Satélite', Icons.satellite_alt_rounded, isDark, setModalState)),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  Divider(color: isDark ? Colors.white.withAlpha(10) : Colors.grey.withAlpha(20)),
-                  const SizedBox(height: 8),
-                  TextButton.icon(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      _confirmarLogout();
-                    },
-                    icon: const Icon(Icons.logout_rounded, color: corErro, size: 18),
-                    label: const Text('Sair da conta', style: TextStyle(color: corErro, fontWeight: FontWeight.w600)),
-                  ),
-                  ],
                 ),
               ),
             );
@@ -2936,7 +2537,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
         color: isDark ? Colors.white.withAlpha(12) : Colors.white,
         borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(
-          color: isDark ? Colors.white.withAlpha(16) : corPrimaria.withAlpha(20),
+          color: isDark
+              ? Colors.white.withAlpha(16)
+              : corPrimaria.withAlpha(20),
         ),
         boxShadow: AppShadows.nivel1(isDark),
       ),
@@ -2958,7 +2561,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
           ),
           child: Icon(
             ativa ? Icons.my_location_rounded : Icons.location_disabled_rounded,
-            color: ativa ? Colors.white : (isDark ? Colors.white54 : Colors.black45),
+            color: ativa
+                ? Colors.white
+                : (isDark ? Colors.white54 : Colors.black45),
             size: 20,
           ),
         ),
@@ -2985,7 +2590,12 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     );
   }
 
-  Widget _botaoModoMapa(String titulo, IconData icone, bool isDark, StateSetter setModalState) {
+  Widget _botaoModoMapa(
+    String titulo,
+    IconData icone,
+    bool isDark,
+    StateSetter setModalState,
+  ) {
     bool isSelected = _modoMapaAtual == titulo;
     return GestureDetector(
       onTap: () {
@@ -2999,20 +2609,38 @@ class _CentroDoMapaState extends State<CentroDoMapa>
         padding: const EdgeInsets.symmetric(vertical: 16),
         decoration: BoxDecoration(
           gradient: isSelected ? gradientePrincipal : null,
-          color: isSelected ? null : (isDark ? Colors.white.withAlpha(8) : Colors.grey.withAlpha(12)),
+          color: isSelected
+              ? null
+              : (isDark
+                    ? Colors.white.withAlpha(8)
+                    : Colors.grey.withAlpha(12)),
           borderRadius: BorderRadius.circular(16),
           boxShadow: isSelected
-              ? [BoxShadow(color: corPrimaria.withAlpha(30), blurRadius: 8, offset: const Offset(0, 3))]
+              ? [
+                  BoxShadow(
+                    color: corPrimaria.withAlpha(30),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ]
               : [],
         ),
         child: Column(
           children: [
-            Icon(icone, color: isSelected ? Colors.white : (isDark ? Colors.white54 : Colors.grey), size: 28),
+            Icon(
+              icone,
+              color: isSelected
+                  ? Colors.white
+                  : (isDark ? Colors.white54 : Colors.grey),
+              size: 28,
+            ),
             const SizedBox(height: 8),
             Text(
               titulo,
               style: TextStyle(
-                color: isSelected ? Colors.white : (isDark ? Colors.white54 : Colors.grey),
+                color: isSelected
+                    ? Colors.white
+                    : (isDark ? Colors.white54 : Colors.grey),
                 fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                 fontSize: 13,
               ),
@@ -3023,83 +2651,76 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     );
   }
 
-  // avatar com anel de estado, igual a referencia. Pendente (cadastro
-  // incompleto) sempre ambar, pra nao se perder no meio da cor da foto.
-  // Completo: verde por padrao, ou a cor extraida da propria foto de perfil
-  // quando tem uma -- o anel passa a ornar com a pessoa em vez de ser um
-  // verde generico.
-  //
-  // O ponto no canto muda de papel dependendo do estado: com o cadastro
-  // pendente ele reforça o ambar do anel; com o cadastro completo ele vira
-  // o indicador de notificação não lida (some assim que não tem novidade).
+  // Azul da marca no perfil completo; alertas mantem suas cores reais.
   Widget _buildGlassButton({
     required Widget child,
     required VoidCallback onTap,
     Color? badgeColor,
   }) {
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final bool pendente = badgeColor != null;
-    final String fotoUrl = _perfilAtual.fotoUrl;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final pendente = badgeColor != null;
 
-    return Pressionavel(
-      onTap: onTap,
-      child: SizedBox(
-        width: 48,
-        height: 48,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            // 44 com raio 22 = circulo, entao reusa a mesma primitiva de vidro
-            // dos cards em vez de manter um caminho proprio
-            GlassCard(
-              radius: 22,
-              espessura: 1.2,
-              child: SizedBox(width: 44, height: 44, child: Center(child: child)),
-            ),
-            // anel por cima, sem preenchimento
-            IgnorePointer(
-              child: FutureBuilder<Color?>(
-                future: (!pendente && fotoUrl.isNotEmpty) ? corDaFoto(fotoUrl) : null,
-                initialData: pendente ? null : corDaFotoSalva(fotoUrl),
-                builder: (context, snapshot) {
-                  final corAnel = pendente ? corAtencao : (snapshot.data ?? corSucesso);
-                  return Container(
-                    width: 46,
-                    height: 46,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: corAnel.withAlpha(215), width: 2),
+    return Semantics(
+      button: true,
+      label: 'Abrir perfil e notificações',
+      child: Pressionavel(
+        onTap: onTap,
+        child: SizedBox(
+          width: 48,
+          height: 48,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isDark ? corFundoEscuro : superficieClara,
+                  border: Border.all(
+                    color: pendente ? corAtencao : corPrimaria2,
+                    width: 1.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withAlpha(isDark ? 65 : 25),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
                     ),
-                  );
-                },
+                  ],
+                ),
+                child: child,
               ),
-            ),
-            Positioned(
-              top: 1,
-              right: 2,
-              child: pendente
-                  ? _pontoAnel(corAtencao, isDark)
-                  : ValueListenableBuilder<int>(
-                      valueListenable: NotificacaoService.instance.naoLidas,
-                      builder: (_, naoLidas, _) =>
-                          naoLidas > 0 ? _pontoAnel(corErro, isDark) : const SizedBox.shrink(),
-                    ),
-            ),
-          ],
+              Positioned(
+                bottom: 0,
+                right: 0,
+                child: pendente
+                    ? _pontoAnel(corAtencao, isDark)
+                    : ValueListenableBuilder<int>(
+                        valueListenable: NotificacaoService.instance.naoLidas,
+                        builder: (_, naoLidas, _) => naoLidas > 0
+                            ? _pontoAnel(corErro, isDark)
+                            : const SizedBox.shrink(),
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
   Widget _pontoAnel(Color cor, bool isDark) => Container(
-        width: 11,
-        height: 11,
-        decoration: BoxDecoration(
-          color: cor,
-          shape: BoxShape.circle,
-          border: Border.all(color: isDark ? superficieEscura : superficieClara, width: 2),
-        ),
-      );
+    width: 11,
+    height: 11,
+    decoration: BoxDecoration(
+      color: cor,
+      shape: BoxShape.circle,
+      border: Border.all(
+        color: isDark ? superficieEscura : superficieClara,
+        width: 2,
+      ),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -3110,8 +2731,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     // aqui e so pra nao colar na borda -- ficava alto demais quando era 26,
     // porque sobrava o espaco que a barra de status ocupava antes
     final double recuoTopo = MediaQuery.of(context).padding.top;
-    final double topOffset = (recuoTopo > 0 ? recuoTopo : 6) + 8;
-    final bool podeAnunciar = _perfilAtual.perfilCompleto &&
+    final double topOffset = (recuoTopo > 0 ? recuoTopo : 12) + 8;
+    final bool podeAnunciar =
+        _perfilAtual.perfilCompleto &&
         _perfilAtual.tipoUsuario.toLowerCase() == 'proprietario';
 
     // altura aproximada que o card do local buscado ocupa na base da tela --
@@ -3143,13 +2765,17 @@ class _CentroDoMapaState extends State<CentroDoMapa>
           // o controle da camera com quem esta olhando o mapa
           onCameraMoveStarted: () {
             if (!_navegando || !_seguindoCamera) return;
-            final desdeOAjuste =
-                DateTime.now().difference(_ultimoAjusteCamera).inMilliseconds;
+            final desdeOAjuste = DateTime.now()
+                .difference(_ultimoAjusteCamera)
+                .inMilliseconds;
             if (desdeOAjuste > 1300) {
               setState(() => _seguindoCamera = false);
             }
           },
-          initialCameraPosition: CameraPosition(target: posicaoInatel, zoom: 15.0),
+          initialCameraPosition: CameraPosition(
+            target: posicaoInatel,
+            zoom: 15.0,
+          ),
           // so liga o ponto azul com permissao NOSSA na mao: com true o
           // proprio plugin do mapa abre o dialogo do sistema por fora, sem
           // explicar nada -- e e justamente a pergunta que a gente quer fazer
@@ -3171,10 +2797,8 @@ class _CentroDoMapaState extends State<CentroDoMapa>
             // encerrar -- o logo do Google tem que ficar acima dele
             bottom: _navegando
                 ? MediaQuery.of(context).padding.bottom + 96
-                // o plugin ja poe uma margem propria em volta do logo; sem
-                // o card, tirar 6 faz ele encostar na barra em vez de flutuar
-                // solto no mapa, ainda sem ficar coberto por ela
-                : acimaDaBarra + (_mostrandoCardLocal ? alturaCardLocal : -6),
+                // Mantem a atribuicao acima do painel flutuante.
+                : acimaDaBarra + alturaCardLocal,
           ),
           zoomControlsEnabled: false,
           // a bussola nativa aparecia no canto superior esquerdo, atras do
@@ -3194,7 +2818,10 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                 // rotation em graus de bussola. Como a camera tambem gira pelo
                 // rumo, a seta acaba sempre apontando pro topo da tela
                 rotation: _rumoSuave,
-                anchor: const Offset(0.5, 0.5), // gira em torno do proprio centro
+                anchor: const Offset(
+                  0.5,
+                  0.5,
+                ), // gira em torno do proprio centro
                 flat: true, // deita no mapa: acompanha giro e inclinacao
                 zIndexInt: 5,
               ),
@@ -3217,178 +2844,227 @@ class _CentroDoMapaState extends State<CentroDoMapa>
             if (!_navegando) ..._destaqueAreaBusca,
           },
           polygons: _navegando ? const {} : _preenchimentoAreaBusca,
-          mapType: _modoMapaAtual == 'Satélite' ? MapType.satellite : MapType.normal,
+          mapType: _modoMapaAtual == 'Satélite'
+              ? MapType.satellite
+              : MapType.normal,
           style: _estiloAtivo,
         ),
 
         if (!_navegando)
-        Positioned(
-          top: topOffset,
-          left: 16,
-          right: 16,
-          child: FadeTransition(
-            opacity: _fadeAnim,
-            child: SlideTransition(
-              position: _slideAnim,
-              // isola a camada: o painel de cima nao muda enquanto o mapa
-              // arrasta, entao sem RepaintBoundary o Flutter pode redesenhar
-              // rim/especular/sombra a cada frame do arraste de graca
-              child: RepaintBoundary(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
+          Positioned(
+            top: topOffset,
+            left: 16,
+            right: 16,
+            child: FadeTransition(
+              opacity: _fadeAnim,
+              child: SlideTransition(
+                position: _slideAnim,
+                // isola a camada: o painel de cima nao muda enquanto o mapa
+                // arrasta, entao sem RepaintBoundary o Flutter pode redesenhar
+                // rim/especular/sombra a cada frame do arraste de graca
+                child: RepaintBoundary(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _buildGlassButton(
-                        child: AvatarWidget(nome: _perfilAtual.nome, fotoUrl: _perfilAtual.fotoUrl, size: 44),
-                        onTap: _mostrarPerfil,
-                        badgeColor: _perfilAtual.perfilCompleto ? null : corErro,
-                      ),
-                      const SizedBox(width: 10),
-
-                      Expanded(
-                        child: GlassCard(
-                          // era pilula; 22 deixa menos redondo sem virar caixa
-                          radius: 22,
-                          // UM painel de vidro so, com a busca e os controles
-                          // dentro (igual a referencia) -- antes eram duas
-                          // pecas separadas flutuando lado a lado
-                          child: Row(
-                            children: [
-                              Expanded(
-                                // com local escolhido e o campo sem foco,
-                                // mostra um rotulo com reticencias em vez do
-                                // TextField. Motivo: TextField nao tem
-                                // overflow -- texto que nao cabe ele corta
-                                // seco, e "Inatel - Instituto Nacional de
-                                // Telecomunicacoes" virava "Inatel - Instituto
-                                // Nac", parecendo que o nome era aquilo.
-                                //
-                                // Truncar a string do controller NAO serve:
-                                // _atualizarMarcadoresFiltrados filtra os
-                                // imoveis com contains() nesse mesmo texto, e
-                                // com "..." no fim nenhum casaria -- os
-                                // markers todos desapareceriam do mapa
-                                child: (_localSelecionado != null && !_editandoBusca)
-                                    ? _rotuloLocalNaBusca(isDark)
-                                    : TextField(
-                            controller: _buscaController,
-                            focusNode: _buscaFocusNode,
-                            // centraliza o texto na vertical. Sem isso o
-                            // InputDecoration alinhava o conteudo pela
-                            // baseline e o hint ficava ~3px acima do centro da
-                            // pilula, desalinhado dos icones da direita --
-                            // acontece quando ha prefixIcon e nenhum suffixIcon
-                            textAlignVertical: TextAlignVertical.center,
-                            style: TextStyle(
-                              color: isDark ? Colors.white : Colors.black87,
-                              fontSize: 15,
+                      Row(
+                        children: [
+                          _buildGlassButton(
+                            child: AvatarWidget(
+                              nome: _perfilAtual.nome,
+                              fotoUrl: _perfilAtual.fotoUrl,
+                              size: 40,
                             ),
-                            decoration: InputDecoration(
-                              hintText: 'Buscar locais...',
-                              hintStyle: TextStyle(
-                                color: isDark ? Colors.white38 : Colors.black38,
-                                fontWeight: FontWeight.w500,
+                            onTap: _mostrarPerfil,
+                            badgeColor: _perfilAtual.perfilCompleto
+                                ? null
+                                : corErro,
+                          ),
+                          const SizedBox(width: 10),
+
+                          Expanded(
+                            child: MapGlassSurface(
+                              radius: 28,
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    // com local escolhido e o campo sem foco,
+                                    // mostra um rotulo com reticencias em vez do
+                                    // TextField. Motivo: TextField nao tem
+                                    // overflow -- texto que nao cabe ele corta
+                                    // seco, e "Inatel - Instituto Nacional de
+                                    // Telecomunicacoes" virava "Inatel - Instituto
+                                    // Nac", parecendo que o nome era aquilo.
+                                    //
+                                    // Truncar a string do controller NAO serve:
+                                    // _atualizarMarcadoresFiltrados filtra os
+                                    // imoveis com contains() nesse mesmo texto, e
+                                    // com "..." no fim nenhum casaria -- os
+                                    // markers todos desapareceriam do mapa
+                                    child:
+                                        (_localSelecionado != null &&
+                                            !_editandoBusca)
+                                        ? _rotuloLocalNaBusca(isDark)
+                                        : TextField(
+                                            controller: _buscaController,
+                                            focusNode: _buscaFocusNode,
+                                            // centraliza o texto na vertical. Sem isso o
+                                            // InputDecoration alinhava o conteudo pela
+                                            // baseline e o hint ficava ~3px acima do centro da
+                                            // pilula, desalinhado dos icones da direita --
+                                            // acontece quando ha prefixIcon e nenhum suffixIcon
+                                            textAlignVertical:
+                                                TextAlignVertical.center,
+                                            style: TextStyle(
+                                              color: isDark
+                                                  ? Colors.white
+                                                  : Colors.black87,
+                                              fontSize: 15,
+                                            ),
+                                            decoration: InputDecoration(
+                                              hintText: 'Buscar locais...',
+                                              hintStyle: TextStyle(
+                                                color: isDark
+                                                    ? const Color(0xFF92ABC7)
+                                                    : const Color(0xFF667E94),
+                                                fontWeight: FontWeight.w400,
+                                              ),
+                                              border: InputBorder.none,
+                                              prefixIcon: Icon(
+                                                Icons.search_rounded,
+                                                color: isDark
+                                                    ? Colors.white
+                                                    : corPrimaria,
+                                                size: 23,
+                                              ),
+                                              prefixIconConstraints:
+                                                  const BoxConstraints(
+                                                    minWidth: 42,
+                                                    minHeight: 48,
+                                                  ),
+                                              // o botao de filtros saiu de dentro do campo e
+                                              // foi pro controle da direita, junto da
+                                              // engrenagem -- so o "limpar" continua aqui,
+                                              // porque pertence ao texto digitado
+                                              suffixIcon: _buscaComTexto
+                                                  ? IconButton(
+                                                      icon: const Icon(
+                                                        Icons.close_rounded,
+                                                        color: Colors.grey,
+                                                        size: 20,
+                                                      ),
+                                                      onPressed: () =>
+                                                          _buscaController
+                                                              .clear(),
+                                                    )
+                                                  : null,
+                                              contentPadding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: AppSpacing.lg,
+                                                    vertical: AppSpacing.md - 1,
+                                                  ),
+                                            ),
+                                          ),
+                                  ),
+                                  _ajustesDentroDaBusca(isDark),
+                                ],
                               ),
-                              border: InputBorder.none,
-                              prefixIcon: Icon(Icons.search_rounded, color: isDark ? Colors.white54 : Colors.black38, size: 20),
-                              // o botao de filtros saiu de dentro do campo e
-                              // foi pro controle da direita, junto da
-                              // engrenagem -- so o "limpar" continua aqui,
-                              // porque pertence ao texto digitado
-                              suffixIcon: _buscaComTexto
-                                  ? IconButton(
-                                      icon: const Icon(Icons.close_rounded, color: Colors.grey, size: 20),
-                                      onPressed: () => _buscaController.clear(),
-                                    )
-                                  : null,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md - 1),
                             ),
                           ),
-                              ),
-                              _ajustesDentroDaBusca(isDark),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  // chip de "Cidades parceiras" retirado da UI a pedido
-                  // (feature parada por enquanto). Os metodos continuam
-                  // abaixo, marcados como nao usados -- e so religar aqui
-
-                  // o painel aparece assim que ha o que dizer -- inclusive
-                  // "estou procurando" e "nao achei". Sumir sem explicacao
-                  // enquanto a busca online roda parecia busca quebrada
-                  if (_buscaFocusNode.hasFocus &&
-                      _buscaComTexto &&
-                      (_sugestoes.isNotEmpty || _buscandoOnline || _semResultado))
-                    Container(
-                      margin: const EdgeInsets.only(top: 8),
-                      constraints: const BoxConstraints(maxHeight: 260),
-                      decoration: BoxDecoration(
-                        color: isDark ? superficieEscura : superficieClara,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(color: Colors.black.withAlpha(isDark ? 60 : 15), blurRadius: 16, offset: const Offset(0, 6)),
                         ],
                       ),
-                      child: ListView.separated(
-                        shrinkWrap: true,
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        // a ultima linha e o rodape de estado (procurando /
-                        // nao achei), por isso o +1
-                        itemCount: _sugestoes.length + (_rodapeBusca(isDark) == null ? 0 : 1),
-                        separatorBuilder: (_, _) => Divider(
-                          height: 1, indent: 56,
-                          color: isDark ? Colors.white.withAlpha(10) : Colors.grey.withAlpha(20),
-                        ),
-                        itemBuilder: (context, index) {
-                          if (index >= _sugestoes.length) {
-                            return _rodapeBusca(isDark)!;
-                          }
-                          final sugestao = _sugestoes[index];
-                          final IconData icone = switch (sugestao.tipo) {
-                            TipoSugestao.cidade => Icons.location_city_rounded,
-                            TipoSugestao.faculdade => Icons.school_rounded,
-                            TipoSugestao.moradia => Icons.home_rounded,
-                            TipoSugestao.endereco => Icons.signpost_outlined,
-                          };
-                          return ListTile(
-                            dense: true,
-                            leading: Icon(icone, color: corPrimaria),
-                            title: Text(
-                              sugestao.texto,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTextStyles.bodyBold.copyWith(
-                                color: isDark ? Colors.white : Colors.black87,
+                      // chip de "Cidades parceiras" retirado da UI a pedido
+                      // (feature parada por enquanto). Os metodos continuam
+                      // abaixo, marcados como nao usados -- e so religar aqui
+
+                      // o painel aparece assim que ha o que dizer -- inclusive
+                      // "estou procurando" e "nao achei". Sumir sem explicacao
+                      // enquanto a busca online roda parecia busca quebrada
+                      if (_buscaFocusNode.hasFocus &&
+                          _buscaComTexto &&
+                          (_sugestoes.isNotEmpty ||
+                              _buscandoOnline ||
+                              _semResultado))
+                        Container(
+                          margin: const EdgeInsets.only(top: 8),
+                          constraints: const BoxConstraints(maxHeight: 260),
+                          decoration: BoxDecoration(
+                            color: isDark ? superficieEscura : superficieClara,
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withAlpha(isDark ? 60 : 15),
+                                blurRadius: 16,
+                                offset: const Offset(0, 6),
                               ),
+                            ],
+                          ),
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            // a ultima linha e o rodape de estado (procurando /
+                            // nao achei), por isso o +1
+                            itemCount:
+                                _sugestoes.length +
+                                (_rodapeBusca(isDark) == null ? 0 : 1),
+                            separatorBuilder: (_, _) => Divider(
+                              height: 1,
+                              indent: 56,
+                              color: isDark
+                                  ? Colors.white.withAlpha(10)
+                                  : Colors.grey.withAlpha(20),
                             ),
-                            // onde o lugar fica (cidade, estado) numa linha
-                            // separada: antes vinha tudo grudado no titulo,
-                            // numa linha so, e o nome do lugar se perdia
-                            subtitle: sugestao.detalhe.isEmpty
-                                ? null
-                                : Text(
-                                    sugestao.detalhe,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: AppTextStyles.caption.copyWith(
-                                      color: isDark ? Colors.white38 : Colors.black45,
-                                    ),
+                            itemBuilder: (context, index) {
+                              if (index >= _sugestoes.length) {
+                                return _rodapeBusca(isDark)!;
+                              }
+                              final sugestao = _sugestoes[index];
+                              final IconData icone = switch (sugestao.tipo) {
+                                TipoSugestao.cidade =>
+                                  Icons.location_city_rounded,
+                                TipoSugestao.faculdade => Icons.school_rounded,
+                                TipoSugestao.moradia => Icons.home_rounded,
+                                TipoSugestao.endereco =>
+                                  Icons.signpost_outlined,
+                              };
+                              return ListTile(
+                                dense: true,
+                                leading: Icon(icone, color: corPrimaria),
+                                title: Text(
+                                  sugestao.texto,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTextStyles.bodyBold.copyWith(
+                                    color: isDark
+                                        ? Colors.white
+                                        : Colors.black87,
                                   ),
-                            onTap: () => _selecionarSugestao(sugestao),
-                          );
-                        },
-                      ),
-                    ),
-                ],
-              ),
+                                ),
+                                // onde o lugar fica (cidade, estado) numa linha
+                                // separada: antes vinha tudo grudado no titulo,
+                                // numa linha so, e o nome do lugar se perdia
+                                subtitle: sugestao.detalhe.isEmpty
+                                    ? null
+                                    : Text(
+                                        sugestao.detalhe,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: AppTextStyles.caption.copyWith(
+                                          color: isDark
+                                              ? Colors.white38
+                                              : Colors.black45,
+                                        ),
+                                      ),
+                                onTap: () => _selecionarSugestao(sugestao),
+                              );
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
-        ),
 
         // cartao com a distancia/duracao da rota pedida na tela de detalhes,
         // ou um spinner enquanto ela ainda ta sendo calculada
@@ -3402,103 +3078,154 @@ class _CentroDoMapaState extends State<CentroDoMapa>
               // direcao de onde o elemento "vem" explica a origem dele
               de: const Offset(0, -0.18),
               child: GlassCard(
-              radius: 24,
-              sombra: AppShadows.nivel3(isDark),
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.lg - 2),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // navegando, o seletor de modal e o de alternativas saem:
-                  // trocar de rota no meio do percurso nao faz sentido e eles
-                  // roubam espaco de tela que a navegacao precisa
-                  if (_rotaAtual != null && !_navegando) ...[
-                    _seletorModoTransporte(isDark),
-                    const SizedBox(height: 12),
-                    Divider(height: 1, color: isDark ? Colors.white.withAlpha(10) : Colors.grey.withAlpha(20)),
-                    const SizedBox(height: 12),
-                    // so faz sentido oferecer escolha quando o Google mandou
-                    // mais de um trajeto -- as vezes ele devolve um so
-                    if (_rotaAtual!.opcoes.length > 1) ...[
-                      _seletorAlternativas(isDark),
+                radius: 24,
+                sombra: AppShadows.nivel3(isDark),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.lg,
+                  vertical: AppSpacing.lg - 2,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // navegando, o seletor de modal e o de alternativas saem:
+                    // trocar de rota no meio do percurso nao faz sentido e eles
+                    // roubam espaco de tela que a navegacao precisa
+                    if (_rotaAtual != null && !_navegando) ...[
+                      _seletorModoTransporte(isDark),
                       const SizedBox(height: 12),
+                      Divider(
+                        height: 1,
+                        color: isDark
+                            ? Colors.white.withAlpha(10)
+                            : Colors.grey.withAlpha(20),
+                      ),
+                      const SizedBox(height: 12),
+                      // so faz sentido oferecer escolha quando o Google mandou
+                      // mais de um trajeto -- as vezes ele devolve um so
+                      if (_rotaAtual!.opcoes.length > 1) ...[
+                        _seletorAlternativas(isDark),
+                        const SizedBox(height: 12),
+                      ],
                     ],
-                  ],
-                  _carregandoRota
-                      ? Row(
-                          children: [
-                            const SizedBox(
-                              width: 18, height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2.5, color: corPrimaria),
-                            ),
-                            const SizedBox(width: 12),
-                            Text('Calculando rota...', style: TextStyle(color: isDark ? Colors.white70 : Colors.black87)),
-                          ],
-                        )
-                      : Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(gradient: gradientePrincipal, borderRadius: BorderRadius.circular(10)),
-                              child: const Icon(Icons.alt_route_rounded, color: Colors.white, size: 18),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Até ${_rotaAtual!.nomeDestino}',
-                                    style: TextStyle(fontWeight: FontWeight.w700, color: isDark ? Colors.white : Colors.black87),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    '${_rotaAtual!.selecionada.distanciaTexto} · ${_rotaAtual!.selecionada.duracaoTexto}',
-                                    style: AppTextStyles.caption.copyWith(color: isDark ? Colors.white38 : Colors.grey),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            // "Ir" entra na navegacao; navegando, vira "Sair"
-                            Pressionavel(
-                              onTap: _navegando ? _encerrarNavegacao : _iniciarNavegacao,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: AppSpacing.lg, vertical: AppSpacing.sm + 2),
-                                decoration: BoxDecoration(
-                                  gradient: _navegando ? null : gradientePrincipal,
-                                  color: _navegando ? corErro : null,
-                                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                    _carregandoRota
+                        ? Row(
+                            children: [
+                              const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.5,
+                                  color: corPrimaria,
                                 ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                'Calculando rota...',
+                                style: TextStyle(
+                                  color: isDark
+                                      ? Colors.white70
+                                      : Colors.black87,
+                                ),
+                              ),
+                            ],
+                          )
+                        : Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  gradient: gradientePrincipal,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(
+                                  Icons.alt_route_rounded,
+                                  color: Colors.white,
+                                  size: 18,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Icon(
-                                      _navegando ? Icons.close_rounded : Icons.navigation_rounded,
-                                      color: Colors.white,
-                                      size: 17,
-                                    ),
-                                    const SizedBox(width: AppSpacing.xs + 2),
                                     Text(
-                                      _navegando ? 'Sair' : 'Ir',
-                                      style: AppTextStyles.captionBold.copyWith(color: Colors.white),
+                                      'Até ${_rotaAtual!.nomeDestino}',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        color: isDark
+                                            ? Colors.white
+                                            : Colors.black87,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      '${_rotaAtual!.selecionada.distanciaTexto} · ${_rotaAtual!.selecionada.duracaoTexto}',
+                                      style: AppTextStyles.caption.copyWith(
+                                        color: isDark
+                                            ? Colors.white38
+                                            : Colors.grey,
+                                      ),
                                     ),
                                   ],
                                 ),
                               ),
-                            ),
-                            if (!_navegando)
-                              IconButton(
-                                onPressed: _limparRota,
-                                icon: Icon(Icons.close_rounded, color: isDark ? Colors.white38 : Colors.grey),
+                              // "Ir" entra na navegacao; navegando, vira "Sair"
+                              Pressionavel(
+                                onTap: _navegando
+                                    ? _encerrarNavegacao
+                                    : _iniciarNavegacao,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: AppSpacing.lg,
+                                    vertical: AppSpacing.sm + 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    gradient: _navegando
+                                        ? null
+                                        : gradientePrincipal,
+                                    color: _navegando ? corErro : null,
+                                    borderRadius: BorderRadius.circular(
+                                      AppRadius.sm,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        _navegando
+                                            ? Icons.close_rounded
+                                            : Icons.navigation_rounded,
+                                        color: Colors.white,
+                                        size: 17,
+                                      ),
+                                      const SizedBox(width: AppSpacing.xs + 2),
+                                      Text(
+                                        _navegando ? 'Sair' : 'Ir',
+                                        style: AppTextStyles.captionBold
+                                            .copyWith(color: Colors.white),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
-                          ],
-                        ),
-                ],
+                              if (!_navegando)
+                                IconButton(
+                                  onPressed: _limparRota,
+                                  icon: Icon(
+                                    Icons.close_rounded,
+                                    color: isDark
+                                        ? Colors.white38
+                                        : Colors.grey,
+                                  ),
+                                ),
+                            ],
+                          ),
+                  ],
+                ),
               ),
-            ),
             ),
           ),
 
@@ -3521,40 +3248,42 @@ class _CentroDoMapaState extends State<CentroDoMapa>
         // botao pra focar na localizacao do usuario. Sai na navegacao: o
         // painel tem o proprio recentralizar e os dois colidiam no canto
         if (!_navegando)
-        Positioned(
-          // sobe se o botao de anunciar estiver visivel, e mais ainda se o
-          // card do local buscado estiver ocupando a base da tela
-          bottom: acimaDaBarra + alturaCardLocal + (podeAnunciar ? 84 : AppSpacing.md),
-          right: 16,
-          // era um FloatingActionButton solido -- virou vidro pra combinar com
-          // as outras superficies flutuantes do mapa, e ganhou o retorno de
-          // toque que o FAB do Material ja tinha e a gente perderia sem isso
-          child: Pressionavel(
-            onTap: _obterLocalizacaoReal,
-            child: GlassCard(
-              radius: 20,
-              sombra: AppShadows.nivel2(isDark),
-              child: SizedBox(
-                width: 52,
-                height: 52,
-                child: Center(
-                  // icone cortado quando nao ha permissao: o botao continua
-                  // clicavel (abre a explicacao), mas dizendo de cara que a
-                  // localizacao esta desligada em vez de fingir que funciona
-                  child: Icon(
-                    temLocalizacao
-                        ? Icons.my_location_rounded
-                        : Icons.location_disabled_rounded,
-                    color: temLocalizacao
-                        ? (isDark ? Colors.white : Colors.black87)
-                        : (isDark ? Colors.white38 : Colors.black38),
-                    size: 24,
+          Positioned(
+            // sobe se o botao de anunciar estiver visivel, e mais ainda se o
+            // card do local buscado estiver ocupando a base da tela
+            bottom:
+                acimaDaBarra +
+                alturaCardLocal +
+                (podeAnunciar ? 84 : AppSpacing.md),
+            right: 16,
+            // era um FloatingActionButton solido -- virou vidro pra combinar com
+            // as outras superficies flutuantes do mapa, e ganhou o retorno de
+            // toque que o FAB do Material ja tinha e a gente perderia sem isso
+            child: Pressionavel(
+              onTap: _obterLocalizacaoReal,
+              child: MapGlassSurface(
+                radius: 22,
+                child: SizedBox(
+                  width: 52,
+                  height: 52,
+                  child: Center(
+                    // icone cortado quando nao ha permissao: o botao continua
+                    // clicavel (abre a explicacao), mas dizendo de cara que a
+                    // localizacao esta desligada em vez de fingir que funciona
+                    child: Icon(
+                      temLocalizacao
+                          ? Icons.my_location_rounded
+                          : Icons.location_disabled_rounded,
+                      color: temLocalizacao
+                          ? (isDark ? Colors.white : Colors.black87)
+                          : (isDark ? Colors.white38 : Colors.black38),
+                      size: 24,
+                    ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
 
         if (podeAnunciar && !_navegando)
           Positioned(
@@ -3579,7 +3308,9 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (context) => const NovoAnuncioScreen()),
+                      MaterialPageRoute(
+                        builder: (context) => const NovoAnuncioScreen(),
+                      ),
                     );
                   },
                   child: const Padding(
@@ -3587,7 +3318,11 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.add_home_rounded, color: Colors.white, size: 22),
+                        Icon(
+                          Icons.add_home_rounded,
+                          color: Colors.white,
+                          size: 22,
+                        ),
                         SizedBox(width: 8),
                         Text(
                           'Anunciar',
@@ -3629,7 +3364,9 @@ class _PerfilPreview extends StatelessWidget {
       case 'proprietario':
         return 'Proprietário';
       case 'corretor':
-        return perfil.subtipoCorretor == 'empresa' ? 'Corretor (Empresa)' : 'Corretor Autônomo';
+        return perfil.subtipoCorretor == 'empresa'
+            ? 'Corretor (Empresa)'
+            : 'Corretor Autônomo';
       case 'estudante':
         return 'Estudante';
       default:
@@ -3653,7 +3390,9 @@ class _PerfilPreview extends StatelessWidget {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: isDark ? Colors.white.withAlpha(30) : Colors.grey.shade300,
+                color: isDark
+                    ? Colors.white.withAlpha(30)
+                    : Colors.grey.shade300,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -3671,25 +3410,41 @@ class _PerfilPreview extends StatelessWidget {
                 const SizedBox(height: 16),
                 Text(
                   perfil.nome.isNotEmpty ? perfil.nome : 'Usuário Hive',
-                  style: AppTextStyles.heading3.copyWith(color: isDark ? Colors.white : Colors.black87),
+                  style: AppTextStyles.heading3.copyWith(
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
                 ),
                 const SizedBox(height: 4),
-                Text(_rotuloTipo, style: AppTextStyles.captionBold.copyWith(color: corPrimaria)),
+                Text(
+                  _rotuloTipo,
+                  style: AppTextStyles.captionBold.copyWith(color: corPrimaria),
+                ),
                 const SizedBox(height: 4),
                 Text(
                   perfil.email,
-                  style: AppTextStyles.caption.copyWith(color: isDark ? Colors.white38 : Colors.grey),
+                  style: AppTextStyles.caption.copyWith(
+                    color: isDark ? Colors.white38 : Colors.grey,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: corSelo.withAlpha(25),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    perfil.perfilCompleto ? 'Perfil completo' : 'Perfil incompleto',
-                    style: TextStyle(color: corSelo, fontWeight: FontWeight.w700, fontSize: 12),
+                    perfil.perfilCompleto
+                        ? 'Perfil completo'
+                        : 'Perfil incompleto',
+                    style: TextStyle(
+                      color: corSelo,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
               ],
@@ -3705,7 +3460,11 @@ class _PerfilPreview extends StatelessWidget {
             valueListenable: NotificacaoService.instance.naoLidas,
             builder: (_, naoLidas, _) => OutlinedButton.icon(
               onPressed: onVerNotificacoes,
-              icon: Icon(Icons.notifications_none_rounded, color: isDark ? Colors.white : Colors.black87, size: 18),
+              icon: Icon(
+                Icons.notifications_none_rounded,
+                color: isDark ? Colors.white : Colors.black87,
+                size: 18,
+              ),
               label: Text(
                 naoLidas > 0 ? 'Notificações ($naoLidas)' : 'Notificações',
                 style: TextStyle(
@@ -3715,8 +3474,12 @@ class _PerfilPreview extends StatelessWidget {
               ),
               style: OutlinedButton.styleFrom(
                 minimumSize: const Size.fromHeight(44),
-                side: BorderSide(color: isDark ? Colors.white24 : Colors.black12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
+                side: BorderSide(
+                  color: isDark ? Colors.white24 : Colors.black12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                ),
               ),
             ),
           ),
@@ -3724,13 +3487,17 @@ class _PerfilPreview extends StatelessWidget {
           TextButton.icon(
             onPressed: onSair,
             icon: const Icon(Icons.logout_rounded, color: corErro, size: 18),
-            label: const Text('Sair da conta', style: TextStyle(color: corErro, fontWeight: FontWeight.w600)),
+            label: const Text(
+              'Sair da conta',
+              style: TextStyle(color: corErro, fontWeight: FontWeight.w600),
+            ),
           ),
         ],
       ),
     );
   }
 }
+
 // entrada de elemento flutuante: desliza da direcao de onde ele "vem" e
 // aparece por fade ao mesmo tempo. Elemento que simplesmente pisca na tela
 // nao explica de onde surgiu -- o deslize curto (uma fracao da altura) da
@@ -3774,47 +3541,12 @@ class _EntradaDeslizanteState extends State<_EntradaDeslizante>
     return FadeTransition(
       opacity: curva,
       child: SlideTransition(
-        position: Tween<Offset>(begin: widget.de, end: Offset.zero).animate(curva),
+        position: Tween<Offset>(
+          begin: widget.de,
+          end: Offset.zero,
+        ).animate(curva),
         child: widget.child,
       ),
     );
   }
-}
-
-// dona dos dois campos de preco da folha de filtros.
-//
-// Os TextEditingController nao podem ser descartados assim que o
-// showModalBottomSheet retorna: a folha ainda esta descendo na tela e os
-// TextField se reconstroem durante a animacao -- usar um controller ja
-// descartado ali lanca "A TextEditingController was used after being
-// disposed". Como widget, o descarte cai no dispose dela, que so roda quando
-// a rota sai de vez
-class _CamposDePreco extends StatefulWidget {
-  final String minimoInicial;
-  final String maximoInicial;
-  final Widget Function(BuildContext, TextEditingController, TextEditingController) builder;
-
-  const _CamposDePreco({
-    required this.minimoInicial,
-    required this.maximoInicial,
-    required this.builder,
-  });
-
-  @override
-  State<_CamposDePreco> createState() => _CamposDePrecoState();
-}
-
-class _CamposDePrecoState extends State<_CamposDePreco> {
-  late final TextEditingController _minimo = TextEditingController(text: widget.minimoInicial);
-  late final TextEditingController _maximo = TextEditingController(text: widget.maximoInicial);
-
-  @override
-  void dispose() {
-    _minimo.dispose();
-    _maximo.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => widget.builder(context, _minimo, _maximo);
 }

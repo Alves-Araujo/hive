@@ -19,6 +19,8 @@ import 'screens/chat_list_screen.dart';
 import 'services/notificacao_service.dart';
 import 'services/rota_service.dart';
 import 'utils/cor_foto.dart';
+import 'widgets/map_glass_surface.dart';
+import 'widgets/abas_persistentes.dart';
 
 // true enquanto o modo "Ir" esta ativo. A barra de navegacao inferior some
 // nesse estado: navegacao e um modo que toma a tela, e trocar de aba no meio
@@ -405,12 +407,10 @@ class TelaPrincipal extends StatefulWidget {
   State<TelaPrincipal> createState() => _TelaPrincipalState();
 }
 
-class _TelaPrincipalState extends State<TelaPrincipal>
-    with SingleTickerProviderStateMixin {
+class _TelaPrincipalState extends State<TelaPrincipal> {
   int _indiceAtual = 0;
   late final List<Widget> _telas;
   late final List<_ItemNav> _itensNav;
-  late AnimationController _navAnimController;
   late VoidCallback _rotaPendenteListener;
 
   // painel de imoveis so aparece pra quem pode anunciar (proprietario/corretor)
@@ -435,11 +435,6 @@ class _TelaPrincipalState extends State<TelaPrincipal>
       if (_temPainel)
         const _ItemNav(icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'Imóveis'),
     ];
-    _navAnimController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
-    );
-    _navAnimController.forward();
 
     // a tela de detalhes pode ter sido aberta a partir da aba Resumo, mas a
     // rota so eh desenhada no mapa -- escuta rotaCarregandoGlobal (nao
@@ -462,7 +457,6 @@ class _TelaPrincipalState extends State<TelaPrincipal>
     rotaCarregandoGlobal.removeListener(_rotaPendenteListener);
     NotificacaoService.instance.ultimaRecebida.removeListener(_mostrarAvisoRecebido);
     NotificacaoService.instance.parar();
-    _navAnimController.dispose();
     super.dispose();
   }
 
@@ -529,162 +523,100 @@ class _TelaPrincipalState extends State<TelaPrincipal>
       // O mapa compensa com padding no rodape (le a altura real da barra pelo
       // padding.bottom do MediaQuery) pra o logo do Google nao ficar escondido
       extendBody: true,
-      body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 250),
-        child: IndexedStack(
-          key: ValueKey(_indiceAtual),
-          index: _indiceAtual,
-          children: _telas,
-        ),
-      ),
-      // sombra pra CIMA (offset negativo) fica no DecoratedBox de fora, porque
-      // o ClipRect de dentro cortaria ela -- e sem essa sombra a barra de
-      // vidro cola no conteudo e perde a leitura de estar por cima
-      // isola a camada da barra tambem -- ela nao muda durante o arraste
+      // Mantem a instancia do mapa entre abas. Recriar a platform view a
+      // cada toque fazia o mapa recarregar e repetia suas assinaturas.
+      body: AbasPersistentes(indice: _indiceAtual, telas: _telas),
       bottomNavigationBar: ValueListenableBuilder<bool>(
         valueListenable: navegandoGlobal,
         builder: (_, navegando, barra) =>
             navegando ? const SizedBox.shrink() : barra!,
-        child: RepaintBoundary(
-        child: DecoratedBox(
-        decoration: BoxDecoration(
-          // o raio TAMBEM aqui, nao so no ClipRRect: sem ele a sombra e
-          // lancada de um retangulo e aparece como um canto quadrado atras da
-          // quina arredondada, que era metade do efeito de "redondo dentro de
-          // quadrado". Sombra tem que seguir a forma da peca
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withAlpha(isDark ? 60 : 20),
-              blurRadius: 24,
-              offset: const Offset(0, -6),
-            ),
-          ],
-        ),
-        // cantos de cima arredondados, igual a referencia -- e o que faz a
-        // barra ler como painel apoiado sobre o mapa, nao como rodape colado
-        child: ClipRRect(
-          // 24 em vez de 28: menos redondo, como pedido, sem ficar quadrado
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          // sem BackdropFilter: sobre o GoogleMap (platform view) mesmo UM
-          // filtro estoura o orcamento de frame -- a tabela de medicoes esta
-          // no glass_card.dart. O vidro aqui e feito de pintura
-          child: DecoratedBox(
-              decoration: BoxDecoration(
-                // quase opaca: sem blur, preenchimento fraco deixava os rotulos
-                // do mapa atravessando e colidindo com "Resumo" e "Chat"
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  stops: const [0, 0.55, 1],
-                  colors: isDark
-                      ? [
-                          // tom azulado e mais claro que a base do mapa
-                          // escuro (#0f1620) -- com corCardEscuro (#16161F) a
-                          // luminancia era quase igual a do mapa e a barra se
-                          // dissolvia no fundo, sem separacao nenhuma
-                          Color.alphaBlend(Colors.white.withAlpha(26), superficieEscura.withAlpha(248)),
-                          superficieEscura.withAlpha(246),
-                          Color.alphaBlend(corPrimaria.withAlpha(24), superficieEscura.withAlpha(248)),
-                        ]
-                      : [
-                          // NAO branco puro: sobre o mapa (off-white e bege) a
-                          // barra branca ficava mais clara que tudo e nao ornava
-                          superficieClara.withAlpha(250),
-                          superficieClara.withAlpha(244),
-                          Color.alphaBlend(corPrimaria.withAlpha(16), superficieClara.withAlpha(247)),
-                        ],
-                ),
-                border: Border(
-                  // era alpha 252 com 1.4 de largura, ou seja, uma linha
-                  // branca solida atravessando o topo da barra. Reduzido pra
-                  // so separar a barra do mapa sem desenhar contorno
-                  top: BorderSide(
-                    color: isDark ? Colors.white.withAlpha(18) : Colors.white.withAlpha(52),
-                    width: 1,
+        child: SafeArea(
+          top: false,
+          minimum: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+          child: MapGlassSurface(
+            radius: 32,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            child: Row(
+              children: [
+                for (var i = 0; i < _itensNav.length; i++)
+                  _buildNavItemEmpilhado(
+                    i, _itensNav[i].icon, _itensNav[i].activeIcon,
+                    _itensNav[i].label, isDark,
                   ),
-                ),
-              ),
-              child: SafeArea(
-                top: false,
-                child: Padding(
-                  padding: const EdgeInsets.only(
-                    left: AppSpacing.sm,
-                    right: AppSpacing.sm,
-                    top: AppSpacing.md,
-                    bottom: AppSpacing.sm,
-                  ),
-                  child: Row(
-                    children: [
-                      for (var i = 0; i < _itensNav.length; i++)
-                        _buildNavItemEmpilhado(
-                            i, _itensNav[i].icon, _itensNav[i].activeIcon, _itensNav[i].label, isDark),
-                    ],
-                  ),
-                ),
-              ),
+              ],
             ),
           ),
         ),
       ),
-      ),
     );
   }
 
-  // item no padrao da referencia: pilula escura SO atras do icone, e o rotulo
-  // sempre visivel embaixo. Manter o rotulo em todas as abas (e nao so na
-  // ativa) e o que deixa a barra legivel de primeira -- icone sozinho obriga
-  // o usuario a adivinhar, e era isso que a barra antiga fazia
+  // Pilula azul apenas no icone; rotulos e indicador mantem a aba legivel.
   Widget _buildNavItemEmpilhado(
       int index, IconData icon, IconData activeIcon, String label, bool isDark) {
     final bool isSelected = _indiceAtual == index;
-
-    // no escuro a pilula era BRANCA com icone escuro -- invertia a leitura do
-    // modo claro e perdia a identidade azul do app. Agora usa um azul da
-    // marca claro o bastante pra funcionar sobre fundo escuro, e o icone
-    // segue branco nos dois temas
-    final Color corPilula = isDark ? const Color(0xFF1E5E96) : const Color(0xFF14304F);
-    // o rotulo precisa de um azul mais claro que a pilula pra ser legivel
-    // sobre o fundo escuro da barra
-    final Color corAtiva = isDark ? const Color(0xFF8FBEE8) : const Color(0xFF14304F);
-    final Color corInativa = isDark ? const Color(0xFF6B7A88) : const Color(0xFF8A9691);
+    const Color corPilula = corPrimaria;
+    final Color corAtiva = isDark ? const Color(0xFF3399FF) : corPrimaria;
+    final Color corInativa = isDark
+        ? const Color(0xFFA6BBD3)
+        : const Color(0xFF5A7085);
 
     return Expanded(
       child: GestureDetector(
-        onTap: () => setState(() => _indiceAtual = index),
+        onTap: () {
+          if (_indiceAtual != index) setState(() => _indiceAtual = index);
+        },
         behavior: HitTestBehavior.opaque,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            AnimatedContainer(
-              duration: AppMotion.media,
-              curve: AppMotion.suave,
-              width: 58,
-              height: 34,
-              decoration: BoxDecoration(
-                color: isSelected ? corPilula : Colors.transparent,
-                borderRadius: BorderRadius.circular(15),
-                boxShadow: isSelected
-                    ? [
-                        BoxShadow(
-                          color: corPilula.withAlpha(70),
-                          blurRadius: 14,
-                          offset: const Offset(0, 5),
-                        ),
-                      ]
-                    : null,
-              ),
+            SizedBox(
+              width: 72,
+              height: 38,
               child: Stack(
                 alignment: Alignment.center,
                 children: [
-                  AnimatedSwitcher(
-                    duration: AppMotion.rapida,
-                    child: Icon(
-                      isSelected ? activeIcon : icon,
-                      key: ValueKey(isSelected),
-                      color: isSelected ? Colors.white : corInativa,
-                      size: 21,
+                  // A pilula e sua sombra ficam prontas numa camada propria.
+                  // Anima apenas alpha: interpolar BoxShadow alterava raio e
+                  // tamanho do brilho a cada frame, dando o efeito de encolher.
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: AnimatedOpacity(
+                        opacity: isSelected ? 1 : 0,
+                        duration: MediaQuery.disableAnimationsOf(context)
+                            ? Duration.zero
+                            : const Duration(milliseconds: 120),
+                        curve: Curves.easeOutCubic,
+                        child: RepaintBoundary(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [corPrimaria2, corPrimaria],
+                              ),
+                              borderRadius: BorderRadius.circular(22),
+                              border: Border.all(
+                                color: const Color(0xFF329CFF),
+                                width: 1,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: corPrimaria2.withAlpha(isDark ? 100 : 48),
+                                  blurRadius: 14,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
+                  ),
+                  Icon(
+                    isSelected ? activeIcon : icon,
+                    color: isSelected ? Colors.white : corInativa,
+                    size: 23,
                   ),
                   // notificacoes gerais (moradia, evento, imobiliaria,
                   // avaliacao) vivem no avatar de perfil, que fica no Mapa --
@@ -739,28 +671,15 @@ class _TelaPrincipalState extends State<TelaPrincipal>
                 ],
               ),
             ),
-            const SizedBox(height: AppSpacing.xs + 2),
+            const SizedBox(height: 4),
             Text(
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: AppTextStyles.label.copyWith(
-                fontSize: 11.5,
+                fontSize: 12,
                 fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                 color: isSelected ? corAtiva : corInativa,
-              ),
-            ),
-            // pontinho embaixo do rotulo ativo, igual a referencia -- marca a
-            // aba atual sem precisar engordar a pilula
-            const SizedBox(height: AppSpacing.xs),
-            AnimatedContainer(
-              duration: AppMotion.media,
-              curve: AppMotion.suave,
-              width: isSelected ? 4 : 0,
-              height: isSelected ? 4 : 0,
-              decoration: BoxDecoration(
-                color: corPilula,
-                shape: BoxShape.circle,
               ),
             ),
           ],
