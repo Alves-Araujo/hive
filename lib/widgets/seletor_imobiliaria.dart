@@ -5,32 +5,29 @@ import '../services/imobiliaria_service.dart';
 import '../utils/moderacao.dart';
 import 'campo_formulario.dart';
 
-// Escolha da imobiliaria no cadastro do corretor de empresa.
+// Escolha da imobiliaria de quem trabalha numa que JA EXISTE.
 //
 // Antes o corretor digitava nome/CNPJ/endereco e o app criava a imobiliaria na
 // hora: duas pessoas da MESMA empresa escrevendo o nome de um jeito diferente
-// viravam duas imobiliarias, e nenhum vinculo passava por ninguem. Aqui ele
-// escolhe uma que ja existe; "Cadastrar nova" continua existindo porque o
-// primeiro corretor de cada imobiliaria nao tem o que escolher.
+// viravam duas imobiliarias, e nenhum vinculo passava por ninguem. Dai virar
+// uma lista pra escolher -- mas sobrou aqui um "Cadastrar nova" que criava a
+// empresa sem dono nenhum (ver ImobiliariaService.criarParaDono).
+//
+// Hoje quem cadastra a empresa e a conta master dela, na secao "Dados da
+// imobiliária" do proprio "concluir perfil". Este seletor so escolhe entre as
+// que existem: nao ha mais caminho pra criar imobiliaria a partir daqui.
 class SeletorImobiliaria extends StatelessWidget {
   final Imobiliaria? selecionada;
   final bool isDark;
 
-  // true quando a pessoa optou por cadastrar uma imobiliaria nova -- o
-  // formulario de dados da empresa aparece no lugar da selecao
-  final bool cadastrandoNova;
-
   final ValueChanged<Imobiliaria> onSelecionar;
-  final VoidCallback onCadastrarNova;
   final VoidCallback onLimpar;
 
   const SeletorImobiliaria({
     super.key,
     required this.selecionada,
     required this.isDark,
-    required this.cadastrandoNova,
     required this.onSelecionar,
-    required this.onCadastrarNova,
     required this.onLimpar,
   });
 
@@ -42,23 +39,13 @@ class SeletorImobiliaria extends StatelessWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
       ),
-      builder: (_) => _FolhaDeBusca(isDark: isDark, aoCadastrarNova: onCadastrarNova),
+      builder: (_) => _FolhaDeBusca(isDark: isDark),
     );
     if (escolhida != null) onSelecionar(escolhida);
   }
 
   @override
   Widget build(BuildContext context) {
-    if (cadastrandoNova) {
-      return _LinhaEscolhida(
-        isDark: isDark,
-        icone: Icons.add_business_rounded,
-        titulo: 'Cadastrar uma imobiliária nova',
-        detalhe: 'Preencha os dados da empresa abaixo.',
-        onTrocar: onLimpar,
-      );
-    }
-
     final imobiliaria = selecionada;
     if (imobiliaria != null) {
       return _LinhaEscolhida(
@@ -160,9 +147,8 @@ class _LinhaEscolhida extends StatelessWidget {
 // memoria: sao poucas, e o Firestore so sabe filtrar por prefixo
 class _FolhaDeBusca extends StatefulWidget {
   final bool isDark;
-  final VoidCallback aoCadastrarNova;
 
-  const _FolhaDeBusca({required this.isDark, required this.aoCadastrarNova});
+  const _FolhaDeBusca({required this.isDark});
 
   @override
   State<_FolhaDeBusca> createState() => _FolhaDeBuscaState();
@@ -246,7 +232,10 @@ class _FolhaDeBuscaState extends State<_FolhaDeBusca> {
                       child: Text(
                         snap.hasError
                             ? 'Não foi possível carregar as imobiliárias agora.'
-                            : 'Nenhuma imobiliária encontrada com esse nome.',
+                            : 'Nenhuma imobiliária encontrada com esse nome. Quem '
+                                'cadastra a empresa aqui é a conta que responde por '
+                                'ela: se é o seu caso, feche esta folha e escolha '
+                                '"Administrador" na pergunta acima.',
                         textAlign: TextAlign.center,
                         style: TextStyle(color: isDark ? Colors.white38 : Colors.grey),
                       ),
@@ -262,26 +251,31 @@ class _FolhaDeBuscaState extends State<_FolhaDeBusca> {
               ),
             ),
             const Divider(height: 1),
-            // saida pro primeiro corretor de uma imobiliaria que ainda nao
-            // esta no app -- sem isso ele nao teria como concluir o cadastro
-            ListTile(
-              leading: const Icon(Icons.add_business_rounded, color: corPrimaria),
-              title: Text(
-                'Não encontrei. Cadastrar nova',
-                style: AppTextStyles.bodyBold.copyWith(
-                  color: isDark ? Colors.white : Colors.black87,
-                ),
+            // No lugar do antigo "Não encontrei. Cadastrar nova", que criava a
+            // empresa sem dono: aqui a saida e a propria imobiliaria abrir a
+            // conta master dela
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 16,
+                    color: isDark ? Colors.white38 : Colors.grey,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Não está na lista? Quem cadastra a imobiliária é a conta '
+                      'que responde por ela, no próprio cadastro.',
+                      style: AppTextStyles.caption.copyWith(
+                        color: isDark ? Colors.white38 : Colors.grey,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              subtitle: Text(
-                'Você preenche os dados da empresa',
-                style: AppTextStyles.caption.copyWith(
-                  color: isDark ? Colors.white38 : Colors.grey,
-                ),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                widget.aoCadastrarNova();
-              },
             ),
             SizedBox(height: MediaQuery.viewPaddingOf(context).bottom + 8),
           ],

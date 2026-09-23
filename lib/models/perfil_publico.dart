@@ -12,6 +12,13 @@ class PerfilPublico {
   final String fotoUrl;
   final String tipoUsuario;
   final String subtipoCorretor;
+
+  // 'admin' na conta master da imobiliaria, 'equipe' em quem pediu vinculo --
+  // ver Usuario.papelImobiliaria. Precisa estar aqui porque e esta colecao que
+  // a imobiliaria le pra montar a lista de pedidos: sem o papel, a propria
+  // conta master apareceria na lista esperando que alguem a aprovasse
+  final String papelImobiliaria;
+
   final String cidade;
   final String imobiliariaId;
 
@@ -29,6 +36,7 @@ class PerfilPublico {
     this.fotoUrl = '',
     this.tipoUsuario = '',
     this.subtipoCorretor = '',
+    this.papelImobiliaria = '',
     this.cidade = '',
     this.imobiliariaId = '',
     this.vinculoConfirmado = false,
@@ -36,9 +44,15 @@ class PerfilPublico {
     this.ultimoAcesso,
   });
 
+  // a conta master da imobiliaria (ver Usuario.ehAdminImobiliaria)
+  bool get ehAdminImobiliaria => papelImobiliaria == 'admin';
+
   // pedido de vinculo esperando resposta da imobiliaria
   bool get vinculoPendente =>
-      imobiliariaId.isNotEmpty && !vinculoConfirmado && !vinculoRecusado;
+      imobiliariaId.isNotEmpty &&
+      !ehAdminImobiliaria &&
+      !vinculoConfirmado &&
+      !vinculoRecusado;
 
   factory PerfilPublico.fromMap(Map<String, dynamic> map, String uid) {
     return PerfilPublico(
@@ -48,6 +62,7 @@ class PerfilPublico {
       fotoUrl: map['fotoUrl'] ?? '',
       tipoUsuario: map['tipoUsuario'] ?? '',
       subtipoCorretor: map['subtipoCorretor'] ?? '',
+      papelImobiliaria: map['papelImobiliaria'] ?? '',
       cidade: map['cidade'] ?? '',
       imobiliariaId: map['imobiliariaId'] ?? '',
       vinculoConfirmado: map['vinculoConfirmado'] ?? false,

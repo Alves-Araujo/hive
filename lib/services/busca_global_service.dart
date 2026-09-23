@@ -20,6 +20,7 @@ class ResultadoBuscaGlobal {
     if (imobiliaria != null) return 'Imobiliária';
     switch (pessoa?.tipoUsuario) {
       case 'corretor':
+        if (pessoa?.ehAdminImobiliaria ?? false) return 'Imobiliária (administrador)';
         return pessoa?.subtipoCorretor == 'empresa' ? 'Corretor (Empresa)' : 'Corretor Autônomo';
       case 'proprietario':
         return 'Proprietário';

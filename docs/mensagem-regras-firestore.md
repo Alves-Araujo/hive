@@ -4,13 +4,57 @@ Copiar e colar. O arquivo alterado é `moradia_app/firestore.rules`.
 
 ---
 
-## Mensagem atual: duas coisas pra publicar (uma delas está quebrando no app)
+## Mensagem atual: três coisas pra publicar (uma delas está quebrando no app)
 
 Opa! Mexi no `firestore.rules` do Hive de novo e preciso que você publique. São
-uns 5 minutos, o passo a passo tá no fim. Dessa vez são **duas** mudanças, e a
-primeira já está dando erro pra quem usa o app.
+uns 5 minutos, o passo a passo tá no fim. Dessa vez são **três** mudanças, e a
+segunda já está dando erro pra quem usa o app. Nenhuma das três subiu ainda.
 
-**1. A imobiliária não consegue salvar o próprio cadastro (é o urgente)**
+**1. Imobiliária só nasce com dono (é a correção nova)**
+
+O cadastro de imobiliária estava nascendo órfão. O motivo: quem preenchia os
+dados da empresa era um corretor, num "cadastrar nova" solto dentro da tela
+dele, e o e-mail que ficava gravado era o **da empresa**, não o da conta que
+estava cadastrando. Como quem manda numa imobiliária era deduzido desse e-mail,
+quem criava o cadastro ficava sem permissão nenhuma sobre ele: não editava os
+dados, não aprovava os corretores que pediam vínculo, e os pedidos ficavam
+pendentes pra sempre sem ninguém pra responder.
+
+Agora a imobiliária é cadastrada pela **conta que responde por ela**, dentro do
+próprio "concluir perfil", e o uid dessa conta fica gravado no documento, no
+campo novo `donoUid`.
+
+O que muda nas regras:
+
+- em `match /imobiliarias`, o `allow create` passou a exigir três coisas:
+  `donoUid` igual ao uid de quem está criando, `emailBusca` igual ao e-mail da
+  própria conta, e `nome` não vazio. Antes bastava estar logado - era isso que
+  deixava criar empresa em nome de ninguém;
+- `emailVerificado` só pode nascer `true` se o e-mail do login estiver
+  confirmado. Como o e-mail agora é o da própria conta, quem confirma é o
+  próprio Firebase Auth. (O app mesmo cria com `false` e liga a confirmação num
+  update logo depois, justamente pra funcionar antes de você publicar isso.);
+- a função `souAImobiliaria()` passou a aceitar **dois** critérios, e basta um:
+  ser o `donoUid` do documento, ou entrar com o `emailBusca` dele (confirmado).
+  O segundo é o critério antigo e continua valendo pelos cadastros que já
+  existem - **as duas imobiliárias que estão no banco hoje não têm `donoUid`**,
+  então elas continuam funcionando exatamente como antes;
+- a mesma dupla de critérios passou a valer pra aprovar corretor, em
+  `match /perfisPublicos` (virou a função `respondePelaImobiliaria()`);
+- saiu um caminho de `update` que deixava **qualquer** pessoa logada mudar
+  `endereco`, `latitude` e `longitude` de **qualquer** imobiliária. Ele existia
+  pra um código que completava coordenada de cadastro antigo, e esse código não
+  existe mais - na prática dava pra arrastar o pin da imobiliária dos outros no
+  mapa;
+- em `match /usuarios`, o `cadastroPreservado()` passou a proteger também o
+  campo novo `papelImobiliaria` ("admin" ou "equipe"), do mesmo jeito que já
+  protege CPF e tipo de conta: quem finalizou o cadastro como corretor da
+  equipe não se promove a administrador depois.
+
+Não precisa migrar nada nem apagar nada por causa disso. (A imobiliária "Sodré",
+da outra mensagem, continua valendo apagar - mas é assunto separado.)
+
+**2. A imobiliária não consegue salvar o próprio cadastro (é o urgente)**
 
 Salvar em "Dados da Imobiliária" volta com
 `[cloud_firestore/permission-denied]`. A regra que libera essa edição já está no
@@ -38,7 +82,7 @@ A função lê o token por `get()` com padrão: login sem e-mail (telefone, anô
 derrubava a avaliação da regra, e um cadastro antigo sem `emailBusca` casaria
 com o e-mail vazio dessas contas.
 
-**2. Anúncio sem resposta sai do mapa**
+**3. Anúncio sem resposta sai do mapa**
 
 Moradia anunciada, gente mandando mensagem e ninguém respondendo: o anúncio fica
 no mapa pra sempre ocupando o lugar de quem responde, e quem procura moradia
@@ -92,9 +136,11 @@ firebase emulators:exec --only firestore --project moradias-inatel \
    && node test/rules/chats.test.mjs"
 ```
 
-   Tem que aparecer `25/25`, `10/10` e `19/19 passaram` - aqui rodei os três. O
-   `cadastro.test.mjs` é o que cobre a edição da imobiliária, inclusive com o
-   payload exato que a tela manda.
+   Tem que aparecer `39/39`, `10/10` e `19/19 passaram` - aqui rodei os três. O
+   `cadastro.test.mjs` é o que cobre a imobiliária: a edição do cadastro (com o
+   payload exato que a tela manda) e, agora, as 14 verificações novas do dono -
+   inclusive as tentativas que **têm** que falhar, como criar imobiliária sem
+   dono, criar em nome de outra conta e passar a empresa pra outra pessoa.
 
 6. Publica **só** as regras do Firestore:
 
@@ -104,9 +150,12 @@ firebase deploy --only firestore:rules --project moradias-inatel
 
 7. Confere no console: Firebase > Firestore Database > aba Regras. A data da
    última publicação tem que ser de agora, e as regras publicadas têm que ter:
-   - a função `souAImobiliaria()` dentro de `match /imobiliarias`, e **três**
-     `allow update` nesse bloco (é a parte 1, a que está quebrando agora);
-   - **dois** `allow update` no bloco `match /imoveis` (é a parte 2).
+   - a palavra `donoUid` aparecendo no `allow create` de `match /imobiliarias`
+     e dentro da função `souAImobiliaria()` (é a parte 1);
+   - a função `souAImobiliaria()` dentro de `match /imobiliarias`, com um
+     `allow update` que lista `nome`, `descricao`, `telefone`, `fotoUrl` e
+     `fotos` (é a parte 2, a que está quebrando agora);
+   - **dois** `allow update` no bloco `match /imoveis` (é a parte 3).
 
 8. Me avisa que eu testo no celular.
 
@@ -120,10 +169,18 @@ firebase deploy --only firestore:rules --project moradias-inatel
 - Se der `permission denied` no deploy, é a conta: precisa ser Editor ou
   Proprietário do projeto `moradias-inatel`. Confere com
   `firebase projects:list`.
-- Enquanto não publicar: a parte 2 só não faz efeito (o relógio nunca liga e
-  nenhum anúncio sai do mapa, nada quebra), mas a parte 1 continua quebrada -
+- Enquanto não publicar: a parte 3 só não faz efeito (o relógio nunca liga e
+  nenhum anúncio sai do mapa, nada quebra) e a parte 2 continua quebrada -
   salvar em "Dados da Imobiliária" volta com `permission-denied` toda vez,
-  inclusive pra mandar as fotos do escritório.
+  inclusive pra mandar as fotos do escritório. A parte 1 **funciona sem você**:
+  o cadastro novo da imobiliária já passa pelas regras que estão no ar hoje, de
+  propósito (o app grava o e-mail da própria conta, que é o que a regra antiga
+  já sabia conferir, e manda a confirmação num segundo passo em vez de no
+  create). O que a publicação acrescenta é a trava: sem ela, **continua
+  possível** criar imobiliária sem dono chamando o Firestore direto, por fora do
+  app. Ou seja, não é urgente como a parte 2, mas é o fecho da correção.
+- As duas imobiliárias que estão no banco não têm `donoUid` e continuam
+  funcionando pelo e-mail, antes e depois de publicar. Não tem migração.
 
 **As travas da regra nova do anúncio** (pra revisar antes, se quiser)
 

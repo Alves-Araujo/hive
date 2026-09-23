@@ -2,6 +2,18 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class Imobiliaria {
   final String id;
+
+  // uid da conta que cadastrou a imobiliaria -- a conta "master" dela. E quem
+  // edita o cadastro e responde os pedidos de vinculo dos corretores.
+  //
+  // Antes o dono era deduzido do E-MAIL: quem entrasse com o e-mail gravado
+  // aqui respondia pela empresa. So que o e-mail digitado no cadastro era o da
+  // EMPRESA, nao o da conta que estava cadastrando -- entao quem criava a
+  // imobiliaria ficava sem permissao nenhuma sobre ela e o cadastro nascia
+  // orfao. Cadastro antigo continua sem este campo, e nele o e-mail segue
+  // valendo (ver souAImobiliaria() em firestore.rules)
+  final String donoUid;
+
   final String nome;
   final String nomeBusca;
   final String cnpj;
@@ -31,6 +43,7 @@ class Imobiliaria {
 
   Imobiliaria({
     required this.id,
+    this.donoUid = '',
     required this.nome,
     this.nomeBusca = '',
     required this.cnpj,
@@ -47,7 +60,7 @@ class Imobiliaria {
   });
 
   // mesma imobiliaria com os campos que a tela de edicao mexe -- o que ela nao
-  // toca (cnpj, e-mail, confirmacao) vem do que ja estava gravado
+  // toca (cnpj, e-mail, dono, confirmacao) vem do que ja estava gravado
   Imobiliaria copiarCom({
     String? nome,
     String? nomeBusca,
@@ -61,6 +74,7 @@ class Imobiliaria {
   }) {
     return Imobiliaria(
       id: id,
+      donoUid: donoUid,
       nome: nome ?? this.nome,
       nomeBusca: nomeBusca ?? this.nomeBusca,
       cnpj: cnpj,
@@ -80,6 +94,7 @@ class Imobiliaria {
   factory Imobiliaria.fromMap(Map<String, dynamic> map, String id) {
     return Imobiliaria(
       id: id,
+      donoUid: map['donoUid'] ?? '',
       nome: map['nome'] ?? '',
       nomeBusca: map['nomeBusca'] ?? '',
       cnpj: map['cnpj'] ?? '',
@@ -101,6 +116,7 @@ class Imobiliaria {
 
   Map<String, dynamic> toMap() {
     return {
+      'donoUid': donoUid,
       'nome': nome,
       'nomeBusca': nomeBusca,
       'cnpj': cnpj,

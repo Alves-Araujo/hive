@@ -75,13 +75,15 @@ class UsuarioService {
   // grava o formulario inteiro de "concluir perfil" de uma vez.
   //
   // O que ja foi definido no cadastro nunca vai no update de quem ja
-  // finalizou: CPF/CNPJ porque sao identidade, tipo de conta e subtipo porque
-  // decidem o que a conta pode fazer (anunciar, vincular imobiliaria) e ja
-  // circularam em anuncio, chat e avaliacao. As regras do Firestore recusariam
+  // finalizou: CPF/CNPJ porque sao identidade, tipo de conta, subtipo e papel
+  // na imobiliaria porque decidem o que a conta pode fazer (anunciar, aprovar
+  // corretor) e ja circularam em anuncio, chat e avaliacao -- virar "admin"
+  // depois seria se promover a dono de uma empresa que alguem ja cadastrou.
+  // As regras do Firestore recusariam
   // o update inteiro -- entao o que esta gravado prevalece sobre o que veio do
   // formulario. A tela ja bloqueia os campos, isto e a rede de seguranca
   static const List<String> _camposImutaveis = [
-    'cpf', 'cnpj', 'tipoUsuario', 'subtipoCorretor',
+    'cpf', 'cnpj', 'tipoUsuario', 'subtipoCorretor', 'papelImobiliaria',
   ];
 
   Future<void> completarPerfil(Usuario usuario) async {

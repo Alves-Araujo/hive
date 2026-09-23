@@ -3,7 +3,8 @@
 //
 // - a categoria do anuncio (moradia/evento) nao muda depois de publicado
 // - tipo de conta (e subtipo do corretor) nao muda depois do cadastro
-// - so quem entra com o e-mail da imobiliaria aprova/recusa um corretor dela
+// - so quem responde pela imobiliaria aprova/recusa um corretor dela
+// - imobiliaria so nasce COM DONO (donoUid), e o dono e quem esta cadastrando
 //
 // Nada disso da pra conferir no aparelho: a tela ja bloqueia os campos, e o
 // que estes testes chamam e o Firestore direto, como faria quem contorna o app.
@@ -28,6 +29,14 @@ const IMOBILIARIA = 'imob1';
 const IMOBILIARIA_SEM_EMAIL = 'imob2';
 const EMAIL_IMOBILIARIA = 'contato@imobiliaria.com';
 const ANUNCIO = 'anuncio1';
+
+// a conta master de uma imobiliaria cadastrada do jeito novo: o uid dela esta
+// gravado em donoUid, e e SO isso que prova que ela responde pela empresa -- o
+// e-mail do cadastro e outro, de proposito, pra separar os dois criterios
+const MASTER = 'uidMaster';
+const EMAIL_MASTER = 'master@pessoal.com';
+const IMOBILIARIA_COM_DONO = 'imob3';
+const CORRETOR_DA_COM_DONO = 'uidCorretor2';
 
 let env;
 const resultados = [];
@@ -57,6 +66,7 @@ async function prepararDados() {
       perfilCompleto: true,
       tipoUsuario: 'corretor',
       subtipoCorretor: 'empresa',
+      papelImobiliaria: 'equipe',
       nome: 'Corretor Silva',
       imobiliariaId: IMOBILIARIA,
     });
@@ -87,11 +97,33 @@ async function prepararDados() {
       nome: 'Imobiliária Sem Dono',
     });
 
+    // cadastro novo: tem dono. O e-mail gravado nao e o da conta master, pra
+    // deixar claro que quem manda aqui e o donoUid, sozinho
+    await setDoc(doc(db, 'imobiliarias', IMOBILIARIA_COM_DONO), {
+      donoUid: MASTER,
+      nome: 'Imobiliária da Master',
+      cnpj: '11.222.333/0001-44',
+      cnpjBusca: '11222333000144',
+      emailBusca: 'outro@endereco.com',
+      emailVerificado: true,
+    });
+
     await setDoc(doc(db, 'perfisPublicos', CORRETOR), {
       nome: 'Corretor Silva',
       tipoUsuario: 'corretor',
       subtipoCorretor: 'empresa',
+      papelImobiliaria: 'equipe',
       imobiliariaId: IMOBILIARIA,
+      vinculoConfirmado: false,
+      vinculoRecusado: false,
+    });
+
+    await setDoc(doc(db, 'perfisPublicos', CORRETOR_DA_COM_DONO), {
+      nome: 'Corretora Souza',
+      tipoUsuario: 'corretor',
+      subtipoCorretor: 'empresa',
+      papelImobiliaria: 'equipe',
+      imobiliariaId: IMOBILIARIA_COM_DONO,
       vinculoConfirmado: false,
       vinculoRecusado: false,
     });
@@ -127,6 +159,15 @@ async function main() {
     .authenticatedContext('uidNaoConfirmado', {
       email: EMAIL_IMOBILIARIA,
       email_verified: false,
+    })
+    .firestore();
+
+  // a conta master de IMOBILIARIA_COM_DONO -- o e-mail dela nao e o que esta
+  // gravado no cadastro, entao so o donoUid responde por ela aqui
+  const masterDb = env
+    .authenticatedContext(MASTER, {
+      email: EMAIL_MASTER,
+      email_verified: true,
     })
     .firestore();
 
@@ -358,6 +399,190 @@ async function main() {
     await assertFails(
       updateDoc(doc(estranhoDb, 'imobiliarias', IMOBILIARIA_SEM_EMAIL), {
         nome: 'Tomada de Assalto',
+      }),
+    );
+  });
+
+  // --- a imobiliaria nasce com dono ---------------------------------------
+  //
+  // O buraco que isto fecha: antes bastava estar logado pra criar, e o e-mail
+  // gravado era o DA EMPRESA, digitado no formulario por um corretor qualquer.
+  // Como quem mandava na imobiliaria era deduzido desse e-mail, o cadastro
+  // nascia sem ninguem por ele -- nem quem criou editava ou aprovava corretor
+
+  await verifica('a conta master cadastra a imobiliaria dela', async () => {
+    await assertSucceeds(
+      setDoc(doc(masterDb, 'imobiliarias', 'imobNova'), {
+        donoUid: MASTER,
+        nome: 'Imobiliária Nova',
+        nomeBusca: 'imobiliaria nova',
+        cnpj: '99.888.777/0001-66',
+        cnpjBusca: '99888777000166',
+        email: EMAIL_MASTER,
+        emailBusca: EMAIL_MASTER,
+        emailVerificado: true,
+        telefone: '(35) 98888-0000',
+        endereco: 'Rua da Sede, 10, Centro, Itajubá - MG',
+      }),
+    );
+  });
+
+  // o payload exato da tela: ela cria com emailVerificado false e liga a
+  // confirmacao num update separado, pra passar tambem pela regra que esta
+  // publicada hoje (que so aceita create nao confirmado). Os dois passos
+  // precisam continuar valendo com a regra nova
+  await verifica('o cadastro em dois passos da tela passa inteiro', async () => {
+    await assertSucceeds(
+      setDoc(doc(masterDb, 'imobiliarias', 'imobDoisPassos'), {
+        donoUid: MASTER,
+        nome: 'Imobiliária em Dois Passos',
+        nomeBusca: 'imobiliaria em dois passos',
+        cnpj: '55.444.333/0001-22',
+        cnpjBusca: '55444333000122',
+        email: EMAIL_MASTER,
+        emailBusca: EMAIL_MASTER,
+        emailVerificado: false,
+        telefone: '(35) 96666-0000',
+        endereco: 'Rua da Sede, 30, Centro, Itajubá - MG',
+        latitude: -22.25,
+        longitude: -45.7,
+      }),
+    );
+    await assertSucceeds(
+      updateDoc(doc(masterDb, 'imobiliarias', 'imobDoisPassos'), {
+        emailVerificado: true,
+      }),
+    );
+  });
+
+  await verifica('imobiliaria NAO nasce sem dono (o jeito antigo)', async () => {
+    await assertFails(
+      setDoc(doc(masterDb, 'imobiliarias', 'imobOrfa'), {
+        nome: 'Imobiliária Fantasma',
+        cnpjBusca: '00111222000133',
+        emailBusca: 'contato@fantasma.com',
+        emailVerificado: false,
+      }),
+    );
+  });
+
+  await verifica('ninguem cadastra imobiliaria em nome de outra conta', async () => {
+    await assertFails(
+      setDoc(doc(masterDb, 'imobiliarias', 'imobDeOutro'), {
+        donoUid: ESTRANHO,
+        nome: 'Imobiliária do Estranho',
+        emailBusca: EMAIL_MASTER,
+        emailVerificado: false,
+      }),
+    );
+  });
+
+  await verifica('o e-mail do cadastro tem que ser o da propria conta', async () => {
+    await assertFails(
+      setDoc(doc(masterDb, 'imobiliarias', 'imobComEmailDaEmpresa'), {
+        donoUid: MASTER,
+        nome: 'Imobiliária Central',
+        emailBusca: 'contato@empresa.com',
+        emailVerificado: false,
+      }),
+    );
+  });
+
+  await verifica('sem o e-mail confirmado, a imobiliaria nasce pendente', async () => {
+    await assertSucceeds(
+      setDoc(doc(semConfirmarDb, 'imobiliarias', 'imobPendente'), {
+        donoUid: 'uidNaoConfirmado',
+        nome: 'Imobiliária Pendente',
+        emailBusca: EMAIL_IMOBILIARIA,
+        emailVerificado: false,
+      }),
+    );
+  });
+
+  await verifica('e NAO nasce ja confirmada', async () => {
+    await assertFails(
+      setDoc(doc(semConfirmarDb, 'imobiliarias', 'imobAutoConfirmada'), {
+        donoUid: 'uidNaoConfirmado',
+        nome: 'Imobiliária Esperta',
+        emailBusca: EMAIL_IMOBILIARIA,
+        emailVerificado: true,
+      }),
+    );
+  });
+
+  await verifica('a imobiliaria NAO nasce sem nome', async () => {
+    await assertFails(
+      setDoc(doc(masterDb, 'imobiliarias', 'imobSemNome'), {
+        donoUid: MASTER,
+        nome: '   ',
+        emailBusca: EMAIL_MASTER,
+        emailVerificado: false,
+      }),
+    );
+  });
+
+  // --- o dono manda na imobiliaria dele ------------------------------------
+  //
+  // O e-mail gravado em IMOBILIARIA_COM_DONO e outro: quem responde por ela
+  // aqui e o donoUid, sozinho
+
+  await verifica('a conta master edita o cadastro da imobiliaria dela', async () => {
+    await assertSucceeds(
+      updateDoc(doc(masterDb, 'imobiliarias', IMOBILIARIA_COM_DONO), {
+        nome: 'Imobiliária da Master Ltda',
+        nomeBusca: 'imobiliaria da master ltda',
+        telefone: '(35) 97777-0000',
+        endereco: 'Rua Nova da Sede, 20, Centro, Itajubá - MG',
+      }),
+    );
+  });
+
+  await verifica('a conta master aprova o corretor da imobiliaria dela', async () => {
+    await assertSucceeds(
+      setDoc(
+        doc(masterDb, 'perfisPublicos', CORRETOR_DA_COM_DONO),
+        { vinculoConfirmado: true },
+        { merge: true },
+      ),
+    );
+  });
+
+  await verifica('a conta master NAO aprova corretor de OUTRA imobiliaria', async () => {
+    await assertFails(
+      setDoc(
+        doc(masterDb, 'perfisPublicos', CORRETOR),
+        { vinculoConfirmado: true },
+        { merge: true },
+      ),
+    );
+  });
+
+  await verifica('quem nao e o dono NAO edita a imobiliaria com dono', async () => {
+    await assertFails(
+      updateDoc(doc(estranhoDb, 'imobiliarias', IMOBILIARIA_COM_DONO), {
+        nome: 'Imobiliária Sequestrada',
+      }),
+    );
+  });
+
+  await verifica('a conta master NAO passa a imobiliaria pra outra conta', async () => {
+    await assertFails(
+      updateDoc(doc(masterDb, 'imobiliarias', IMOBILIARIA_COM_DONO), {
+        donoUid: ESTRANHO,
+      }),
+    );
+  });
+
+  // --- papel na imobiliaria ------------------------------------------------
+  //
+  // Mesma regra do CPF: vale campo a campo, so trava o que ja esta gravado. Em
+  // cadastro antigo (papel vazio) ainda da pra preencher -- e nao muda nada,
+  // porque quem manda numa imobiliaria e o donoUid dela, nao este campo
+
+  await verifica('corretor da equipe NAO se promove a admin depois do cadastro', async () => {
+    await assertFails(
+      updateDoc(doc(corretorDb, 'usuarios', CORRETOR), {
+        papelImobiliaria: 'admin',
       }),
     );
   });

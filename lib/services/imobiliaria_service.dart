@@ -7,6 +7,19 @@ import '../models/perfil_publico.dart';
 import '../utils/moderacao.dart';
 import 'notificacao_service.dart';
 
+// CNPJ que ja tem cadastro no app. Quem esbarra nisso nao e dono de nada
+// ainda: ou a empresa dele ja esta aqui (e ele entra como corretor da equipe,
+// pedindo aprovacao), ou e um cadastro antigo sem dono, que precisa de suporte.
+// Adotar o cadastro alheio automaticamente seria entregar uma empresa -- e os
+// corretores dela -- pra quem souber digitar o CNPJ
+class ImobiliariaJaCadastradaException implements Exception {
+  final Imobiliaria existente;
+  ImobiliariaJaCadastradaException(this.existente);
+
+  @override
+  String toString() => 'Imobiliária já cadastrada: ${existente.nome}';
+}
+
 class ImobiliariaService {
   ImobiliariaService._();
   static final ImobiliariaService instance = ImobiliariaService._();
@@ -31,60 +44,144 @@ class ImobiliariaService {
     return snap.docs.map((d) => Imobiliaria.fromMap(d.data(), d.id)).toList();
   }
 
-  // acha a imobiliaria pelo cnpj ou cria uma nova, pendente de confirmacao --
-  // retorna o id (usado como "imobiliariaId" no perfil do corretor)
-  Future<String> encontrarOuCriar({
+  // A imobiliaria cadastrada pela conta master dela, no proprio "concluir
+  // perfil" -- o UNICO jeito de criar uma imobiliaria no app.
+  //
+  // Antes existia um "cadastrar nova" solto na folha de escolha do corretor:
+  // ele digitava os dados da empresa e o e-mail que ficava gravado era o DA
+  // EMPRESA, nao o da conta dele. Como o dono era deduzido do e-mail, o
+  // cadastro nascia sem ninguem por ele: quem criou nao editava, nao aprovava
+  // corretor, e os pedidos de vinculo ficavam pendentes pra sempre.
+  //
+  // Agora o dono e o uid de quem cadastra (donoUid), gravado junto, e o e-mail
+  // e o da propria conta -- os dois criterios apontam pra mesma pessoa.
+  //
+  // Devolve a imobiliaria com o id que o Firestore deu. Se o CNPJ ja tiver
+  // cadastro, levanta ImobiliariaJaCadastradaException em vez de criar a
+  // segunda copia da mesma empresa
+  Future<Imobiliaria> criarParaDono({
+    required String donoUid,
     required String nome,
     required String cnpj,
-    required String email,
+    required String telefone,
     required String endereco,
+    required String email,
+    required bool emailVerificado,
   }) async {
     final cnpjBusca = normalizarCnpj(cnpj);
     final existente = await _colecao.where('cnpjBusca', isEqualTo: cnpjBusca).limit(1).get();
     if (existente.docs.isNotEmpty) {
       final doc = existente.docs.first;
-      // imobiliaria cadastrada antes de existir pin no mapa fica sem
-      // coordenada pra sempre se ninguem preencher -- aproveita esse cadastro
-      // pra completar, sem obrigar nada de quem esta se vinculando
-      final dados = doc.data();
-      if (dados['latitude'] == null && endereco.trim().isNotEmpty) {
-        final posicao = await _geocodificar(endereco);
-        if (posicao != null) {
-          await doc.reference.update({
-            'endereco': endereco,
-            'latitude': posicao.latitude,
-            'longitude': posicao.longitude,
-          });
-        }
-      }
-      return doc.id;
+      throw ImobiliariaJaCadastradaException(
+        Imobiliaria.fromMap(doc.data(), doc.id),
+      );
     }
 
-    final novaImobiliaria = Imobiliaria(
+    final nova = Imobiliaria(
       id: '',
+      donoUid: donoUid,
       nome: nome,
       nomeBusca: normalizarNome(nome),
       cnpj: cnpj,
       cnpjBusca: cnpjBusca,
       email: email,
       emailBusca: email.toLowerCase().trim(),
+      // nasce sempre nao confirmada, e a confirmacao vai num update separado
+      // logo abaixo -- ver o comentario de lá
+      emailVerificado: false,
+      telefone: telefone,
       endereco: endereco,
       // o endereco e digitado como texto; o pin no mapa precisa de coordenada
       posicao: await _geocodificar(endereco),
     );
-    final doc = await _colecao.add(novaImobiliaria.toMap());
+    final doc = await _colecao.add(nova.toMap());
     NotificacaoService.instance.avisarNovaImobiliaria(id: doc.id, nome: nome, endereco: endereco);
-    return doc.id;
+
+    // A confirmacao do e-mail vem num update separado, e nao no create, de
+    // proposito: a regra PUBLICADA hoje so aceita create com emailVerificado
+    // false (ela e de quando o e-mail gravado era o da EMPRESA e ninguem tinha
+    // provado nada sobre ele). Como agora o e-mail e o da propria conta, este
+    // update passa pelas duas versoes da regra -- entao o cadastro funciona
+    // igual antes e depois de as regras novas subirem pro projeto.
+    //
+    // Nada no app depende dessa confirmacao pra conta master editar o cadastro
+    // ou aprovar corretor: quem decide isso e o donoUid. Ela e so o selo
+    // "Cadastro confirmado" que aparece no painel do pin, entao se o update for
+    // recusado a imobiliaria fica sem selo e segue funcionando
+    var confirmada = false;
+    if (emailVerificado) {
+      try {
+        await doc.update({'emailVerificado': true});
+        confirmada = true;
+      } on FirebaseException catch (e) {
+        if (e.code != 'permission-denied') rethrow;
+        debugPrint('A imobiliária ficou sem o selo de cadastro confirmado: ${e.code}');
+      }
+    }
+
+    return Imobiliaria.fromMap(
+      {...nova.toMap(), 'emailVerificado': confirmada},
+      doc.id,
+    );
   }
 
-  // Atualiza o cadastro da propria imobiliaria -- quem chama e a conta que
-  // entra com o e-mail dela (ver buscarPorEmail e EditarImobiliariaScreen).
+  // a imobiliaria desta conta master. E o criterio novo de "quem manda nela":
+  // vale mesmo quando o e-mail da conta nao e o que esta gravado no cadastro
+  Future<Imobiliaria?> buscarPorDono(String uid) async {
+    if (uid.isEmpty) return null;
+    final query = await _colecao.where('donoUid', isEqualTo: uid).limit(1).get();
+    if (query.docs.isEmpty) return null;
+    return Imobiliaria.fromMap(query.docs.first.data(), query.docs.first.id);
+  }
+
+  // O bloco que a conta master reedita ao voltar em "concluir perfil": nome,
+  // telefone e endereco da sede. Descricao, logotipo e galeria ficam de fora
+  // porque ali nao ha campo pra eles -- quem mexe nisso e a
+  // EditarImobiliariaScreen, e mandar vazio daqui apagaria o que ela salvou.
+  // O CNPJ tambem nao vem: e a chave que identifica a empresa
+  Future<Imobiliaria> atualizarDadosDaSede({
+    required Imobiliaria atual,
+    required String nome,
+    required String telefone,
+    required String endereco,
+  }) async {
+    final dados = <String, dynamic>{
+      'nome': nome,
+      'nomeBusca': normalizarNome(nome),
+      'telefone': telefone,
+      'endereco': endereco,
+    };
+
+    // mesma regra da tela de edicao: endereco novo pede coordenada nova, e sem
+    // coordenada o pin sai do mapa em vez de ficar apontando pro lugar errado
+    final mudouEndereco = endereco.trim() != atual.endereco.trim();
+    LatLng? posicao = atual.posicao;
+    if (mudouEndereco) {
+      posicao = await _geocodificar(endereco);
+      dados['latitude'] = posicao?.latitude ?? FieldValue.delete();
+      dados['longitude'] = posicao?.longitude ?? FieldValue.delete();
+    }
+
+    await _colecao.doc(atual.id).update(dados);
+
+    return atual.copiarCom(
+      nome: nome,
+      nomeBusca: normalizarNome(nome),
+      telefone: telefone,
+      endereco: endereco,
+      posicao: posicao,
+      limparPosicao: mudouEndereco && posicao == null,
+    );
+  }
+
+  // Atualiza o cadastro da propria imobiliaria -- quem chama e a conta master
+  // dela (ver buscarPorDono e EditarImobiliariaScreen).
   //
-  // Vai so o bloco editavel no update: CNPJ e e-mail ficam de fora porque sao
-  // o que identifica a empresa (o CNPJ e a chave de "encontrarOuCriar", e o
-  // e-mail e o que decide QUEM responde por ela -- trocar o e-mail aqui seria
-  // entregar a imobiliaria pra outra conta). As regras do Firestore recusam o
-  // update que mexer neles, entao nem adianta mandar.
+  // Vai so o bloco editavel no update: CNPJ, e-mail e dono ficam de fora porque
+  // sao o que identifica a empresa (o CNPJ e a chave que impede dois cadastros
+  // pro mesmo numero; e-mail e donoUid decidem QUEM responde por ela -- trocar
+  // um deles aqui seria entregar a imobiliaria pra outra conta). As regras do
+  // Firestore recusam o update que mexer neles, entao nem adianta mandar.
   //
   // Devolve a imobiliaria ja com os valores novos, pra tela nao precisar
   // reler o documento so pra se redesenhar
@@ -156,9 +253,11 @@ class ImobiliariaService {
         .toList());
   }
 
-  // a imobiliaria desse e-mail, confirmada ou nao. Quem entra com ele e o
-  // "administrador" dela: e por aqui que o app descobre que esta conta tem
-  // pedidos de vinculo pra responder
+  // a imobiliaria desse e-mail, confirmada ou nao. E o criterio ANTIGO de
+  // "quem manda nela", de quando a imobiliaria nao tinha donoUid: quem entra
+  // com o e-mail gravado no cadastro responde pelos corretores dele. Continua
+  // existindo pelos cadastros feitos antes disso -- em cadastro novo os dois
+  // criterios apontam pra mesma conta (ver criarParaDono)
   Future<Imobiliaria?> buscarPorEmail(String email) async {
     final emailBusca = email.toLowerCase().trim();
     final query = await _colecao.where('emailBusca', isEqualTo: emailBusca).limit(1).get();
@@ -188,8 +287,10 @@ class ImobiliariaService {
   // proprio corretor puxa a resposta de volta na abertura seguinte do app --
   // ver UsuarioService.sincronizarVinculo).
   //
-  // A primeira resposta tambem confirma a imobiliaria: quem esta respondendo
-  // provou ser o dono do e-mail dela ao entrar com ele
+  // A primeira resposta tambem confirma a imobiliaria, nos cadastros antigos em
+  // que a confirmacao ficou pendente: quem esta respondendo provou ser o dono
+  // do e-mail dela ao entrar com ele. Cadastro novo ja nasce confirmado, porque
+  // o e-mail e o da propria conta master (ver criarParaDono)
   Future<void> responderVinculo({
     required String imobiliariaId,
     required String corretorUid,
@@ -218,7 +319,12 @@ class ImobiliariaService {
 
   // corretores confirmados dessa imobiliaria -- le da colecao publica (nao
   // da "usuarios", que so o proprio dono pode ler); filtro de confirmado
-  // feito aqui pra nao precisar de indice composto no firestore
+  // feito aqui pra nao precisar de indice composto no firestore.
+  //
+  // A conta master entra na lista sem vinculo confirmado: ela nao pediu
+  // aprovacao a ninguem, e responder pela empresa ja e mais que trabalhar nela.
+  // Sem isso, a imobiliaria de um corretor sozinho aparecia "sem corretor
+  // vinculado" no proprio perfil publico
   Stream<List<PerfilPublico>> streamCorretoresVinculados(String imobiliariaId) {
     return FirebaseFirestore.instance
         .collection('perfisPublicos')
@@ -226,7 +332,7 @@ class ImobiliariaService {
         .snapshots()
         .map((snap) => snap.docs
             .map((d) => PerfilPublico.fromMap(d.data(), d.id))
-            .where((p) => p.vinculoConfirmado)
+            .where((p) => p.vinculoConfirmado || p.ehAdminImobiliaria)
             .toList());
   }
 }

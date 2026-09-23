@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/gestures.dart' show TapGestureRecognizer;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show TextInputFormatter;
@@ -45,8 +46,8 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
 
   final _nomeEmpresaController = TextEditingController();
   final _cnpjEmpresaController = TextEditingController();
+  final _telefoneEmpresaController = TextEditingController();
   final _enderecoEmpresaControllers = EnderecoControllers();
-  final _emailEmpresaController = TextEditingController();
 
   final _respNomeController = TextEditingController();
   final _respEnderecoControllers = EnderecoControllers();
@@ -56,6 +57,7 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
   final _mascaraCpf = MaskTextInputFormatter(mask: '###.###.###-##', filter: {'#': RegExp(r'[0-9]')});
   final _mascaraCnpj = MaskTextInputFormatter(mask: '##.###.###/####-##', filter: {'#': RegExp(r'[0-9]')});
   final _mascaraCnpjEmpresa = MaskTextInputFormatter(mask: '##.###.###/####-##', filter: {'#': RegExp(r'[0-9]')});
+  final _mascaraTelefoneEmpresa = MaskTextInputFormatter(mask: '(##) #####-####', filter: {'#': RegExp(r'[0-9]')});
   final _mascaraCpfResponsavel = MaskTextInputFormatter(mask: '###.###.###-##', filter: {'#': RegExp(r'[0-9]')});
 
   String? _tipoSelecionado;
@@ -68,11 +70,14 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
   bool _salvando = false;
   bool _aceitouTermos = false;
 
-  // vinculo do corretor de empresa: ou ele escolhe uma imobiliaria ja
-  // cadastrada, ou pede pra cadastrar uma nova e preenche o formulario da
-  // empresa. Um dos dois e obrigatorio pra concluir o cadastro
+  // corretor de empresa escolhe, antes de tudo, de que lado da imobiliaria ele
+  // esta: 'admin' cadastra a empresa aqui mesmo e passa a responder por ela;
+  // 'equipe' escolhe uma que ja existe e espera aprovacao
+  String _papelImobiliaria = '';
+
+  // a imobiliaria de quem e 'equipe' (a que ele escolheu na lista) ou de quem e
+  // 'admin' (a que ele mesmo cadastrou, recarregada ao reabrir a tela)
   Imobiliaria? _imobiliariaSelecionada;
-  bool _cadastrandoNovaImobiliaria = false;
   bool _carregandoImobiliaria = false;
 
   // proprietario e corretor autonomo podem escolher CPF ou CNPJ; corretor de
@@ -109,6 +114,12 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
   bool get _subtipoBloqueado =>
       _tipoDeContaBloqueado && widget.perfil.subtipoCorretor.isNotEmpty;
 
+  // e o papel na imobiliaria tambem: virar "admin" depois seria se promover a
+  // dono de uma empresa que outra conta cadastrou, e deixar de ser "admin"
+  // largaria a empresa sem ninguem pra aprovar corretor
+  bool get _papelBloqueado =>
+      _tipoDeContaBloqueado && widget.perfil.papelImobiliaria.isNotEmpty;
+
   int? get _idade => _dataNascimento != null ? calcularIdade(_dataNascimento!) : null;
 
   bool get _mostraSecaoResponsavel =>
@@ -116,11 +127,20 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
 
   bool get _mostraSecaoEmpresa => _tipoSelecionado == 'corretor' && _subtipoCorretor == 'empresa';
 
-  // os dados da empresa (nome, CNPJ, endereco, e-mail) so sao pedidos pra
-  // quem esta CADASTRANDO uma imobiliaria nova. Escolhendo uma que ja existe,
-  // esses dados ja estao no cadastro dela -- pedir de novo so daria chance de
-  // divergirem
-  bool get _mostraFormularioDeEmpresa => _mostraSecaoEmpresa && _cadastrandoNovaImobiliaria;
+  // Esta e a conta master da imobiliaria: os dados da empresa (nome, CNPJ,
+  // telefone, endereco da sede) sao pedidos AQUI, no mesmo formulario, e
+  // gravados com o uid dela como dono.
+  //
+  // Antes esse formulario abria por um "cadastrar nova" solto dentro da folha
+  // de escolha da imobiliaria, e o cadastro saia sem dono: quem preenchia nao
+  // editava a empresa depois nem aprovava os corretores dela
+  bool get _ehAdminDaImobiliaria =>
+      _mostraSecaoEmpresa && _papelImobiliaria == 'admin';
+
+  // quem trabalha numa imobiliaria que ja existe escolhe na lista -- os dados
+  // dela ja estao no cadastro dela, e pedir de novo so daria chance de divergirem
+  bool get _ehCorretorDaEquipe =>
+      _mostraSecaoEmpresa && _papelImobiliaria == 'equipe';
 
   bool get _vinculoJaConfirmado =>
       widget.perfil.vinculoConfirmado &&
@@ -151,10 +171,10 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
         _dataNascimento = DateTime.tryParse('${partes[2]}-${partes[1]}-${partes[0]}');
       }
     }
+    _papelImobiliaria = p.papelImobiliaria;
     _nomeEmpresaController.text = p.nomeEmpresa;
     _cnpjEmpresaController.text = p.cnpjEmpresa;
     _enderecoEmpresaControllers.preencher(p.enderecoEmpresa);
-    _emailEmpresaController.text = p.emailEmpresa;
     _respNomeController.text = p.responsavelNome;
     _respEnderecoControllers.preencher(p.responsavelEndereco);
     _respCpfController.text = p.responsavelCpf;
@@ -176,6 +196,11 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
     setState(() {
       _imobiliariaSelecionada = imobiliaria;
       _carregandoImobiliaria = false;
+      // o telefone da empresa mora so no cadastro dela (o perfil da pessoa nao
+      // tem campo pra isso), entao vem de la ao reabrir a tela
+      if (imobiliaria != null && _telefoneEmpresaController.text.isEmpty) {
+        _telefoneEmpresaController.text = imobiliaria.telefone;
+      }
     });
   }
 
@@ -187,8 +212,8 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
     _generoOutroController.dispose();
     _nomeEmpresaController.dispose();
     _cnpjEmpresaController.dispose();
+    _telefoneEmpresaController.dispose();
     _enderecoEmpresaControllers.dispose();
-    _emailEmpresaController.dispose();
     _respNomeController.dispose();
     _respEnderecoControllers.dispose();
     _respCpfController.dispose();
@@ -287,13 +312,24 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
     // campo pelo proprio Form via CampoEndereco -- aqui so o que nao tem
     // TextFormField.validator
     if (_mostraSecaoEmpresa) {
-      if (_imobiliariaSelecionada == null && !_cadastrandoNovaImobiliaria) {
+      if (_papelImobiliaria.isEmpty) {
+        return 'Diga se você é o administrador da imobiliária ou corretor da equipe.';
+      }
+      if (_ehCorretorDaEquipe && _imobiliariaSelecionada == null) {
         return 'Selecione a imobiliária em que você trabalha.';
       }
-      if (_mostraFormularioDeEmpresa) {
-        if (_nomeEmpresaController.text.trim().isEmpty) return 'Informe o nome da empresa.';
-        if (!validarCNPJ(_cnpjEmpresaController.text.trim())) return 'CNPJ da empresa inválido.';
-        if (!_emailEmpresaController.text.trim().contains('@')) return 'Informe um e-mail válido da empresa.';
+      if (_ehAdminDaImobiliaria) {
+        final nomeEmpresa = _nomeEmpresaController.text.trim();
+        if (nomeEmpresa.isEmpty) return 'Informe o nome da imobiliária.';
+        // nome de empresa aceita numero e "&", entao nao passa pelo validador de
+        // nome de PESSOA -- o que continua barrado e palavrao, igual no resto do app
+        if (contemPalavraImpropria(nomeEmpresa)) {
+          return 'O nome da imobiliária contém palavras não permitidas.';
+        }
+        if (!validarCNPJ(_cnpjEmpresaController.text.trim())) return 'CNPJ da imobiliária inválido.';
+        if (_telefoneEmpresaController.text.trim().isEmpty) {
+          return 'Informe o telefone da imobiliária.';
+        }
       }
     }
 
@@ -308,6 +344,41 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
     }
 
     return null;
+  }
+
+  // Cria (ou reedita) a imobiliaria desta conta master -- o unico caminho do app
+  // que faz nascer uma imobiliaria, e ele grava o dono junto: o uid de quem esta
+  // preenchendo. O e-mail e o da propria conta, entao os dois criterios de "quem
+  // manda nela" (donoUid e e-mail) apontam pra mesma pessoa
+  Future<Imobiliaria> _salvarImobiliariaDaConta({
+    required String cnpj,
+    required User? contaAuth,
+  }) {
+    final nome = _nomeEmpresaController.text.trim();
+    final telefone = _telefoneEmpresaController.text.trim();
+    final endereco = _enderecoEmpresaControllers.valor.formatado;
+
+    // reabrindo a tela pra corrigir algo: a empresa ja existe e quem salva e o
+    // dono dela, entao e update -- criar de novo esbarraria no CNPJ repetido
+    final minha = _imobiliariaSelecionada;
+    if (minha != null && minha.donoUid == widget.perfil.uid) {
+      return ImobiliariaService.instance.atualizarDadosDaSede(
+        atual: minha,
+        nome: nome,
+        telefone: telefone,
+        endereco: endereco,
+      );
+    }
+
+    return ImobiliariaService.instance.criarParaDono(
+      donoUid: widget.perfil.uid,
+      nome: nome,
+      cnpj: cnpj,
+      telefone: telefone,
+      endereco: endereco,
+      email: contaAuth?.email ?? widget.perfil.email,
+      emailVerificado: contaAuth?.emailVerified ?? false,
+    );
   }
 
   Future<void> _salvar() async {
@@ -361,22 +432,32 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
       final subtipoCorretor = _subtipoBloqueado
           ? widget.perfil.subtipoCorretor
           : (tipoUsuario == 'corretor' ? _subtipoCorretor : '');
+      final papelImobiliaria = _papelBloqueado
+          ? widget.perfil.papelImobiliaria
+          : (subtipoCorretor == 'empresa' ? _papelImobiliaria : '');
 
-      // corretor de empresa: ou o id da imobiliaria que ele escolheu, ou o da
-      // que ele acabou de cadastrar. O vinculo NASCE pendente -- quem aprova e
-      // quem entra com o e-mail da imobiliaria (ver map_screen)
+      final ehAdmin = subtipoCorretor == 'empresa' && papelImobiliaria == 'admin';
+      final contaAuth = FirebaseAuth.instance.currentUser;
+
+      // corretor de empresa: ou ele e a conta master e a imobiliaria e criada
+      // aqui em nome dele, ou ele escolheu uma que ja existe e o vinculo NASCE
+      // pendente -- quem aprova e a conta que responde pela imobiliaria
       String imobiliariaId = '';
       bool vinculoConfirmado = false;
       bool vinculoRecusado = false;
-      if (_mostraSecaoEmpresa) {
-        imobiliariaId = _cadastrandoNovaImobiliaria
-            ? await ImobiliariaService.instance.encontrarOuCriar(
-                nome: _nomeEmpresaController.text.trim(),
-                cnpj: cnpjEmpresa,
-                email: _emailEmpresaController.text.trim(),
-                endereco: _enderecoEmpresaControllers.valor.formatado,
-              )
-            : _imobiliariaSelecionada!.id;
+      if (ehAdmin) {
+        final minha = await _salvarImobiliariaDaConta(
+          cnpj: cnpjEmpresa,
+          contaAuth: contaAuth,
+        );
+        imobiliariaId = minha.id;
+        // a tela precisa saber que a empresa ja existe: salvar duas vezes
+        // seguidas sem isso tentaria criar o mesmo CNPJ de novo
+        if (mounted) setState(() => _imobiliariaSelecionada = minha);
+        // o admin nao pede aprovacao a ninguem: ele e quem aprova. Quem libera
+        // o "Anunciar" dele e o papel, nao o vinculo (ver Usuario.podeAnunciar)
+      } else if (_mostraSecaoEmpresa) {
+        imobiliariaId = _imobiliariaSelecionada!.id;
         // trocar de imobiliaria zera a resposta da anterior: aprovacao vale
         // pra quem aprovou, nao pra qualquer empresa que a pessoa escolher
         final mesmaDeAntes = widget.perfil.imobiliariaId == imobiliariaId;
@@ -391,6 +472,7 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
         email: widget.perfil.email,
         tipoUsuario: tipoUsuario,
         subtipoCorretor: subtipoCorretor,
+        papelImobiliaria: papelImobiliaria,
         fotoUrl: _fotoUrl,
         perfilCompleto: true,
         genero: _generoSelecionado == 'Outro' ? _generoOutroController.text.trim() : _generoSelecionado,
@@ -406,17 +488,20 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
         responsavelCpf: _mostraSecaoResponsavel ? cpfResponsavel : '',
         responsavelEmail: _mostraSecaoResponsavel ? _respEmailController.text.trim() : '',
         responsavelEmailVerificado: false,
-        // os dados da empresa so ficam no perfil de quem CADASTROU a
-        // imobiliaria. Escolhendo uma que ja existe, eles moram no cadastro
-        // dela e o perfil guarda so o vinculo (imobiliariaId) -- copiar aqui
-        // criaria uma segunda versao dos mesmos dados pra divergir depois, e
-        // esbarraria na regra que trava o CNPJ da empresa ja gravado
-        nomeEmpresa: _mostraFormularioDeEmpresa ? _nomeEmpresaController.text.trim() : '',
-        cnpjEmpresa: _mostraFormularioDeEmpresa ? cnpjEmpresa : '',
-        enderecoEmpresa:
-            _mostraFormularioDeEmpresa ? _enderecoEmpresaControllers.valor : const Endereco(),
-        emailEmpresa: _mostraFormularioDeEmpresa ? _emailEmpresaController.text.trim() : '',
-        emailEmpresaVerificado: false,
+        // os dados da empresa so ficam no perfil da conta master dela. Quem
+        // apenas trabalha na imobiliaria guarda so o vinculo (imobiliariaId):
+        // os dados moram no cadastro dela, e copiar aqui criaria uma segunda
+        // versao dos mesmos dados pra divergir depois, alem de esbarrar na
+        // regra que trava o CNPJ da empresa ja gravado.
+        //
+        // O "e-mail da empresa" e o da propria conta master -- nao ha segundo
+        // endereco pra confirmar, e e o mesmo que as regras comparam pra
+        // decidir quem responde pela imobiliaria
+        nomeEmpresa: ehAdmin ? _nomeEmpresaController.text.trim() : '',
+        cnpjEmpresa: ehAdmin ? cnpjEmpresa : '',
+        enderecoEmpresa: ehAdmin ? _enderecoEmpresaControllers.valor : const Endereco(),
+        emailEmpresa: ehAdmin ? (contaAuth?.email ?? widget.perfil.email) : '',
+        emailEmpresaVerificado: ehAdmin && (contaAuth?.emailVerified ?? false),
         imobiliariaId: imobiliariaId,
         vinculoConfirmado: vinculoConfirmado,
         vinculoRecusado: vinculoRecusado,
@@ -424,7 +509,19 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
 
       await UsuarioService.instance.completarPerfil(atualizado);
 
+      // a segunda parte do guia comeca quando esta tela fecha: quem dispara e
+      // a TelaPrincipal, que recebe o perfil novo por perfilAtualizadoGlobal
+      // (ver o retorno desta rota em map_screen). Ela precisa rodar la, e nao
+      // aqui, porque o guia acende os botoes do mapa e da barra de abas
       if (mounted) Navigator.pop(context, atualizado);
+    } on ImobiliariaJaCadastradaException catch (e) {
+      // o perfil NAO foi salvo: sem imobiliaria, gravar "admin" deixaria a conta
+      // dizendo que responde por uma empresa que ela nao cadastrou
+      _mostrarErro(
+        '"${e.existente.nome}" já está cadastrada com esse CNPJ. Se você '
+        'trabalha lá, escolha "Corretor da equipe" e peça aprovação; se a '
+        'conta que responde por ela não é mais usada, fale com o suporte.',
+      );
     } catch (e) {
       _mostrarErro('Erro ao salvar perfil: $e');
     } finally {
@@ -574,7 +671,10 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
                   bloqueado: _tipoDeContaBloqueado,
                   onSelecionar: (valor) => setState(() {
                     _tipoSelecionado = valor;
-                    if (valor != 'corretor') _subtipoCorretor = '';
+                    if (valor != 'corretor') {
+                      _subtipoCorretor = '';
+                      _papelImobiliaria = '';
+                    }
                     // documento ja finalizado nao acompanha a troca de tipo
                     if (!_documentoBloqueado) {
                       _documentoEhCnpj = false;
@@ -592,7 +692,12 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
                           selecionado: _subtipoCorretor == 'autonomo',
                           label: 'Autônomo',
                           bloqueado: _subtipoBloqueado,
-                          onTap: () => setState(() => _subtipoCorretor = 'autonomo'),
+                          onTap: () => setState(() {
+                            _subtipoCorretor = 'autonomo';
+                            // corretor autonomo nao tem imobiliaria: o papel e o
+                            // vinculo escolhidos antes deixam de valer
+                            _papelImobiliaria = '';
+                          }),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -690,68 +795,126 @@ class _ConcluirPerfilScreenState extends State<ConcluirPerfilScreen> {
                 titulo: 'Imobiliária',
                 icone: Icons.apartment_rounded,
                 filhos: [
-                  if (_carregandoImobiliaria)
-                    const Center(child: CircularProgressIndicator(color: corPrimaria))
-                  else
-                    SeletorImobiliaria(
-                      selecionada: _imobiliariaSelecionada,
-                      isDark: isDark,
-                      cadastrandoNova: _cadastrandoNovaImobiliaria,
-                      onSelecionar: (imobiliaria) => setState(() {
-                        _imobiliariaSelecionada = imobiliaria;
-                        _cadastrandoNovaImobiliaria = false;
-                      }),
-                      onCadastrarNova: () => setState(() {
-                        _cadastrandoNovaImobiliaria = true;
-                        _imobiliariaSelecionada = null;
-                      }),
-                      onLimpar: () => setState(() {
-                        _imobiliariaSelecionada = null;
-                        _cadastrandoNovaImobiliaria = false;
-                      }),
-                    ),
-                  const SizedBox(height: 10),
+                  // A pergunta que decide o resto: administrador cadastra a
+                  // empresa aqui e passa a responder por ela; corretor da equipe
+                  // escolhe uma que ja existe e espera aprovacao. Antes nao havia
+                  // essa escolha -- todo mundo caia na lista, e quem precisava
+                  // cadastrar a empresa usava o "cadastrar nova" de dentro dela,
+                  // que criava a imobiliaria sem dono nenhum
                   Text(
-                    _vinculoJaConfirmado
-                        ? 'Seu vínculo com essa imobiliária já foi aprovado.'
-                        : 'Seu cadastro fica como "pendente de aprovação" até a imobiliária '
-                            'confirmar o vínculo. Até lá você não anuncia imóveis por ela.',
-                    style: AppTextStyles.caption.copyWith(
-                      color: _vinculoJaConfirmado
-                          ? corSucesso
-                          : (isDark ? Colors.white38 : Colors.grey),
+                    'Na imobiliária, você é:',
+                    style: AppTextStyles.captionBold.copyWith(
+                      color: isDark ? Colors.white70 : Colors.black87,
                     ),
                   ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _chipEscolha(
+                          isDark: isDark,
+                          selecionado: _papelImobiliaria == 'admin',
+                          label: 'Administrador',
+                          bloqueado: _papelBloqueado,
+                          onTap: () => setState(() {
+                            _papelImobiliaria = 'admin';
+                            _imobiliariaSelecionada = null;
+                          }),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _chipEscolha(
+                          isDark: isDark,
+                          selecionado: _papelImobiliaria == 'equipe',
+                          label: 'Corretor da equipe',
+                          bloqueado: _papelBloqueado,
+                          onTap: () => setState(() => _papelImobiliaria = 'equipe'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_papelBloqueado) ...[
+                    const SizedBox(height: 10),
+                    _avisoBloqueado(
+                      isDark,
+                      'Seu papel na imobiliária é definido no cadastro e não muda '
+                      'depois. Se escolheu errado, fale com o suporte.',
+                    ),
+                  ],
+                  if (_ehAdminDaImobiliaria) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      'Você cadastra a imobiliária aqui embaixo e ela fica no seu '
+                      'nome: é a sua conta que edita os dados dela e aprova os '
+                      'corretores que pedirem vínculo.',
+                      style: AppTextStyles.caption.copyWith(
+                        color: isDark ? Colors.white38 : Colors.grey,
+                      ),
+                    ),
+                  ],
+                  if (_ehCorretorDaEquipe) ...[
+                    const SizedBox(height: 14),
+                    if (_carregandoImobiliaria)
+                      const Center(child: CircularProgressIndicator(color: corPrimaria))
+                    else
+                      SeletorImobiliaria(
+                        selecionada: _imobiliariaSelecionada,
+                        isDark: isDark,
+                        onSelecionar: (imobiliaria) =>
+                            setState(() => _imobiliariaSelecionada = imobiliaria),
+                        onLimpar: () => setState(() => _imobiliariaSelecionada = null),
+                      ),
+                    const SizedBox(height: 10),
+                    Text(
+                      _vinculoJaConfirmado
+                          ? 'Seu vínculo com essa imobiliária já foi aprovado.'
+                          : 'Seu cadastro fica como "pendente de aprovação" até a imobiliária '
+                              'confirmar o vínculo. Até lá você não anuncia imóveis por ela.',
+                      style: AppTextStyles.caption.copyWith(
+                        color: _vinculoJaConfirmado
+                            ? corSucesso
+                            : (isDark ? Colors.white38 : Colors.grey),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ],
 
-            if (_mostraFormularioDeEmpresa) ...[
+            if (_ehAdminDaImobiliaria) ...[
               const SizedBox(height: 20),
               _secao(
                 isDark: isDark,
-                titulo: 'Dados da empresa',
+                titulo: 'Dados da imobiliária',
                 icone: Icons.store_rounded,
                 filhos: [
-                  _campo(controller: _nomeEmpresaController, label: 'Nome da empresa', icon: Icons.store_outlined, isDark: isDark),
+                  if (_carregandoImobiliaria)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 14),
+                      child: Center(child: CircularProgressIndicator(color: corPrimaria)),
+                    ),
+                  _campo(controller: _nomeEmpresaController, label: 'Nome da imobiliária', icon: Icons.store_outlined, isDark: isDark),
                   const SizedBox(height: 14),
-                  _campo(controller: _cnpjEmpresaController, label: 'CNPJ da empresa', icon: Icons.badge_outlined, isDark: isDark,
+                  _campo(controller: _cnpjEmpresaController, label: 'CNPJ da imobiliária', icon: Icons.badge_outlined, isDark: isDark,
                       keyboardType: TextInputType.number, formatters: [_mascaraCnpjEmpresa],
                       bloqueado: _cnpjEmpresaBloqueado),
                   if (_cnpjEmpresaBloqueado) ...[
                     const SizedBox(height: 8),
-                    _avisoBloqueado(isDark, 'O CNPJ da empresa ficou travado quando o cadastro foi finalizado.'),
+                    _avisoBloqueado(isDark, 'O CNPJ da imobiliária ficou travado quando o cadastro foi finalizado.'),
                   ],
                   const SizedBox(height: 14),
-                  Text('Endereço corporativo', style: AppTextStyles.captionBold.copyWith(color: isDark ? Colors.white70 : Colors.black87)),
+                  _campo(controller: _telefoneEmpresaController, label: 'Telefone da imobiliária', icon: Icons.phone_outlined, isDark: isDark,
+                      keyboardType: TextInputType.phone, formatters: [_mascaraTelefoneEmpresa]),
+                  const SizedBox(height: 14),
+                  Text('Endereço da sede', style: AppTextStyles.captionBold.copyWith(color: isDark ? Colors.white70 : Colors.black87)),
                   const SizedBox(height: 10),
                   CampoEndereco(controllers: _enderecoEmpresaControllers, isDark: isDark),
-                  const SizedBox(height: 14),
-                  _campo(controller: _emailEmpresaController, label: 'E-mail da empresa', icon: Icons.email_outlined, isDark: isDark,
-                      keyboardType: TextInputType.emailAddress),
                   const SizedBox(height: 8),
                   Text(
-                    'Vamos enviar um e-mail de confirmação pra esse endereço assim que a verificação estiver disponível. Por enquanto ele fica salvo como pendente.',
+                    'Esse endereço vira o pin da imobiliária no mapa. Logotipo, '
+                    'descrição e fotos do escritório entram depois, em "Editar '
+                    'imobiliária" no seu perfil.',
                     style: AppTextStyles.caption.copyWith(color: isDark ? Colors.white38 : Colors.grey),
                   ),
                 ],

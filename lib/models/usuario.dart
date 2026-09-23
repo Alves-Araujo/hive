@@ -9,6 +9,13 @@ class Usuario {
   final String email;
   final String tipoUsuario; // '', 'estudante', 'proprietario', 'corretor'
   final String subtipoCorretor; // '', 'autonomo', 'empresa'
+
+  // papel dentro da imobiliaria, so pra corretor de empresa:
+  // 'admin'  -- e a conta master DELA: cadastrou a empresa no proprio cadastro
+  //            e responde pelos pedidos de vinculo dos outros
+  // 'equipe' -- trabalha numa imobiliaria que ja existe e espera aprovacao
+  // ''       -- cadastro feito antes desta escolha existir
+  final String papelImobiliaria;
   final String fotoUrl;
   final bool perfilCompleto;
   final DateTime? ultimoAcesso;
@@ -50,6 +57,7 @@ class Usuario {
     required this.email,
     this.tipoUsuario = '',
     this.subtipoCorretor = '',
+    this.papelImobiliaria = '',
     this.fotoUrl = '',
     this.perfilCompleto = false,
     this.ultimoAcesso,
@@ -80,20 +88,30 @@ class Usuario {
 
   bool get ehCorretorDeEmpresa => _tipo == 'corretor' && subtipoCorretor == 'empresa';
 
+  // a conta master da imobiliaria -- quem a cadastrou junto com o proprio
+  // perfil. Nao pede aprovacao de ninguem: e ela que aprova
+  bool get ehAdminImobiliaria =>
+      ehCorretorDeEmpresa && papelImobiliaria == 'admin';
+
   // corretor de empresa entra como "pendente de aprovacao": quem responde e a
   // imobiliaria que ele escolheu
   bool get vinculoPendente =>
-      ehCorretorDeEmpresa && !vinculoConfirmado && !vinculoRecusado;
+      ehCorretorDeEmpresa &&
+      !ehAdminImobiliaria &&
+      !vinculoConfirmado &&
+      !vinculoRecusado;
 
   // quem pode publicar anuncio. Proprietario e corretor autonomo dependem so
   // do cadastro; corretor de EMPRESA espera a imobiliaria aprovar o vinculo --
   // anunciar em nome de uma imobiliaria que nunca disse que ele trabalha la e
-  // exatamente o que a aprovacao existe pra impedir
+  // exatamente o que a aprovacao existe pra impedir. O admin da imobiliaria
+  // esta do outro lado dessa aprovacao, entao nao espera nada
   bool get podeAnunciar {
     if (!perfilCompleto) return false;
     if (_tipo == 'proprietario') return true;
     if (_tipo != 'corretor') return false;
-    return ehCorretorDeEmpresa ? vinculoConfirmado : true;
+    if (!ehCorretorDeEmpresa) return true;
+    return ehAdminImobiliaria || vinculoConfirmado;
   }
 
   factory Usuario.fromMap(Map<String, dynamic> map, String uid) {
@@ -106,6 +124,7 @@ class Usuario {
       email: map['email'] ?? '',
       tipoUsuario: map['tipoUsuario'] ?? '',
       subtipoCorretor: map['subtipoCorretor'] ?? '',
+      papelImobiliaria: map['papelImobiliaria'] ?? '',
       fotoUrl: map['fotoUrl'] ?? '',
       perfilCompleto: map['perfilCompleto'] ?? false,
       ultimoAcesso: (map['ultimoAcesso'] as Timestamp?)?.toDate(),
@@ -138,6 +157,7 @@ class Usuario {
       'email': email,
       'tipoUsuario': tipoUsuario,
       'subtipoCorretor': subtipoCorretor,
+      'papelImobiliaria': papelImobiliaria,
       'fotoUrl': fotoUrl,
       'perfilCompleto': perfilCompleto,
       if (ultimoAcesso != null) 'ultimoAcesso': Timestamp.fromDate(ultimoAcesso!),

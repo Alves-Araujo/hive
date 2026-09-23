@@ -29,6 +29,7 @@ class PerfilPublicoService {
       'fotoUrl': usuario.fotoUrl,
       'tipoUsuario': usuario.tipoUsuario,
       'subtipoCorretor': usuario.subtipoCorretor,
+      'papelImobiliaria': usuario.papelImobiliaria,
       'cidade': usuario.cidade,
       'imobiliariaId': usuario.imobiliariaId,
       'vinculoConfirmado': mesmaImobiliaria && atual.vinculoConfirmado,

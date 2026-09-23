@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../main.dart';
 import '../models/imovel.dart';
 import '../models/usuario.dart';
+import '../utils/alvos_tutorial.dart';
 import '../utils/cor_foto.dart';
 import '../widgets/card_imovel_vertical.dart';
 import '../widgets/cabecalho_tela.dart';
@@ -104,6 +105,9 @@ class _TelaResumoState extends State<TelaResumo>
             ),
           ),
           rodape: SeletorTipoResumo(
+            // chave do guia interativo: e neste seletor que ele abre o furo
+            // quando explica a aba Resumo (ver utils/alvos_tutorial.dart)
+            key: chaveAlvo(AlvoTutorial.filtroResumo),
             selecionado: _filtroTipo,
             onChanged: _mudarFiltro,
           ),

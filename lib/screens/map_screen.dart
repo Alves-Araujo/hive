@@ -13,6 +13,8 @@ import 'editar_imobiliaria_screen.dart';
 import 'novo_anuncio_screen.dart';
 import 'notificacoes_screen.dart';
 import '../main.dart';
+import '../models/passo_guia.dart';
+import '../utils/alvos_tutorial.dart';
 import '../models/imobiliaria.dart';
 import '../models/imovel.dart';
 import '../models/filtro_state.dart';
@@ -114,7 +116,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
   Set<Marker> _marcadoresImobiliarias = {};
   StreamSubscription<List<Imobiliaria>>? _inscricaoImobiliarias;
 
-  // a imobiliaria desta conta, quando o e-mail do login e o de alguma (ver
+  // a imobiliaria desta conta, quando ela e a conta master de alguma (ver
   // _verificarVinculoPendente). Fica null pro resto do mundo -- e o que decide
   // se a folha de perfil oferece editar o cadastro da empresa
   Imobiliaria? _imobiliariaDaConta;
@@ -741,21 +743,29 @@ class _CentroDoMapaState extends State<CentroDoMapa>
 
   // Pedidos de vinculo esperando resposta desta conta.
   //
-  // A imobiliaria nao e um tipo de conta: ela e identificada pelo e-mail, e
-  // quem entra com esse e-mail e quem responde pelos corretores dela. Antes a
-  // folha so aparecia enquanto a imobiliaria estava NAO confirmada e
+  // Quem responde por uma imobiliaria e a conta master dela -- a que a
+  // cadastrou, e cujo uid ficou gravado em donoUid (ver
+  // ImobiliariaService.criarParaDono). Nos cadastros antigos, feitos antes de
+  // existir dono, o criterio continua sendo o e-mail: quem entra com o e-mail
+  // gravado no cadastro responde por ele.
+  //
+  // Antes a folha so aparecia enquanto a imobiliaria estava NAO confirmada e
   // confirmava todo mundo de uma vez -- depois do primeiro "confirmar", os
   // corretores que pedissem vinculo dali pra frente nao apareciam pra
   // ninguem e ficavam pendentes pra sempre. Agora a pergunta e por pessoa, e
   // aparece sempre que houver pedido em aberto
   Future<void> _verificarVinculoPendente() async {
-    final email = FirebaseAuth.instance.currentUser?.email;
-    if (email == null) return;
+    final conta = FirebaseAuth.instance.currentUser;
+    if (conta == null) return;
 
-    final imobiliaria = await ImobiliariaService.instance.buscarPorEmail(email);
+    final imobiliaria =
+        await ImobiliariaService.instance.buscarPorDono(conta.uid) ??
+        (conta.email == null
+            ? null
+            : await ImobiliariaService.instance.buscarPorEmail(conta.email!));
     if (imobiliaria == null || !mounted) return;
 
-    // guarda quem e essa conta: e o mesmo e-mail que prova ser a imobiliaria
+    // guarda quem e essa conta: e a mesma prova de responder pela imobiliaria
     // aqui e na hora de editar o cadastro dela, entao nao vale fazer a
     // consulta duas vezes
     setState(() => _imobiliariaDaConta = imobiliaria);
@@ -2078,11 +2088,13 @@ class _CentroDoMapaState extends State<CentroDoMapa>
       required Widget icone,
       required VoidCallback onTap,
       required String label,
+      required AlvoTutorial alvo,
     }) {
       return Semantics(
         button: true,
         label: label,
         child: Pressionavel(
+          key: chaveAlvo(alvo),
           onTap: onTap,
           child: SizedBox(width: 44, height: 48, child: Center(child: icone)),
         ),
@@ -2111,6 +2123,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
         ),
         botao(
           label: 'Filtros do mapa',
+          alvo: AlvoTutorial.filtros,
           onTap: _mostrarFiltros,
           icone: Badge(
             isLabelVisible: _filtroState.temFiltrosAtivos,
@@ -2121,6 +2134,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
         ),
         botao(
           label: 'Configurações do mapa',
+          alvo: AlvoTutorial.configuracoes,
           onTap: _mostrarConfiguracoes,
           icone: Icon(Icons.settings_rounded, color: corIcone, size: 23),
         ),
@@ -2301,6 +2315,15 @@ class _CentroDoMapaState extends State<CentroDoMapa>
             );
             if (atualizado != null && mounted) {
               setState(() => _perfilAtual = atualizado);
+              // quem acabou de cadastrar a imobiliaria dele ja volta com o
+              // "Editar imobiliária" na folha de perfil, sem esperar a proxima
+              // abertura do app
+              if (atualizado.ehAdminImobiliaria && _imobiliariaDaConta == null) {
+                _verificarVinculoPendente();
+              }
+              // a TelaPrincipal escuta pra criar a aba "Imóveis" de quem
+              // acabou de virar anunciante e pra rodar a segunda parte do guia
+              perfilAtualizadoGlobal.value = atualizado;
             }
           },
           onSair: () {
@@ -2312,6 +2335,16 @@ class _CentroDoMapaState extends State<CentroDoMapa>
             Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const NotificacoesScreen()),
+            );
+          },
+          // o guia so aparece sozinho duas vezes; sem uma porta pra ele, quem
+          // saiu no meio nao teria como ver de novo. Quem roda e a
+          // TelaPrincipal (dona da barra de abas), entao aqui so vai o pedido
+          onVerTutorial: () {
+            Navigator.pop(sheetContext);
+            pedidoDeGuiaGlobal.value = PedidoDeGuia(
+              perfil: _perfilAtual,
+              ehContaDaImobiliaria: _imobiliariaDaConta != null,
             );
           },
         );
@@ -3066,21 +3099,27 @@ class _CentroDoMapaState extends State<CentroDoMapa>
                     children: [
                       Row(
                         children: [
-                          _buildGlassButton(
-                            child: AvatarWidget(
-                              nome: _perfilAtual.nome,
-                              fotoUrl: _perfilAtual.fotoUrl,
-                              size: 40,
+                          // KeyedSubtree so pra pendurar a chave do guia: o
+                          // furo dele sai em cima do avatar de verdade
+                          KeyedSubtree(
+                            key: chaveAlvo(AlvoTutorial.avatar),
+                            child: _buildGlassButton(
+                              child: AvatarWidget(
+                                nome: _perfilAtual.nome,
+                                fotoUrl: _perfilAtual.fotoUrl,
+                                size: 40,
+                              ),
+                              onTap: _mostrarPerfil,
+                              badgeColor: _perfilAtual.perfilCompleto
+                                  ? null
+                                  : corErro,
                             ),
-                            onTap: _mostrarPerfil,
-                            badgeColor: _perfilAtual.perfilCompleto
-                                ? null
-                                : corErro,
                           ),
                           const SizedBox(width: 10),
 
                           Expanded(
                             child: MapGlassSurface(
+                              key: chaveAlvo(AlvoTutorial.busca),
                               radius: 28,
                               child: Row(
                                 children: [
@@ -3458,6 +3497,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
             // as outras superficies flutuantes do mapa, e ganhou o retorno de
             // toque que o FAB do Material ja tinha e a gente perderia sem isso
             child: Pressionavel(
+              key: chaveAlvo(AlvoTutorial.minhaLocalizacao),
               onTap: _obterLocalizacaoReal,
               child: MapGlassSurface(
                 radius: 22,
@@ -3488,6 +3528,7 @@ class _CentroDoMapaState extends State<CentroDoMapa>
             bottom: acimaDaBarra + alturaCardLocal + AppSpacing.md,
             right: 16,
             child: Container(
+              key: chaveAlvo(AlvoTutorial.anunciar),
               decoration: BoxDecoration(
                 gradient: gradientePrincipal,
                 borderRadius: BorderRadius.circular(20),
@@ -3551,6 +3592,7 @@ class _PerfilPreview extends StatelessWidget {
   final VoidCallback onConcluirPerfil;
   final VoidCallback onSair;
   final VoidCallback onVerNotificacoes;
+  final VoidCallback onVerTutorial;
 
   // preenchida so quando o e-mail desta conta e o de uma imobiliaria: ai a
   // folha tambem oferece editar o cadastro DA EMPRESA, que e outro documento
@@ -3563,6 +3605,7 @@ class _PerfilPreview extends StatelessWidget {
     required this.onConcluirPerfil,
     required this.onSair,
     required this.onVerNotificacoes,
+    required this.onVerTutorial,
     required this.imobiliaria,
     required this.onEditarImobiliaria,
   });
@@ -3572,6 +3615,9 @@ class _PerfilPreview extends StatelessWidget {
       case 'proprietario':
         return 'Proprietário';
       case 'corretor':
+        // a conta master da imobiliaria e corretor de empresa por baixo, mas
+        // chamar ela de "corretor" esconde justamente o que ela e
+        if (perfil.ehAdminImobiliaria) return 'Imobiliária (administrador)';
         return perfil.subtipoCorretor == 'empresa'
             ? 'Corretor (Empresa)'
             : 'Corretor Autônomo';
@@ -3769,6 +3815,35 @@ class _PerfilPreview extends StatelessWidget {
               ),
             ),
           ),
+          // so pra quem ja escolheu o tipo de conta: o guia e por papel, e
+          // antes disso nao ha o que mostrar
+          if (perfil.tipoUsuario.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: onVerTutorial,
+              icon: Icon(
+                Icons.school_rounded,
+                color: isDark ? Colors.white : Colors.black87,
+                size: 18,
+              ),
+              label: Text(
+                'Ver tutorial',
+                style: TextStyle(
+                  color: isDark ? Colors.white : Colors.black87,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(44),
+                side: BorderSide(
+                  color: isDark ? Colors.white24 : Colors.black12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           TextButton.icon(
             onPressed: onSair,

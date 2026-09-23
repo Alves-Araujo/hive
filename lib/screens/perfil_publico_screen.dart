@@ -51,6 +51,7 @@ class _PerfilPublicoScreenState extends State<PerfilPublicoScreen> {
     if (_ehImobiliaria) return 'Imobiliária';
     switch (widget.pessoa!.tipoUsuario) {
       case 'corretor':
+        if (widget.pessoa!.ehAdminImobiliaria) return 'Imobiliária (administrador)';
         return widget.pessoa!.subtipoCorretor == 'empresa'
             ? 'Corretor (Empresa)'
             : 'Corretor Autônomo';

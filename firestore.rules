@@ -25,14 +25,20 @@ service cloud.firestore {
     // decide o que a conta PODE FAZER (anunciar, vincular imobiliaria) e ja
     // circulou em anuncio, chat e avaliacao com esse papel. O subtipo do
     // corretor anda junto -- trocar "empresa" por "autonomo" seria fugir da
-    // aprovacao da imobiliaria e sair anunciando. A tela ja bloqueia os dois
-    // campos; aqui e o que vale pra quem chama o Firestore direto
+    // aprovacao da imobiliaria e sair anunciando -- e o papel na imobiliaria
+    // tambem: virar "admin" depois seria dizer que responde por uma empresa que
+    // outra conta cadastrou. Vale lembrar que o papel nao DA poder nenhum por
+    // si: quem manda numa imobiliaria e o donoUid gravado nela (ver
+    // /imobiliarias la embaixo), e isto aqui e so o cadastro da pessoa.
+    // A tela ja bloqueia esses campos; aqui e o que vale pra quem chama o
+    // Firestore direto
     function cadastroPreservado() {
       return resource.data.get('perfilCompleto', false) != true
       || (documentoImutavel('cpf')
       && documentoImutavel('cnpj')
       && documentoImutavel('tipoUsuario')
       && documentoImutavel('subtipoCorretor')
+      && documentoImutavel('papelImobiliaria')
       && vinculoImutavel('cnpjEmpresa')
       && vinculoImutavel('responsavelCpf'));
     }
@@ -99,14 +105,32 @@ service cloud.firestore {
       && naoSeAutoAprova('vinculoConfirmado')
       && naoSeAutoAprova('vinculoRecusado');
 
-      // A resposta ao pedido de vinculo e dada por OUTRA pessoa: quem entra
-      // com o e-mail da imobiliaria aprova (ou recusa) os corretores dela.
+      // Quem responde por uma imobiliaria. Sao dois criterios, e basta um:
+      // - donoUid: a conta master dela, a que cadastrou a empresa junto com o
+      //   proprio perfil. E o criterio dos cadastros novos
+      // - emailBusca: a conta que entra com o e-mail gravado no cadastro. E o
+      //   criterio antigo, de quando a imobiliaria nascia sem dono -- continua
+      //   valendo pelos cadastros feitos antes disso
+      // Tudo por get() com padrao: login sem e-mail no token derruba a
+      // avaliacao da regra inteira se o campo for lido direto, e a comparacao
+      // exige os dois lados preenchidos, senao um cadastro antigo sem emailBusca
+      // casaria com o e-mail vazio de qualquer conta dessas
+      function respondePelaImobiliaria(imobiliariaId) {
+        let imobiliaria = get(/databases/$(database)/documents/imobiliarias/$(imobiliariaId)).data;
+        return imobiliaria.get('donoUid', '') == request.auth.uid
+        || (request.auth.token.get('email', '') != ''
+        && imobiliaria.get('emailBusca', '') != ''
+        && imobiliaria.get('emailBusca', '') == request.auth.token.get('email', '').lower());
+      }
+
+      // A resposta ao pedido de vinculo e dada por OUTRA pessoa: a conta que
+      // responde pela imobiliaria aprova (ou recusa) os corretores dela.
       // Antes a escrita era liberada pra qualquer logado em qualquer perfil --
       // dava pra trocar nome e foto de quem quisesse. Agora o terceiro liga UM
-      // dos dois campos de resposta, e so se o e-mail CONFIRMADO do login for
-      // o da imobiliaria a que esse corretor diz pertencer
+      // dos dois campos de resposta, e so na imobiliaria a que esse corretor
+      // diz pertencer
       allow update: if request.auth != null
-      && request.auth.token.email_verified == true
+      && request.auth.token.get('email_verified', false) == true
       && (
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['vinculoConfirmado'])
         && request.resource.data.vinculoConfirmado == true)
@@ -116,22 +140,38 @@ service cloud.firestore {
       )
       && resource.data.imobiliariaId is string
       && resource.data.imobiliariaId != ''
-      && get(/databases/$(database)/documents/imobiliarias/$(resource.data.imobiliariaId)).data.emailBusca
-      == request.auth.token.email.lower();
+      && respondePelaImobiliaria(resource.data.imobiliariaId);
     }
 
     // imobiliarias -- publicas pra leitura/busca e pro pin no mapa
     match /imobiliarias/{imobiliariaId} {
       allow read: if request.auth != null;
 
-      // qualquer corretor logado cadastra a imobiliaria dele, mas ela nasce
-      // SEMPRE nao confirmada -- confirmar e trabalho do dono do e-mail
+      // A imobiliaria nasce COM DONO, e o dono e quem esta cadastrando: o uid
+      // vai gravado em donoUid e o e-mail e o da PROPRIA CONTA.
+      //
+      // Antes bastava estar logado, e o e-mail gravado era o da EMPRESA, digitado
+      // no formulario. Como quem manda na imobiliaria era deduzido desse e-mail,
+      // o cadastro nascia sem ninguem por ele: quem criou nao editava a empresa
+      // e nao aprovava os corretores que pediam vinculo. Exigir os dois campos
+      // aqui e o que fecha essa porta -- e o que garante que os dois criterios
+      // de "quem responde pela imobiliaria" apontem pra mesma conta.
+      //
+      // "emailVerificado" e a confirmacao do e-mail: como agora ele e o da conta
+      // que esta cadastrando, quem confirma e o proprio Firebase Auth. Sem
+      // e-mail confirmado o cadastro nasce pendente, como antes
       allow create: if request.auth != null
-      && request.resource.data.emailVerificado == false;
+      && request.resource.data.get('donoUid', '') == request.auth.uid
+      && request.resource.data.get('emailBusca', '') != ''
+      && request.resource.data.get('emailBusca', '') == request.auth.token.get('email', '').lower()
+      && request.resource.data.get('nome', '').trim() != ''
+      && (request.resource.data.get('emailVerificado', false) == false
+      || request.auth.token.get('email_verified', false) == true);
 
-      // A imobiliaria nao e um tipo de conta: quem responde por ela e quem
-      // entra com o e-mail dela, confirmado (o mesmo criterio ja usado pra
-      // aprovar corretor la em cima, em perfisPublicos)
+      // A imobiliaria nao e um tipo de conta: quem responde por ela e a conta
+      // master dela (donoUid) ou, nos cadastros antigos que nasceram sem dono,
+      // quem entra com o e-mail dela, confirmado. E o mesmo par de criterios
+      // usado pra aprovar corretor la em cima, em perfisPublicos.
       //
       // Tudo por get() com padrao: login por telefone (ou anonimo) nao tem
       // "email" nenhum no token, e ler o campo direto derruba a avaliacao da
@@ -140,19 +180,21 @@ service cloud.firestore {
       // e-mail vazio de QUALQUER conta dessas
       function souAImobiliaria() {
         return request.auth.token.get('email_verified', false) == true
-        && request.auth.token.get('email', '') != ''
-        && resource.data.get('emailBusca', '') != ''
-        && request.auth.token.get('email', '').lower() == resource.data.get('emailBusca', '');
+        && (
+          (resource.data.get('donoUid', '') != ''
+          && resource.data.get('donoUid', '') == request.auth.uid)
+          ||
+          (request.auth.token.get('email', '') != ''
+          && resource.data.get('emailBusca', '') != ''
+          && request.auth.token.get('email', '').lower() == resource.data.get('emailBusca', ''))
+        );
       }
 
       allow update: if request.auth != null && (
-        // so quem entra com o e-mail (confirmado) da imobiliaria a confirma.
+        // so quem responde pela imobiliaria a confirma.
         // Antes qualquer logado podia marcar emailVerificado em qualquer uma
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['emailVerificado'])
         && souAImobiliaria())
-        ||
-        // completar endereco e coordenada de cadastro antigo (pin no mapa)
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['endereco', 'latitude', 'longitude'])
         ||
         // A imobiliaria edita o PROPRIO cadastro (nome, descricao, telefone,
         // logotipo, fotos do escritorio, endereco). "fotoUrl" e o logotipo
@@ -164,9 +206,9 @@ service cloud.firestore {
         // vinculados ficavam apontando pro cadastro velho.
         //
         // Fica de fora o que identifica a empresa e o que decide quem manda
-        // nela: cnpj/cnpjBusca (chave de "encontrarOuCriar" -- dois cadastros
-        // podiam colidir no mesmo numero), email/emailBusca (trocar entregaria
-        // a imobiliaria, e os corretores dela, pra outra conta) e
+        // nela: cnpj/cnpjBusca (a chave que impede dois cadastros no mesmo
+        // numero), donoUid e email/emailBusca (trocar qualquer um dos tres
+        // entregaria a imobiliaria, e os corretores dela, pra outra conta) e
         // emailVerificado (que so a confirmacao acima liga)
         (request.resource.data.diff(resource.data).affectedKeys()
         .hasOnly(['nome', 'nomeBusca', 'descricao', 'telefone', 'fotoUrl', 'fotos', 'endereco', 'latitude', 'longitude'])
