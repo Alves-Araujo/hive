@@ -848,19 +848,13 @@ class _CentroDoMapaState extends State<CentroDoMapa>
     // a pessoa pode ter buscado outra coisa enquanto o contorno vinha
     if (_localSelecionado?.texto != pedido.nome) return;
 
+    // Bairro sem contorno no OpenStreetMap e comum em cidade pequena, e nao e
+    // erro: o pin do bairro ja foi desenhado la em cima, entao a camera ja
+    // esta no lugar certo e so falta o tracejado. Antes isso virava um aviso
+    // falando de OpenStreetMap, que e nome de bastidor e nao diz nada pra quem
+    // so queria ver o bairro. Sem contorno, fica o pin, calado
     if (pontos.length >= 3) {
       _desenharSugestao(inicial.comGeometria(TipoGeometria.area, pontos));
-    } else {
-      // bairro sem contorno no OpenStreetMap (comum em cidade pequena):
-      // fica o pin, e a pessoa fica sabendo por que nao veio o tracejado
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'O contorno do bairro ${pedido.nome} ainda não está mapeado no OpenStreetMap.',
-          ),
-          backgroundColor: corPrimaria,
-        ),
-      );
     }
   }
 
