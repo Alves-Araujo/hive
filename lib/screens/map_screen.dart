@@ -2326,10 +2326,6 @@ class _CentroDoMapaState extends State<CentroDoMapa>
               perfilAtualizadoGlobal.value = atualizado;
             }
           },
-          onSair: () {
-            Navigator.pop(sheetContext);
-            _confirmarLogout();
-          },
           onVerNotificacoes: () {
             Navigator.pop(sheetContext);
             Navigator.push(
@@ -3590,7 +3586,6 @@ class _CentroDoMapaState extends State<CentroDoMapa>
 class _PerfilPreview extends StatelessWidget {
   final Usuario perfil;
   final VoidCallback onConcluirPerfil;
-  final VoidCallback onSair;
   final VoidCallback onVerNotificacoes;
   final VoidCallback onVerTutorial;
 
@@ -3603,7 +3598,6 @@ class _PerfilPreview extends StatelessWidget {
   const _PerfilPreview({
     required this.perfil,
     required this.onConcluirPerfil,
-    required this.onSair,
     required this.onVerNotificacoes,
     required this.onVerTutorial,
     required this.imobiliaria,
@@ -3844,15 +3838,11 @@ class _PerfilPreview extends StatelessWidget {
               ),
             ),
           ],
-          const SizedBox(height: 12),
-          TextButton.icon(
-            onPressed: onSair,
-            icon: const Icon(Icons.logout_rounded, color: corErro, size: 18),
-            label: const Text(
-              'Sair da conta',
-              style: TextStyle(color: corErro, fontWeight: FontWeight.w600),
-            ),
-          ),
+          // "Sair da conta" NAO fica aqui: era o ultimo item da folha e vivia
+          // cortado pela borda de baixo do aparelho. A acao continua existindo
+          // em Configuracoes (a engrenagem da barra de busca), que e onde o
+          // proprio tutorial ja manda procurar -- ver utils/passos_guia.dart,
+          // passo AlvoTutorial.configuracoes. Um lugar so pra sair da conta
         ],
       ),
     );

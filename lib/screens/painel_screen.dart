@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../main.dart';
 import '../models/imovel.dart';
 import '../models/usuario.dart';
+import '../utils/foto_rede.dart';
 import '../utils/inatividade.dart';
 import '../utils/moeda.dart';
 import '../widgets/cabecalho_tela.dart';
@@ -421,7 +422,17 @@ class _ItemPainel extends StatelessWidget {
               child: imovel.fotos.isNotEmpty
                   ? ClipRRect(
                       borderRadius: BorderRadius.circular(14),
-                      child: Image.network(imovel.fotos.first, fit: BoxFit.cover),
+                      // 56px de caixa nao precisam da resolucao cheia da
+                      // camera decodificada, ver utils/foto_rede.dart
+                      child: Image(
+                        image: fotoDaRede(
+                          imovel.fotos.first,
+                          56,
+                          MediaQuery.devicePixelRatioOf(context),
+                        ),
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                      ),
                     )
                   : const Icon(Icons.home_rounded, color: Colors.white),
             ),
@@ -463,7 +474,7 @@ class _ItemPainel extends StatelessWidget {
                 ],
               ),
             ),
-            // o preco aparece tambem no evento (como "Gratuito" quando nao tem
+            // o preco aparece tambem no evento (como "Gratuita" quando nao tem
             // valor): quem publicou precisa conferir dali o que anunciou
             Text(
               formatarPrecoOuGratuito(imovel.preco),

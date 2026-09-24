@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../main.dart';
+import '../utils/foto_rede.dart';
 import 'pressionavel.dart';
 
 // uma foto da galeria da faculdade.
@@ -457,14 +458,14 @@ class _GaleriaFotosState extends State<GaleriaFotos> {
                 return Stack(
                   fit: StackFit.expand,
                   children: [
-                    Image.network(
-                      foto.url,
+                    // cache em disco alem da decodificacao no tamanho certo:
+                    // aqui ele economiza dinheiro, porque cada carga de foto
+                    // do Places e cobrada (ver services/lugares_service.dart).
+                    // Foto ja vista nao volta a ser baixada. Ver
+                    // utils/foto_rede.dart
+                    Image(
+                      image: fotoDaRedeLargura(context, foto.url),
                       fit: BoxFit.cover,
-                      // decodifica no tamanho de exibicao: foto cheia decodificada
-                      // durante a animacao da folha era o que travava
-                      cacheWidth: (MediaQuery.sizeOf(context).width *
-                              MediaQuery.devicePixelRatioOf(context))
-                          .round(),
                       gaplessPlayback: true,
                       loadingBuilder: (context, filho, progresso) =>
                           progresso == null

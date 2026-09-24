@@ -482,11 +482,11 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
               const SizedBox(height: 16),
 
               // evento pode ser de graca: campo vazio vale como preco zero e a
-              // ficha mostra "Gratuito". Moradia continua exigindo valor --
+              // ficha mostra "Gratuita". Moradia continua exigindo valor --
               // aluguel sem preco nao e anuncio de aluguel
               _buildTextField(
                 controller: _precoController,
-                label: _ehEvento ? 'Preço (deixe vazio se for gratuito)' : 'Preço',
+                label: _ehEvento ? 'Preço (deixe vazio se a entrada for gratuita)' : 'Preço',
                 icon: Icons.attach_money_rounded,
                 isDark: isDark,
                 campoDeDinheiro: true,
@@ -503,7 +503,7 @@ class _NovoAnuncioScreenState extends State<NovoAnuncioScreen> {
                     const Icon(Icons.celebration_rounded, size: 14, color: corEvento),
                     const SizedBox(width: 6),
                     Text(
-                      'Sem valor, o evento aparece como "Gratuito".',
+                      'Sem valor, o evento aparece como "Gratuita".',
                       style: AppTextStyles.caption.copyWith(color: isDark ? Colors.white38 : Colors.grey),
                     ),
                   ],

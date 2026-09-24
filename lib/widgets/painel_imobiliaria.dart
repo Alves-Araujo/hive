@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../main.dart';
 import '../models/imobiliaria.dart';
 import '../screens/perfil_publico_screen.dart';
+import '../utils/foto_rede.dart';
 import '../utils/pins_mapa.dart';
 import 'painel_inatel.dart';
 
@@ -327,15 +328,12 @@ class _FotoImobiliaria extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: semFoto
           ? Icon(icone, color: Colors.white38, size: 44)
-          : Image.network(
-              fotoUrl,
+          // ja decodificava no tamanho de exibicao; o que faltava era o cache
+          // em disco, pra foto ja vista nao ser baixada de novo toda vez que a
+          // folha reabre. Ver utils/foto_rede.dart
+          : Image(
+              image: fotoDaRedeLargura(context, fotoUrl),
               fit: BoxFit.contain,
-              // decodifica no tamanho de exibicao: foto cheia decodificada
-              // durante a animacao da folha e o que trava a abertura
-              cacheWidth:
-                  (MediaQuery.sizeOf(context).width *
-                          MediaQuery.devicePixelRatioOf(context))
-                      .round(),
               gaplessPlayback: true,
               loadingBuilder: (context, filho, progresso) => progresso == null
                   ? filho

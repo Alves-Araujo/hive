@@ -9,6 +9,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
+import '../utils/foto_rede.dart';
 import '../utils/tempo.dart';
 import '../utils/texto.dart';
 import '../main.dart';
@@ -424,7 +425,17 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               maxScale: 4,
               child: bytes != null
                   ? Image.memory(bytes, fit: BoxFit.contain)
-                  : Image.network(url!, fit: BoxFit.contain),
+                  // o dobro da largura da tela: da folga pro zoom do
+                  // InteractiveViewer sem trazer a resolucao cheia da camera
+                  // pro cache, ver utils/foto_rede.dart
+                  : Image(
+                      image: fotoDaRede(
+                        url!,
+                        MediaQuery.sizeOf(context).width * 2,
+                        MediaQuery.devicePixelRatioOf(context),
+                      ),
+                      fit: BoxFit.contain,
+                    ),
             ),
           ),
         ),
@@ -843,7 +854,14 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         bytes = _imagensCache.putIfAbsent(mensagemId, () => base64Decode(base64));
         foto = Image.memory(bytes, width: 220, fit: BoxFit.cover, gaplessPlayback: true);
       } else if (url.isNotEmpty) {
-        foto = Image.network(url, width: 220, fit: BoxFit.cover);
+        // balao de 220px: cache em disco e decodificacao no tamanho de
+        // exibicao, ver utils/foto_rede.dart
+        foto = Image(
+          image: fotoDaRede(url, 220, MediaQuery.devicePixelRatioOf(context)),
+          width: 220,
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+        );
       } else {
         foto = const SizedBox(width: 160, height: 160);
       }

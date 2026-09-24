@@ -15,6 +15,7 @@ import '../services/perfil_publico_service.dart';
 import '../services/lugares_service.dart';
 import '../services/rota_service.dart';
 import '../utils/distancia.dart';
+import '../utils/foto_rede.dart';
 import '../utils/moeda.dart';
 import '../utils/tempo.dart';
 import '../widgets/animated_gradient_button.dart';
@@ -523,9 +524,15 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
             controller: _fotoController,
             itemCount: imovel.fotos.length,
             onPageChanged: (i) => setState(() => _fotoAtual = i),
-            itemBuilder: (_, i) => Image.network(
-              imovel.fotos[i],
+            // a capa em tela cheia era a pior ofensora: decodificada na
+            // resolucao cheia da camera, sozinha ja estourava o ImageCache e
+            // expulsava as fotos da lista de onde a pessoa tinha vindo -- era
+            // por isso que ao voltar do anuncio as outras fotos sumiam.
+            // Ver utils/foto_rede.dart
+            itemBuilder: (_, i) => Image(
+              image: fotoDaRedeLargura(context, imovel.fotos[i]),
               fit: BoxFit.cover,
+              gaplessPlayback: true,
               errorBuilder: (_, _, _) => _fundoSemFoto(isEvento),
               loadingBuilder: (_, filho, progresso) =>
                   progresso == null ? filho : _fundoSemFoto(isEvento),
@@ -604,7 +611,7 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
   }
 
   // moradia: "Aluguel mensal R$X/mês". Evento: "Entrada" com o valor, ou
-  // "Gratuito" quando foi publicado sem preco
+  // "Gratuita" quando foi publicado sem preco
   Widget _cartaoPreco(Imovel imovel, bool isDark) {
     final String valor = _ehEvento
         ? formatarPrecoOuGratuito(imovel.preco)
@@ -623,7 +630,11 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.end,
+        // center, nao end: os dois textos tem tamanhos bem diferentes (13 e
+        // 24), entao alinhar pela base jogava o rotulo pequeno pro rodape da
+        // pilula, visivelmente abaixo do meio. Centralizado, cada um fica no
+        // centro da barra e a linha inteira ganha eixo
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Text(
             _ehEvento ? 'Entrada' : 'Aluguel mensal',

@@ -2,7 +2,7 @@ name: moradia_app
 description: "A new Flutter project."
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.0.1+2
 
 environment:
   sdk: '^3.11.0'
@@ -14,7 +14,6 @@ dependencies:
     sdk: flutter
   google_maps_flutter: ^2.17.0
   google_fonts: ^6.2.1
-  cupertino_icons: ^1.0.8
   firebase_core: ^4.14.0
   firebase_auth: ^6.6.0
   cloud_firestore: ^6.9.0
@@ -46,8 +45,6 @@ flutter_launcher_icons:
   android: "ic_launcher"
   adaptive_icon_background: "#FFFFFF"
   adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
-  ios: true
-  remove_alpha_ios: true
   web:
     generate: true
     background_color: "#FFFFFF"

@@ -80,14 +80,40 @@ class ChatService {
       'ocultoPara': FieldValue.arrayRemove([meuUid, contatoUid]),
     }, SetOptions(merge: true));
 
-    final mensagem = mensagensDe(chatId).add({
+    final corpo = {
       ...dados,
       // a regra exige que bata com quem esta autenticado: sem isso dava pra
       // assinar mensagem com o uid de outra pessoa
       'remetenteUid': meuUid,
       'timestamp': FieldValue.serverTimestamp(),
-    });
+    };
 
-    await Future.wait([pai, mensagem]);
+    try {
+      await Future.wait([pai, mensagensDe(chatId).add(corpo)]);
+    } on FirebaseException catch (e) {
+      // A CORRIDA ENTRE O PAI E A MENSAGEM
+      //
+      // A regra de create da mensagem faz get() no documento pai pra conferir
+      // se quem escreve esta em participantes. Os dois writes saem daqui
+      // juntos, mas o servidor avalia cada um por conta propria: quando a
+      // mensagem e avaliada antes de o pai ter sido gravado, o get() nao acha
+      // nada e a escrita volta como permission-denied.
+      //
+      // Acontecia na primeira mensagem de uma conversa e, de vez em quando,
+      // sempre que a rede atrasava um dos dois. Quem escreveu via "nao deu pra
+      // enviar" e o texto voltava pro campo, mesmo com a conversa funcionando.
+      //
+      // Aqui a gente espera o pai ficar de pe e escreve a mensagem de novo,
+      // que e quando a regra finalmente encontra o que procura. So no
+      // permission-denied: nesse caso o firestore ja desfez a escrita local,
+      // entao repetir nao duplica mensagem. Qualquer outro erro sobe pra
+      // tela como antes.
+      if (e.code != 'permission-denied') rethrow;
+
+      // se quem falhou foi o pai, este await levanta o erro dele e a mensagem
+      // nao e reescrita -- nao adianta insistir sem o pai
+      await pai;
+      await mensagensDe(chatId).add(corpo);
+    }
   }
 }

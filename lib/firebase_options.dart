@@ -22,8 +22,6 @@ class DefaultFirebaseOptions {
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
         return android;
-      case TargetPlatform.iOS:
-        return ios;
       case TargetPlatform.macOS:
         return macos;
       case TargetPlatform.windows:
@@ -56,15 +54,6 @@ class DefaultFirebaseOptions {
     messagingSenderId: '890336956924',
     projectId: 'moradias-inatel',
     storageBucket: 'moradias-inatel.firebasestorage.app',
-  );
-
-  static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyA5UScW50NxeC1QPGum5gj4MhUkGcuyPPo',
-    appId: '1:890336956924:ios:ea51fa9df84ad72e11e279',
-    messagingSenderId: '890336956924',
-    projectId: 'moradias-inatel',
-    storageBucket: 'moradias-inatel.firebasestorage.app',
-    iosBundleId: 'com.example.moradiaApp',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(

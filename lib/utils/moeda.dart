@@ -21,11 +21,16 @@ String formatarPreco(double valor) {
       '${centavos.toString().padLeft(2, '0')}';
 }
 
-// preco de anuncio pra exibicao. Zero vira "Gratuito": so evento pode ser
+// preco de anuncio pra exibicao. Zero vira "Gratuita": so evento pode ser
 // gravado sem valor (o formulario exige valor na moradia), e "R$0,00" num
-// evento parece campo que ninguem preencheu, nao entrada franca
+// evento parece campo que ninguem preencheu, nao entrada franca.
+//
+// No feminino porque o que e gratuito aqui e a ENTRADA, e e esse o rotulo que
+// aparece do lado na ficha do evento -- "Entrada ... Gratuito" nao concorda.
+// Nos outros lugares a palavra aparece sozinha no lugar do preco, e continua
+// sendo a entrada que ela descreve
 String formatarPrecoOuGratuito(double valor) =>
-    valor > 0 ? formatarPreco(valor) : 'Gratuito';
+    valor > 0 ? formatarPreco(valor) : 'Gratuita';
 
 // o MESMO formato, sem o "R$" -- e o que vai DENTRO do campo de texto, ja que
 // ali o cifrao fica no prefixo da decoracao. Usado pra preencher o campo na

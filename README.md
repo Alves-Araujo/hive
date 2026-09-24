@@ -232,6 +232,6 @@ flutter run
 
 ## 📌 Status
 
-Em desenvolvimento ativo. Rodando em **Android**; a build para iOS ainda não foi configurada (falta a chave do Maps no AppDelegate e o `GoogleService-Info.plist`). A estrutura de monitorias já está preparada no modelo e nas regras, mas ainda não foi implementada na interface.
+Em desenvolvimento ativo. Rodando em **Android**, que é a única plataforma suportada no momento: o suporte a iOS foi removido do projeto e será retomado mais pra frente. A estrutura de monitorias já está preparada no modelo e nas regras, mas ainda não foi implementada na interface.
 
 ---

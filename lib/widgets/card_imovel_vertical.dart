@@ -4,6 +4,7 @@ import '../models/imovel.dart';
 import '../screens/detalhes_imovel_screen.dart';
 import '../utils/moeda.dart';
 import '../utils/distancia.dart';
+import '../utils/foto_rede.dart';
 import '../utils/icones_tag.dart';
 
 class CardImovelVertical extends StatelessWidget {
@@ -57,11 +58,16 @@ class CardImovelVertical extends StatelessWidget {
                         child: imovel.fotos.isNotEmpty
                             ? ClipRRect(
                                 borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
-                                child: Image.network(
-                                  imovel.fotos.first,
+                                // cache em disco + decodificacao no tamanho do
+                                // card: sem isso a foto entrava no ImageCache
+                                // com a resolucao cheia da camera e expulsava
+                                // as fotos dos outros cards, ver foto_rede.dart
+                                child: Image(
+                                  image: fotoDaRedeLargura(context, imovel.fotos.first),
                                   width: double.infinity,
                                   height: double.infinity,
                                   fit: BoxFit.cover,
+                                  gaplessPlayback: true,
                                   errorBuilder: (context, error, stackTrace) => Icon(
                                     isEvento ? Icons.celebration_rounded : Icons.home_rounded,
                                     color: Colors.white,
