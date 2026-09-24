@@ -33,6 +33,16 @@ import 'widgets/abas_persistentes.dart';
 // do percurso nao faz sentido -- a barra so rouba altura util do mapa
 final ValueNotifier<bool> navegandoGlobal = ValueNotifier(false);
 
+// pedido de "traz essa aba pra frente", feito por telas empilhadas por cima
+// do app (detalhes do imovel) que voltam pra raiz e precisam que a barra
+// inferior mude junto. Sem isso o pedido era atendido numa aba que a pessoa
+// nao estava vendo: o mapa desenhava o bairro escondido atras do Resumo.
+//
+// Quem atende zera de volta pra null -- dois pedidos iguais seguidos
+// (tocar duas vezes no mesmo bairro) nao avisariam ninguem, porque o
+// ValueNotifier so notifica quando o valor muda
+final ValueNotifier<int?> abaPedidaGlobal = ValueNotifier(null);
+
 // controle do tema do app inteiro
 final ValueNotifier<ThemeMode> temaGlobal = ValueNotifier(ThemeMode.system);
 
@@ -438,6 +448,7 @@ class _TelaPrincipalState extends State<TelaPrincipal> {
   late final List<Widget> _telas;
   late final List<_ItemNav> _itensNav;
   late VoidCallback _rotaPendenteListener;
+  late VoidCallback _abaPedidaListener;
 
   // passos em andamento do guia interativo; nulo quando ele nao esta rodando
   List<PassoGuia>? _passosDoGuia;
@@ -481,6 +492,18 @@ class _TelaPrincipalState extends State<TelaPrincipal> {
       }
     };
     rotaCarregandoGlobal.addListener(_rotaPendenteListener);
+
+    // ver abaPedidaGlobal: o chip "Bairro X" da tela de detalhes volta pra
+    // raiz e pede a aba do Mapa, porque e la que o contorno da regiao e
+    // desenhado. Vale pra qualquer aba -- nada aqui e especifico do bairro
+    _abaPedidaListener = () {
+      final pedida = abaPedidaGlobal.value;
+      if (pedida == null) return;
+      abaPedidaGlobal.value = null;
+      if (!mounted || pedida >= _telas.length || pedida == _indiceAtual) return;
+      setState(() => _indiceAtual = pedida);
+    };
+    abaPedidaGlobal.addListener(_abaPedidaListener);
 
     NotificacaoService.instance.iniciar(_perfil.uid);
     NotificacaoService.instance.ultimaRecebida.addListener(_mostrarAvisoRecebido);
@@ -594,6 +617,7 @@ class _TelaPrincipalState extends State<TelaPrincipal> {
   @override
   void dispose() {
     rotaCarregandoGlobal.removeListener(_rotaPendenteListener);
+    abaPedidaGlobal.removeListener(_abaPedidaListener);
     perfilAtualizadoGlobal.removeListener(_aoAtualizarPerfil);
     pedidoDeGuiaGlobal.removeListener(_aoPedirGuia);
     NotificacaoService.instance.ultimaRecebida.removeListener(_mostrarAvisoRecebido);

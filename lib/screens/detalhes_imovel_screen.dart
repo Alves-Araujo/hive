@@ -473,6 +473,13 @@ class _DetalhesImovelScreenState extends State<DetalhesImovelScreen> {
       alignment: Alignment.centerLeft,
       child: Pressionavel(
         onTap: () {
+          // a aba do Mapa vem ANTES do pedido do bairro: quem desenha o
+          // contorno e enquadra a camera e o mapa, e ele precisa estar na
+          // frente quando isso acontece. Sem esta linha o toque voltava pra
+          // aba de onde o anuncio foi aberto (quase sempre o Resumo) e o
+          // tracejado ficava pronto numa tela escondida -- dava a leitura de
+          // que o chip nao fazia nada
+          abaPedidaGlobal.value = 0;
           bairroPendenteGlobal.value = BairroPendente(
             nome: imovel.bairro,
             perto: imovel.posicao,
